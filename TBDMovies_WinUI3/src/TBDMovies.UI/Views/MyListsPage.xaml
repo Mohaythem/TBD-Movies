@@ -272,10 +272,10 @@
                       ItemContainerStyle="{StaticResource MediaHorizontalGridViewItemStyle}"
                       Style="{StaticResource MediaGridViewStyle}" Visibility="Collapsed"
                       ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollMode="Enabled">
-                <GridView.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid ItemWidth="{StaticResource LibraryHorizontalFallbackCellWidth}" ItemHeight="{StaticResource LibraryHorizontalCellHeight}" Orientation="Horizontal" /></ItemsPanelTemplate></GridView.ItemsPanel>
+                <GridView.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid x:Name="ContinueWatchingItemsPanel" ItemWidth="{StaticResource LibraryHorizontalFallbackCellWidth}" ItemHeight="{StaticResource LibraryHorizontalCellHeight}" Orientation="Horizontal" SizeChanged="HorizontalItemsPanel_SizeChanged" /></ItemsPanelTemplate></GridView.ItemsPanel>
                 <GridView.ItemTemplate>
                     <DataTemplate x:DataType="models:HomeActivityCard">
-                        <Border
+                        <Border HorizontalAlignment="Stretch"
                                 CornerRadius="{ThemeResource ControlCornerRadius}">
                             <Grid Background="{ThemeResource PosterMoviePlaceholderBrush}">
                                 <Image Source="{x:Bind ArtworkSource, Mode=OneWay}" Stretch="UniformToFill" />
@@ -298,10 +298,10 @@
                       ItemContainerStyle="{StaticResource MediaHorizontalGridViewItemStyle}"
                       Style="{StaticResource MediaGridViewStyle}" Visibility="Collapsed"
                       ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollMode="Enabled">
-                <GridView.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid ItemWidth="{StaticResource LibraryHorizontalFallbackCellWidth}" ItemHeight="{StaticResource LibraryHorizontalCellHeight}" Orientation="Horizontal" /></ItemsPanelTemplate></GridView.ItemsPanel>
+                <GridView.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid x:Name="HistoryItemsPanel" ItemWidth="{StaticResource LibraryHorizontalFallbackCellWidth}" ItemHeight="{StaticResource LibraryHorizontalCellHeight}" Orientation="Horizontal" SizeChanged="HorizontalItemsPanel_SizeChanged" /></ItemsPanelTemplate></GridView.ItemsPanel>
                 <GridView.ItemTemplate>
                     <DataTemplate x:DataType="models:WatchHistoryCardRecord">
-                        <Border
+                        <Border HorizontalAlignment="Stretch"
                                 CornerRadius="{ThemeResource ControlCornerRadius}">
                             <Grid Background="{ThemeResource PosterMoviePlaceholderBrush}">
                                 <Image Source="{x:Bind ArtworkSource, Mode=OneWay}" Stretch="UniformToFill" />

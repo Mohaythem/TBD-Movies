@@ -1,4 +1,4 @@
-﻿namespace TBDMovies.UI.Services;
+namespace TBDMovies.UI.Services;
 
 public enum LibraryViewMode
 {
@@ -30,6 +30,8 @@ public static class LibraryHorizontalLayout
     public const double FallbackCellWidth = 332;
     public const double LibraryHorizontalFallbackCellWidth = FallbackCellWidth;
 
+    public const double MinResponsiveCardWidth = 270;
+
     public readonly record struct Metrics(double CardWidth, double CellWidth, int Columns);
 
     public static Metrics Calculate(double availableWidth)
@@ -47,6 +49,18 @@ public static class LibraryHorizontalLayout
     }
 
     public static double CalculateCardWidth(double availableWidth) => Calculate(availableWidth).CardWidth;
+
+    public static double CalculateResponsiveCellWidth(double availableWidth, double minCardWidth = MinResponsiveCardWidth)
+    {
+        var available = availableWidth;
+        if (double.IsNaN(available) || double.IsInfinity(available) || available <= 0)
+        {
+            return FallbackCellWidth;
+        }
+
+        var columns = Math.Max(1, (int)Math.Floor(available / (minCardWidth + InterCardGap)));
+        return Math.Max(1, (available - 1) / columns);
+    }
 }
 
 /// <summary>Library-only poster sizing. Container padding, focus borders and row spacing stay unchanged.</summary>

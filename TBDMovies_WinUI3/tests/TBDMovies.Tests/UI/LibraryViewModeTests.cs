@@ -1,4 +1,4 @@
-﻿using System.Xml.Linq;
+using System.Xml.Linq;
 using TBDMovies.UI.Services;
 using TBDMovies.Infrastructure.Persistence.Migrations;
 using TBDMovies.Infrastructure.Persistence.Repositories;
@@ -80,6 +80,30 @@ public sealed class LibraryViewModeTests
         Assert.Equal(1, metrics.Columns);
         Assert.Equal(332, metrics.CellWidth);
         Assert.Equal(320, metrics.CardWidth);
+    }
+
+    [Theory]
+    [InlineData(1500, 5, 299.8)]
+    [InlineData(1410, 5, 281.8)]
+    [InlineData(1350, 4, 337.25)]
+    [InlineData(700, 2, 349.5)]
+    public void Responsive_cell_width_adapts_columns_and_stretches_to_row(double available, int expectedColumns, double expectedCellWidth)
+    {
+        var cellWidth = LibraryHorizontalLayout.CalculateResponsiveCellWidth(available);
+
+        Assert.Equal(expectedCellWidth, cellWidth, precision: 6);
+        Assert.True(expectedColumns * cellWidth <= available);
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Responsive_cell_width_uses_fallback_for_invalid_width(double available)
+    {
+        var cellWidth = LibraryHorizontalLayout.CalculateResponsiveCellWidth(available);
+        Assert.Equal(LibraryHorizontalLayout.FallbackCellWidth, cellWidth);
     }
 
     [Fact]

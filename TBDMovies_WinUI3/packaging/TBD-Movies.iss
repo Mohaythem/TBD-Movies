@@ -33,6 +33,7 @@ VersionInfoVersion=0.11.11.0
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={localappdata}\Programs\{#MyAppName}
+UsePreviousAppDir=no
 DisableProgramGroupPage=yes
 DisableDirPage=auto
 PrivilegesRequired=lowest
@@ -47,6 +48,7 @@ Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
+CloseApplicationsFilter=*.exe
 RestartApplications=no
 ; Personal library data lives in %LOCALAPPDATA%\TBD Movies and is intentionally never installed here.
 
@@ -58,7 +60,14 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [InstallDelete]
 Type: files; Name: "{autodesktop}\TBD-Movies.lnk"
+Type: files; Name: "{autodesktop}\TBD Movies.lnk"
+Type: files; Name: "{autodesktop}\DropSort.lnk"
 Type: files; Name: "{group}\TBD-Movies.lnk"
+Type: files; Name: "{group}\TBD Movies.lnk"
+Type: files; Name: "{group}\DropSort.lnk"
+Type: files; Name: "{userprograms}\(Default)\TBD Movies.lnk"
+Type: files; Name: "{userprograms}\(Default)\DropSort.lnk"
+Type: filesandordirs; Name: "{localappdata}\Programs\DropSort"
 
 [Files]
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "*.pdb,publish\*,\publish"

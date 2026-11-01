@@ -1,4 +1,4 @@
-﻿using TBDMovies.Application.Dto;
+using TBDMovies.Application.Dto;
 using TBDMovies.Application.Repositories;
 using TBDMovies.Domain.Library.Personal;
 using Microsoft.Data.Sqlite;
@@ -166,10 +166,13 @@ public sealed class ViewingActivityRepository(string connectionString) : IViewin
         WITH ranked AS (
             SELECT w.*, ROW_NUMBER() OVER (
                 PARTITION BY CASE WHEN w.media_kind = 'MOVIE' AND w.movie_id IS NOT NULL THEN 'M:' || w.movie_id
+                                  WHEN w.media_kind = 'EPISODE' AND se.show_id IS NOT NULL THEN 'S:' || se.show_id
                                   WHEN w.media_kind = 'EPISODE' AND w.episode_id IS NOT NULL THEN 'E:' || w.episode_id
                                   ELSE 'X:' || w.id END
                 ORDER BY julianday(w.watched_at) DESC, w.id DESC) AS viewing_rank
-              FROM watch_events w)
+              FROM watch_events w
+              LEFT JOIN tv_episodes e ON e.id = w.episode_id
+              LEFT JOIN tv_seasons se ON se.id = e.season_id)
         SELECT w.id, w.media_kind, w.movie_id, w.episode_id, se.show_id,
                COALESCE(NULLIF(m.custom_display_title, ''), m.title, w.title_snapshot), COALESCE(m.year, w.year_snapshot),
                COALESCE(NULLIF(s.custom_display_title, ''), s.title, w.show_title_snapshot), COALESCE(se.season_number, w.season_number_snapshot),

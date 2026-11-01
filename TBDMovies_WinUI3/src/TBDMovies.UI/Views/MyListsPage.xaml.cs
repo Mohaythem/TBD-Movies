@@ -929,6 +929,22 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         }
     }
 
+    private void HorizontalItemsPanel_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is ItemsWrapGrid panel && double.IsFinite(e.NewSize.Width) && e.NewSize.Width > 0)
+        {
+            var cellWidth = LibraryHorizontalLayout.CalculateResponsiveCellWidth(e.NewSize.Width);
+            if (!double.IsFinite(panel.ItemWidth) || Math.Abs(panel.ItemWidth - cellWidth) > 0.5)
+            {
+                panel.ItemWidth = cellWidth;
+            }
+            if (!double.IsFinite(panel.ItemHeight) || Math.Abs(panel.ItemHeight - LibraryHorizontalLayout.CellHeight) > 0.5)
+            {
+                panel.ItemHeight = LibraryHorizontalLayout.CellHeight;
+            }
+        }
+    }
+
     private void PosterSurface_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         if (sender is FrameworkElement surface && double.IsFinite(e.NewSize.Width) && e.NewSize.Width > 0)

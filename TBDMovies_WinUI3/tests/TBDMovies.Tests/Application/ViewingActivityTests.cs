@@ -1,4 +1,4 @@
-﻿using TBDMovies.Application.Services;
+using TBDMovies.Application.Services;
 using TBDMovies.Domain.Library.Personal;
 using TBDMovies.Infrastructure.Persistence.Migrations;
 using TBDMovies.Infrastructure.Persistence.Repositories;
@@ -39,7 +39,7 @@ public sealed class ViewingActivityTests : IDisposable
         var second = new ViewingActivityService(new ViewingActivityRepository(_cs), () => _t0.AddHours(2))
             .RecordSuccessfulPlay(MoviePath);
 
-        Assert.Equal(1, service.ListActive().Count);
+        Assert.Single(service.ListActive());
         Assert.Equal(first.MovieId, second.MovieId);
         Assert.Equal(_t0.AddHours(2), second.StartedAt);
         Assert.Equal("Movie One", second.Title);
@@ -119,7 +119,7 @@ public sealed class ViewingActivityTests : IDisposable
     }
 
     [Fact]
-    public void RecentCompletedDeduplicatesEachMovieAndEpisodeByLatestWatch()
+    public void RecentCompletedDeduplicatesEachMovieAndShowByLatestWatch()
     {
         SeedMovie(1, "Movie One", 2020, MoviePath);
         SeedShowAndEpisode(7, 70, 101, "Pilot", PilotPath);
@@ -131,13 +131,33 @@ public sealed class ViewingActivityTests : IDisposable
         history.AddEpisodeWatchEvent(102, _t0.AddMinutes(4), _t0.AddMinutes(4));
 
         var recent = Service().ListRecentCompleted();
-        Assert.Equal(3, recent.Count);
+        Assert.Equal(2, recent.Count);
         Assert.Equal(102, recent[0].EpisodeId);
         Assert.Equal(1, recent[1].MovieId);
-        Assert.Equal(101, recent[2].EpisodeId);
         Assert.Equal(_t0.AddMinutes(4), recent[0].WatchedAt);
         Assert.Equal(_t0.AddMinutes(3), recent[1].WatchedAt);
-        Assert.Equal(_t0.AddMinutes(1), recent[2].WatchedAt);
+    }
+
+    [Fact]
+    public void RecentCompletedRetainsLatestEpisodePerDistinctShow()
+    {
+        SeedShowAndEpisode(7, 70, 101, "Show 1 Ep 1", PilotPath, 1);
+        SeedShowAndEpisode(7, 70, 102, "Show 1 Ep 2", SecondPath, 2);
+        var otherPath1 = Path.Combine(_dir, "other1.mkv");
+        var otherPath2 = Path.Combine(_dir, "other2.mkv");
+        SeedShowAndEpisode(8, 80, 201, "Show 2 Ep 1", otherPath1, 1);
+        SeedShowAndEpisode(8, 80, 202, "Show 2 Ep 2", otherPath2, 2);
+
+        var history = new PersonalLibraryRepository(_cs);
+        history.AddEpisodeWatchEvent(101, _t0, _t0);
+        history.AddEpisodeWatchEvent(201, _t0.AddMinutes(1), _t0.AddMinutes(1));
+        history.AddEpisodeWatchEvent(102, _t0.AddMinutes(2), _t0.AddMinutes(2));
+        history.AddEpisodeWatchEvent(202, _t0.AddMinutes(3), _t0.AddMinutes(3));
+
+        var recent = Service().ListRecentCompleted();
+        Assert.Equal(2, recent.Count);
+        Assert.Equal(202, recent[0].EpisodeId);
+        Assert.Equal(102, recent[1].EpisodeId);
     }
 
     [Fact]
@@ -284,7 +304,7 @@ public sealed class ViewingActivityTests : IDisposable
     private void SeedShowAndEpisode(int showId, int seasonId, int episodeId, string title, string path, int number = 1)
     {
         if (Scalar("SELECT COUNT(*) FROM tv_shows WHERE id=" + showId) is 0L)
-            Exec($"INSERT INTO tv_shows(id,provider,external_id,title,sort_title,year,date_added,created_at,updated_at,genres,metadata_status,backdrop_path,poster_path) VALUES ({showId},'tmdb','s{showId}','Show','show',2020,'2026-01-01','2026-01-01','2026-01-01','[]','READY','/show-backdrop.jpg','/show-poster.jpg'); INSERT INTO tv_seasons(id,show_id,season_number,created_at,updated_at) VALUES ({seasonId},{showId},1,'2026-01-01','2026-01-01');");
+            Exec($"INSERT INTO tv_shows(id,provider,external_id,title,sort_title,year,date_added,created_at,updated_at,genres,metadata_status,backdrop_path,poster_path) VALUES ({showId},'tmdb','s{showId}','Show {showId}','show {showId}',2020,'2026-01-01','2026-01-01','2026-01-01','[]','READY','/show-backdrop.jpg','/show-poster.jpg'); INSERT INTO tv_seasons(id,show_id,season_number,created_at,updated_at) VALUES ({seasonId},{showId},1,'2026-01-01','2026-01-01');");
         Exec($"INSERT INTO tv_episodes(id,season_id,episode_number,title,still_path,created_at,updated_at) VALUES ({episodeId},{seasonId},{number},'{title}','/still.jpg','2026-01-01','2026-01-01'); INSERT INTO media_files(id,current_path,path_key,file_size,status,discovered_at,last_seen_at) VALUES ({episodeId},'{path}','{Key(path)}',1,'PRESENT','2026-01-01','2026-01-01'); INSERT INTO episode_media_files(media_file_id,episode_id,linked_at) VALUES ({episodeId},{episodeId},'2026-01-01');");
     }
 
