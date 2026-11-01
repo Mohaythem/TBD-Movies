@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -205,6 +205,10 @@ public sealed class TraktListActionsTests
             => ThrowOnRefresh ? throw new InvalidOperationException("refresh failed") : Task.FromResult(JsonDocument.Parse("[]").RootElement);
         public Task<JsonElement> AddMovieToListAsync(long? listId, long tmdbId, string clientId, string accessToken, CancellationToken cancellationToken = default)
         { Posts++; return PostHandler?.Invoke(cancellationToken) ?? Task.FromResult(PostResponse); }
+        public Task<JsonElement> AddHistoryAsync(TraktSyncHistoryPayload payload, string clientId, string accessToken, CancellationToken cancellationToken = default)
+            => Task.FromResult(JsonDocument.Parse("{}").RootElement);
+        public Task<JsonElement> RemoveHistoryAsync(TraktSyncHistoryPayload payload, string clientId, string accessToken, CancellationToken cancellationToken = default)
+            => Task.FromResult(JsonDocument.Parse("{}").RootElement);
     }
 
     private sealed class CacheFake : ITraktCacheRepository

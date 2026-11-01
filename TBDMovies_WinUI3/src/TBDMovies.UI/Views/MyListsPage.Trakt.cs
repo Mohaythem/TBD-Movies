@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -190,6 +190,7 @@ public sealed partial class MyListsPage
         ListCountText.Text = FormatCount(filtered.Count);
         ListGrid.Visibility = filtered.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         EmptyState.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        EmptyState.Kind = _query.Length == 0 ? Controls.EmptyStateKind.EmptyLists : Controls.EmptyStateKind.NoResults;
         EmptyState.Title = LocalizationService.Text(_query.Length == 0 ? "TraktListEmpty" : "NoResults");
         EmptyState.Message = LocalizationService.Text(_query.Length == 0 ? "TraktListOfflineHelp" : "NoResultsHelp");
         EmptyState.IsActionVisible = false;
@@ -432,12 +433,27 @@ public sealed partial class MyListsPage
 
     public void Deactivate()
     {
+        AppServices.TraktSyncCompleted -= OnTraktSyncCompleted;
         _traktActive = false;
         ++_traktGeneration;
         _traktCts?.Cancel();
         _traktWriteCts?.Cancel();
         _traktDisplayCts?.Cancel();
         ++_traktDisplayGeneration;
+    }
+
+    private void OnTraktSyncCompleted(object? sender, EventArgs e)
+    {
+        if (!_traktActive) return;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!_traktActive) return;
+            RebuildTraktTabs();
+            if (IsTraktKey(_selectedKey))
+            {
+                Refresh();
+            }
+        });
     }
 
     private void CancelTraktDisplay()

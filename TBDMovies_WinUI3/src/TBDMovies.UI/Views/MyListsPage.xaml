@@ -1,4 +1,4 @@
-﻿<!--
+<!--
     My Lists.
 
     Mirrors PersonalLibrary.tsx: a page header (title + list count + accent New List) with the page
@@ -17,6 +17,7 @@
     xmlns:models="using:TBDMovies.UI.Models"
     xmlns:local="using:TBDMovies.UI.Views"
     Background="Transparent">
+
 
     <!--
         The card grid owns its own scroll so its ItemsWrapGrid virtualizes; nesting a GridView in the page
@@ -263,10 +264,7 @@
                 Style="{StaticResource MediaGridViewStyle}">
                 <GridView.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <ItemsWrapGrid
-                            ItemHeight="{StaticResource MediaCardItemHeight}"
-                            ItemWidth="{StaticResource MediaCardItemWidth}"
-                            Orientation="Horizontal" />
+                        <ItemsWrapGrid x:Name="ListItemsPanel" Orientation="Horizontal" SizeChanged="ListItemsPanel_SizeChanged" />
                     </ItemsPanelTemplate>
                 </GridView.ItemsPanel>
             </GridView>

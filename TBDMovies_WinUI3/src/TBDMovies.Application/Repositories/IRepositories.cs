@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using TBDMovies.Domain.Library.Movies;
 using TBDMovies.Domain.Library.Personal;
@@ -175,9 +175,13 @@ public interface ICatalogUnitOfWork : IDisposable
     ITvEpisodeRepository TvEpisodes { get; }
 
     void Commit();
+    void Savepoint(string name) { }
+    void ReleaseSavepoint(string name) { }
+    void RollbackToSavepoint(string name) { }
 }
 
 public interface ICatalogUnitOfWorkFactory
 {
     ICatalogUnitOfWork Begin();
+    ICatalogUnitOfWork BeginReadOnly() => Begin();
 }

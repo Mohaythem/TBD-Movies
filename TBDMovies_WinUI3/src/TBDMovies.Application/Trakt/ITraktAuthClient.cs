@@ -1,4 +1,4 @@
-﻿using System.Threading;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace TBDMovies.Application.Trakt;
@@ -13,4 +13,6 @@ public interface ITraktAuthClient
     Task<TraktPollResponse> PollDeviceTokenAsync(string deviceCode, string clientId, CancellationToken cancellationToken = default);
 
     Task<TraktTokenPair> RefreshTokenAsync(string clientId, string redirectUri, string refreshToken, CancellationToken cancellationToken = default);
+
+    Task RevokeTokenAsync(string clientId, string token, CancellationToken cancellationToken = default);
 }

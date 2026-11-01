@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -26,6 +27,9 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
     private readonly TraktAuthConfig _config;
     private readonly ISettingsRepository? _settingsRepository;
     private readonly TimeProvider _timeProvider;
+    private readonly ITraktLocalSnapshotBuilder? _snapshotBuilder;
+    private readonly IPersonalLibraryRepository? _personalLibraryRepository;
+    private readonly IWatchHistoryRepository? _watchHistoryRepository;
 
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly object _ctsLock = new();
@@ -53,7 +57,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         ITraktCacheRepository cacheRepository,
         TraktAuthConfig config,
         ISettingsRepository? settingsRepository = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ITraktLocalSnapshotBuilder? snapshotBuilder = null,
+        IPersonalLibraryRepository? personalLibraryRepository = null,
+        IWatchHistoryRepository? watchHistoryRepository = null)
     {
         _authService = authService ?? throw new ArgumentNullException(nameof(authService));
         _dataClient = dataClient ?? throw new ArgumentNullException(nameof(dataClient));
@@ -61,6 +68,9 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         _config = config ?? throw new ArgumentNullException(nameof(config));
         _settingsRepository = settingsRepository;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _snapshotBuilder = snapshotBuilder;
+        _personalLibraryRepository = personalLibraryRepository;
+        _watchHistoryRepository = watchHistoryRepository;
 
         var authState = _authService.GetAuthState();
         _currentAccountId = authState.IsConnected ? authState.AccountId : null;
@@ -70,6 +80,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
 
         _syncState = TraktSyncState.Initial(authState, _lastAccountId);
     }
+
 
     /// <inheritdoc />
     public TraktSyncState GetSyncState()
@@ -200,6 +211,22 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                 }
 
                 UpdateState(auth: authState, isSyncing: false, clearError: true);
+
+                if (authState.IsConnected)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await SyncAsync(CancellationToken.None).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Auto-sync on connect failed: {ex.Message}");
+                        }
+                    });
+                }
+
                 return authState;
             }
             finally
@@ -561,6 +588,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                     UpdateState(isSyncing: false, error: sanitized, failureKind: TraktSyncFailureKind.Unauthorized);
                     return TraktSyncResult.Aborted(uuid, sanitized, TraktSyncFailureKind.Unauthorized);
                 }
+
+                // Step 5: Downstream Watched Reconciliation (Trakt -> Local) strictly for available local media
+                EnsureOperationValid(currentGen, uuid, opToken);
+                await ReconcileDownstreamWatchedAsync(uuid, opToken).ConfigureAwait(false);
 
                 // Blocker 8: Recheck cancel and generation before publishing success state
                 EnsureOperationValid(currentGen, uuid, opToken);
@@ -1063,4 +1094,199 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             nextError,
             nextFailureKind);
     }
+
+    /// <inheritdoc />
+    public async Task<bool> PushMovieWatchedAsync(int tmdbId, DateTimeOffset watchedAt, bool isWatched, CancellationToken ct = default)
+    {
+        if (tmdbId <= 0) return false;
+        var token = await _authService.GetAccessTokenAsync(cancellationToken: ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(token)) return false;
+
+        var payload = new TraktSyncHistoryPayload(
+            Movies: new[]
+            {
+                new TraktSyncMovieItem(
+                    Ids: new TraktSyncIds(Tmdb: tmdbId),
+                    WatchedAt: isWatched ? watchedAt : null)
+            });
+
+        try
+        {
+            if (isWatched)
+            {
+                await _dataClient.AddHistoryAsync(payload, _config.ClientId, token, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await _dataClient.RemoveHistoryAsync(payload, _config.ClientId, token, ct).ConfigureAwait(false);
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] PushMovieWatchedAsync failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> PushEpisodeWatchedAsync(int showTmdbId, int seasonNumber, int episodeNumber, DateTimeOffset watchedAt, bool isWatched, CancellationToken ct = default)
+    {
+        if (showTmdbId <= 0 || seasonNumber < 0 || episodeNumber <= 0) return false;
+        var token = await _authService.GetAccessTokenAsync(cancellationToken: ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(token)) return false;
+
+        var episodeItem = new TraktSyncEpisodeItem(
+            Number: episodeNumber,
+            WatchedAt: isWatched ? watchedAt : null);
+
+        var seasonItem = new TraktSyncSeasonItem(
+            Number: seasonNumber,
+            Episodes: new[] { episodeItem });
+
+        var payload = new TraktSyncHistoryPayload(
+            Shows: new[]
+            {
+                new TraktSyncShowItem(
+                    Ids: new TraktSyncIds(Tmdb: showTmdbId),
+                    Seasons: new[] { seasonItem })
+            });
+
+        try
+        {
+            if (isWatched)
+            {
+                await _dataClient.AddHistoryAsync(payload, _config.ClientId, token, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await _dataClient.RemoveHistoryAsync(payload, _config.ClientId, token, ct).ConfigureAwait(false);
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] PushEpisodeWatchedAsync failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    private async Task ReconcileDownstreamWatchedAsync(string accountId, CancellationToken cancellationToken)
+    {
+        if (_snapshotBuilder is null || (_personalLibraryRepository is null && _watchHistoryRepository is null))
+        {
+            return;
+        }
+
+        try
+        {
+            var snapshot = await _snapshotBuilder.BuildSnapshotAsync(cancellationToken).ConfigureAwait(false);
+            if (snapshot is null || snapshot.Candidates.Count == 0) return;
+
+            var now = _timeProvider.GetUtcNow();
+
+            // 1. Reconcile Watched Movies
+            if (_personalLibraryRepository is not null)
+            {
+                var watchedMovies = GetWatchedMovies(accountId);
+                foreach (var remoteMovie in watchedMovies)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    int? tmdbId = remoteMovie.TmdbId is > 0 and <= int.MaxValue ? (int)remoteMovie.TmdbId.Value : null;
+                    var remoteIdentity = new TraktIdentity(
+                        TraktMediaKind.Movie,
+                        TraktId: remoteMovie.TraktId,
+                        TmdbId: tmdbId,
+                        ImdbId: remoteMovie.ImdbId);
+
+                    if (!remoteIdentity.IsValid) continue;
+
+                    var match = snapshot.Match(remoteIdentity);
+                    if (match.Status == TraktMatchStatus.Matched &&
+                        match.Candidate is { } candidate &&
+                        candidate.LocalId > 0 &&
+                        candidate.Availability == TraktAvailability.Available)
+                    {
+                        var events = _personalLibraryRepository.GetWatchEvents(candidate.LocalId);
+                        if (events == null || events.Count == 0)
+                        {
+                            var watchedAt = remoteMovie.LastWatchedAt ?? now;
+                            _personalLibraryRepository.AddWatchEvent(candidate.LocalId, watchedAt, now);
+                        }
+                    }
+                    // CRITICAL: If candidate == null or candidate.Availability != Available, do nothing!
+                    // Zero Ghost Media Invariant: Never create, synthesize, or register movies for remote watched items.
+                }
+            }
+
+            // 2. Reconcile Watched Shows and Episodes
+            if (_watchHistoryRepository is not null)
+            {
+                var watchedShows = GetWatchedShows(accountId);
+                foreach (var remoteShow in watchedShows)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    int? showTmdbId = remoteShow.TmdbId is > 0 and <= int.MaxValue ? (int)remoteShow.TmdbId.Value : null;
+                    var showIdentity = new TraktIdentity(
+                        TraktMediaKind.Show,
+                        TraktId: remoteShow.TraktId,
+                        TmdbId: showTmdbId,
+                        ImdbId: remoteShow.ImdbId);
+
+                    if (!showIdentity.IsValid) continue;
+
+                    var showMatch = snapshot.Match(showIdentity);
+                    if (showMatch.Status != TraktMatchStatus.Matched || showMatch.Candidate is not { } showCandidate || showCandidate.LocalId <= 0)
+                    {
+                        // No local show matched. Strictly ignore (Zero Ghost Media).
+                        continue;
+                    }
+
+                    var localWatchedEpisodeIds = _watchHistoryRepository.GetWatchedEpisodeIds(showCandidate.LocalId);
+
+                    foreach (var season in remoteShow.Seasons)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        foreach (var ep in season.Episodes)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+
+                            var epIdentity = new TraktIdentity(
+                                TraktMediaKind.Episode,
+                                ShowTraktId: remoteShow.TraktId,
+                                ShowTmdbId: showTmdbId,
+                                ShowImdbId: remoteShow.ImdbId,
+                                SeasonNumber: season.Number,
+                                EpisodeNumber: ep.Number);
+
+                            var epMatch = snapshot.Match(epIdentity);
+                            if (epMatch.Status == TraktMatchStatus.Matched &&
+                                epMatch.Candidate is { } epCandidate &&
+                                epCandidate.LocalId > 0 &&
+                                epCandidate.Availability == TraktAvailability.Available)
+                            {
+                                if (!localWatchedEpisodeIds.Contains(epCandidate.LocalId))
+                                {
+                                    var watchedAt = ep.LastWatchedAt ?? now;
+                                    _watchHistoryRepository.AddEpisodeWatchEvent(epCandidate.LocalId, watchedAt, now);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Downstream watched reconciliation failed: {ex.Message}");
+        }
+    }
 }
+

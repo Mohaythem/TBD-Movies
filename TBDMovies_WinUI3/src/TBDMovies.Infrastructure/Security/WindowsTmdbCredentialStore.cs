@@ -45,7 +45,8 @@ public sealed class WindowsTmdbCredentialStore : ITmdbCredentialStore
             nativeToken = TryReadTarget(_legacyTarget);
             if (!string.IsNullOrWhiteSpace(nativeToken))
             {
-                try { Write(nativeToken); } catch { }
+                try { Write(nativeToken); }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to migrate legacy native token: {ex.Message}"); }
             }
         }
 
@@ -61,7 +62,7 @@ public sealed class WindowsTmdbCredentialStore : ITmdbCredentialStore
                         if (cipher is not null) _settings.Set("tmdb_credential_dpapi", cipher, DateTimeOffset.UtcNow);
                     }
                 }
-                catch { }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to backup native token to DPAPI: {ex.Message}"); }
             }
             return nativeToken;
         }
@@ -71,14 +72,34 @@ public sealed class WindowsTmdbCredentialStore : ITmdbCredentialStore
             try
             {
                 var cipher = _settings.Get("tmdb_credential_dpapi");
-                var recovered = DecryptDpapi(cipher);
+                var recovered = DecryptDpapi(cipher, out var migratedFromLegacy);
                 if (!string.IsNullOrWhiteSpace(recovered))
                 {
-                    try { Write(recovered); } catch { }
+                    if (migratedFromLegacy)
+                    {
+                        try
+                        {
+                            var reencrypted = EncryptDpapi(recovered);
+                            if (reencrypted is not null)
+                            {
+                                _settings.Set("tmdb_credential_dpapi", reencrypted, DateTimeOffset.UtcNow);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Failed to migrate DPAPI credential to entropy: {ex.Message}");
+                        }
+                    }
+
+                    try { Write(recovered); }
+                    catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to restore native credential: {ex.Message}"); }
                     return recovered;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to read DPAPI credential: {ex.Message}");
+            }
         }
 
         return null;
@@ -147,7 +168,7 @@ public sealed class WindowsTmdbCredentialStore : ITmdbCredentialStore
                     var cipher = EncryptDpapi(credential);
                     if (cipher is not null) _settings.Set("tmdb_credential_dpapi", cipher, DateTimeOffset.UtcNow);
                 }
-                catch { }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to save DPAPI backup in settings: {ex.Message}"); }
             }
         }
         finally
@@ -165,7 +186,8 @@ public sealed class WindowsTmdbCredentialStore : ITmdbCredentialStore
     {
         if (_settings is not null)
         {
-            try { _settings.Delete("tmdb_credential_dpapi"); } catch { }
+            try { _settings.Delete("tmdb_credential_dpapi"); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to delete DPAPI backup from settings: {ex.Message}"); }
         }
         if (!CredDeleteW(_target, Generic, 0) && Marshal.GetLastWin32Error() != NotFound)
             throw StorageError();
@@ -175,28 +197,49 @@ public sealed class WindowsTmdbCredentialStore : ITmdbCredentialStore
         }
     }
 
+    private static readonly byte[] Entropy = "TBDMovies.Tmdb.DPAPI.Entropy.v1"u8.ToArray();
+
     private static string? EncryptDpapi(string plain)
     {
         if (string.IsNullOrEmpty(plain)) return null;
         try
         {
             var raw = Encoding.UTF8.GetBytes(plain);
-            var enc = ProtectedData.Protect(raw, null, DataProtectionScope.CurrentUser);
+            var enc = ProtectedData.Protect(raw, Entropy, DataProtectionScope.CurrentUser);
             return Convert.ToBase64String(enc);
         }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"DPAPI encryption failed: {ex.Message}");
+            return null;
+        }
     }
 
-    private static string? DecryptDpapi(string? cipher)
+    private static string? DecryptDpapi(string? cipher, out bool migratedFromLegacy)
     {
+        migratedFromLegacy = false;
         if (string.IsNullOrWhiteSpace(cipher)) return null;
         try
         {
             var raw = Convert.FromBase64String(cipher);
-            var dec = ProtectedData.Unprotect(raw, null, DataProtectionScope.CurrentUser);
-            return Encoding.UTF8.GetString(dec);
+            try
+            {
+                var dec = ProtectedData.Unprotect(raw, Entropy, DataProtectionScope.CurrentUser);
+                return Encoding.UTF8.GetString(dec);
+            }
+            catch (CryptographicException)
+            {
+                // Fallback to unprotect without entropy
+                var dec = ProtectedData.Unprotect(raw, null, DataProtectionScope.CurrentUser);
+                migratedFromLegacy = true;
+                return Encoding.UTF8.GetString(dec);
+            }
         }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"DPAPI decryption failed: {ex.Message}");
+            return null;
+        }
     }
 
     private static InvalidOperationException StorageError() => new("Credential storage unavailable.");

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -34,4 +34,23 @@ public interface ITraktDataClient
         string clientId,
         string accessToken,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Adds items to the user's watched history via POST sync/history.
+    /// </summary>
+    Task<JsonElement> AddHistoryAsync(
+        TraktSyncHistoryPayload payload,
+        string clientId,
+        string accessToken,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes items from the user's watched history via POST sync/history/remove.
+    /// </summary>
+    Task<JsonElement> RemoveHistoryAsync(
+        TraktSyncHistoryPayload payload,
+        string clientId,
+        string accessToken,
+        CancellationToken cancellationToken = default);
 }
+

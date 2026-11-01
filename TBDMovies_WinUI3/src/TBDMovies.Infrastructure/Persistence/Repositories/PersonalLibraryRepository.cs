@@ -1,4 +1,4 @@
-﻿using TBDMovies.Application.Repositories;
+using TBDMovies.Application.Repositories;
 using TBDMovies.Domain.Library.Personal;
 using Microsoft.Data.Sqlite;
 
@@ -203,7 +203,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
               LEFT JOIN watch_events we ON we.movie_id = m.id
              WHERE {condition}
              GROUP BY m.id, ps.preference, ps.watchlist_added_at
-             ORDER BY datetime(m.date_added) DESC, m.id DESC
+             ORDER BY m.date_added DESC, m.id DESC
              LIMIT $limit OFFSET $offset;
             """;
         command.Parameters.AddWithValue("$limit", limit);

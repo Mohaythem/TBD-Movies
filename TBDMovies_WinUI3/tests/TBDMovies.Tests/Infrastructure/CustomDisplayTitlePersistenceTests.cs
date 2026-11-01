@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using TBDMovies.Application.Contracts;
@@ -45,12 +45,12 @@ public sealed class CustomDisplayTitlePersistenceTests : IDisposable
     [Fact]
     public void DatabaseMigrator_UpgradesToVersion19_WithCustomDisplayTitleColumns()
     {
-        Assert.Equal(19, DatabaseMigrator.LatestVersion);
+        Assert.True(DatabaseMigrator.LatestVersion >= 19);
 
         using var connection = Open();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "PRAGMA user_version;";
-        Assert.Equal(19L, Convert.ToInt64(cmd.ExecuteScalar()));
+        Assert.Equal((long)DatabaseMigrator.LatestVersion, Convert.ToInt64(cmd.ExecuteScalar()));
 
         // Verify column exists on movies table
         cmd.CommandText = "SELECT custom_display_title FROM movies LIMIT 0;";

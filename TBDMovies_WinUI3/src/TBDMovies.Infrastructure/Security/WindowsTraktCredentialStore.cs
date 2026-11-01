@@ -50,7 +50,8 @@ public sealed class WindowsTraktCredentialStore : ITraktCredentialStore
             nativePayload = TryReadTarget(_legacyTarget);
             if (nativePayload is not null)
             {
-                try { Write(nativePayload); } catch { }
+                try { Write(nativePayload); }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to migrate legacy Trakt native target: {ex.Message}"); }
             }
         }
 
@@ -67,7 +68,7 @@ public sealed class WindowsTraktCredentialStore : ITraktCredentialStore
                         if (cipher is not null) _settings.Set("trakt_credential_dpapi", cipher, DateTimeOffset.UtcNow);
                     }
                 }
-                catch { }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to backup Trakt token to DPAPI: {ex.Message}"); }
             }
             return nativePayload;
         }
@@ -77,18 +78,38 @@ public sealed class WindowsTraktCredentialStore : ITraktCredentialStore
             try
             {
                 var cipher = _settings.Get("trakt_credential_dpapi");
-                var recoveredJson = DecryptDpapi(cipher);
+                var recoveredJson = DecryptDpapi(cipher, out var migratedFromLegacy);
                 if (!string.IsNullOrWhiteSpace(recoveredJson))
                 {
                     var recovered = JsonSerializer.Deserialize<TraktCredentialPayload>(recoveredJson);
                     if (recovered is not null)
                     {
-                        try { Write(recovered); } catch { }
+                        if (migratedFromLegacy)
+                        {
+                            try
+                            {
+                                var reencrypted = EncryptDpapi(recoveredJson);
+                                if (reencrypted is not null)
+                                {
+                                    _settings.Set("trakt_credential_dpapi", reencrypted, DateTimeOffset.UtcNow);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Failed to migrate Trakt DPAPI credential to entropy: {ex.Message}");
+                            }
+                        }
+
+                        try { Write(recovered); }
+                        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to restore native Trakt credential: {ex.Message}"); }
                         return recovered;
                     }
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to read Trakt DPAPI credential: {ex.Message}");
+            }
         }
 
         return null;
@@ -166,7 +187,7 @@ public sealed class WindowsTraktCredentialStore : ITraktCredentialStore
                     var cipher = EncryptDpapi(json);
                     if (cipher is not null) _settings.Set("trakt_credential_dpapi", cipher, DateTimeOffset.UtcNow);
                 }
-                catch { }
+                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to backup Trakt credential: {ex.Message}"); }
             }
 
             // Native store roundtrip verification
@@ -191,7 +212,8 @@ public sealed class WindowsTraktCredentialStore : ITraktCredentialStore
     {
         if (_settings is not null)
         {
-            try { _settings.Delete("trakt_credential_dpapi"); } catch { }
+            try { _settings.Delete("trakt_credential_dpapi"); }
+            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to delete DPAPI backup: {ex.Message}"); }
         }
         if (!CredDeleteW(_target, Generic, 0) && Marshal.GetLastWin32Error() != NotFound)
             throw StorageError();
@@ -201,28 +223,49 @@ public sealed class WindowsTraktCredentialStore : ITraktCredentialStore
         }
     }
 
+    private static readonly byte[] Entropy = "TBDMovies.Trakt.DPAPI.Entropy.v1"u8.ToArray();
+
     private static string? EncryptDpapi(string plain)
     {
         if (string.IsNullOrEmpty(plain)) return null;
         try
         {
             var raw = Encoding.UTF8.GetBytes(plain);
-            var enc = ProtectedData.Protect(raw, null, DataProtectionScope.CurrentUser);
+            var enc = ProtectedData.Protect(raw, Entropy, DataProtectionScope.CurrentUser);
             return Convert.ToBase64String(enc);
         }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"DPAPI encryption failed: {ex.Message}");
+            return null;
+        }
     }
 
-    private static string? DecryptDpapi(string? cipher)
+    private static string? DecryptDpapi(string? cipher, out bool migratedFromLegacy)
     {
+        migratedFromLegacy = false;
         if (string.IsNullOrWhiteSpace(cipher)) return null;
         try
         {
             var raw = Convert.FromBase64String(cipher);
-            var dec = ProtectedData.Unprotect(raw, null, DataProtectionScope.CurrentUser);
-            return Encoding.UTF8.GetString(dec);
+            try
+            {
+                var dec = ProtectedData.Unprotect(raw, Entropy, DataProtectionScope.CurrentUser);
+                return Encoding.UTF8.GetString(dec);
+            }
+            catch (CryptographicException)
+            {
+                // Fallback to unprotect without entropy
+                var dec = ProtectedData.Unprotect(raw, null, DataProtectionScope.CurrentUser);
+                migratedFromLegacy = true;
+                return Encoding.UTF8.GetString(dec);
+            }
         }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"DPAPI decryption failed: {ex.Message}");
+            return null;
+        }
     }
 
     private static InvalidOperationException StorageError() => new("Credential storage unavailable.");

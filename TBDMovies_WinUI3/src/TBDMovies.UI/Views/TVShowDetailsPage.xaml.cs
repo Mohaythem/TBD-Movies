@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using TBDMovies.UI.Models;
 using TBDMovies.Application.Services;
 using TBDMovies.UI.Services;
@@ -559,17 +559,50 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         if (episode is null || !episode.HasLocalFile || episode.Id <= 0) return;
         try
         {
+            var season = _show.Seasons.FirstOrDefault(s => s.Episodes.Any(ep => ep.Id == episode.Id));
+            int? showTmdbId = (int.TryParse(_show.ExternalId, out var parsedId) && parsedId > 0 ? (int?)parsedId : null) ?? AppServices.GetShowTmdbId(_show.Id);
+
             if (row.Watched)
             {
                 AppServices.WatchHistory.RemoveEpisodeWatch(episode.Id);
                 row.Watched = false;
                 UpdateShowEpisodeWatched(episode.Id, isWatched: false);
+
+                if (showTmdbId is > 0 && season is not null && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await trakt.PushEpisodeWatchedAsync(showTmdbId.Value, season.Number, episode.Number, DateTimeOffset.UtcNow, isWatched: false).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[TVShowDetailsPage] Trakt PushEpisodeWatchedAsync(false) failed: {ex.Message}");
+                        }
+                    });
+                }
             }
             else
             {
                 AppServices.WatchHistory.RecordEpisodeWatch(episode.Id);
                 row.Watched = true;
                 UpdateShowEpisodeWatched(episode.Id, isWatched: true);
+
+                if (showTmdbId is > 0 && season is not null && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await trakt.PushEpisodeWatchedAsync(showTmdbId.Value, season.Number, episode.Number, DateTimeOffset.UtcNow, isWatched: true).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[TVShowDetailsPage] Trakt PushEpisodeWatchedAsync(true) failed: {ex.Message}");
+                        }
+                    });
+                }
             }
         }
         catch (Exception error)

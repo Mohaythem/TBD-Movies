@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
@@ -422,6 +422,22 @@ public sealed class TraktAuthClientTests : IDisposable
         Assert.Equal("[REDACTED_TRAKT_CREDENTIAL]", creds.ToString());
         Assert.DoesNotContain("secret-access-token", tokens.ToString());
         Assert.DoesNotContain("secret-refresh-token", creds.ToString());
+    }
+
+    [Fact]
+    public async Task RevokeTokenAsync_SendsExpectedPayloadAndHeaders()
+    {
+        _mockHandler.ResponseFactory = req => new HttpResponseMessage(HttpStatusCode.OK);
+
+        await _client.RevokeTokenAsync("fixture-client-id", "fixture-token-to-revoke");
+
+        var req = Assert.Single(_mockHandler.Requests);
+        Assert.Equal(HttpMethod.Post, req.Method);
+        Assert.Equal("https://auth.trakt.tv/oauth/revoke", req.Uri?.ToString());
+        Assert.Equal("fixture-client-id", req.ApiKey);
+        Assert.Equal("2", req.ApiVersion);
+        Assert.Contains("fixture-token-to-revoke", req.Body);
+        Assert.Contains("fixture-client-id", req.Body);
     }
 
     private sealed class MockHttpMessageHandler : HttpMessageHandler

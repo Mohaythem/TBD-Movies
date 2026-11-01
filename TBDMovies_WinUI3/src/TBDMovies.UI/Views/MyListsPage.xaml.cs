@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using TBDMovies.Application.Dto;
 using TBDMovies.Domain.Library.Personal;
 using TBDMovies.UI.Models;
@@ -63,6 +63,8 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
     public void Activate()
     {
         _traktActive = true;
+        AppServices.TraktSyncCompleted -= OnTraktSyncCompleted;
+        AppServices.TraktSyncCompleted += OnTraktSyncCompleted;
         Invalidate();
         RebuildTabs();
         Refresh();
@@ -286,6 +288,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         }
 
         var searching = _query.Length > 0;
+        EmptyState.Kind = searching ? Controls.EmptyStateKind.NoResults : Controls.EmptyStateKind.EmptyLists;
         EmptyState.Title = LocalizationService.Text(searching ? "NoResults" : "ListEmpty");
         EmptyState.Message = LocalizationService.Text(
             searching ? "NoResultsHelp" : isCustom ? "CustomListEmptyHelp" : "ListEmptyHelp");
@@ -357,6 +360,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         if (count != 0) return;
         if (_activityReadError is { } error)
         {
+            EmptyState.Kind = Controls.EmptyStateKind.Default;
             EmptyState.Title = LocalizationService.Text("Failed");
             EmptyState.Message = MetadataErrorText.For(error);
             EmptyState.ActionText = LocalizationService.Text("Retry");
@@ -365,6 +369,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         }
         var searching = _query.Length > 0;
         var continuing = _selectedKey == "continue-watching";
+        EmptyState.Kind = searching ? Controls.EmptyStateKind.NoResults : Controls.EmptyStateKind.EmptyLists;
         EmptyState.Title = LocalizationService.Text(searching ? "NoResults" : continuing ? "NothingToContinue" : "NothingWatched");
         EmptyState.Message = LocalizationService.Text(searching ? "NoResultsHelp" : continuing ? "NothingToContinueHelp" : "NothingWatchedHelp");
         EmptyState.ActionText = searching ? LocalizationService.Text("ClearSearch") : string.Empty;
@@ -906,5 +911,33 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         };
 
         await ContentDialogCoordinator.ShowAsync(dialog);
+    }
+
+    private void ListItemsPanel_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is ItemsWrapGrid panel && double.IsFinite(e.NewSize.Width) && e.NewSize.Width > 0)
+        {
+            var metrics = LibraryPosterLayout.Calculate(e.NewSize.Width);
+            if (!double.IsFinite(panel.ItemWidth) || Math.Abs(panel.ItemWidth - metrics.CellWidth) > 0.5)
+            {
+                panel.ItemWidth = metrics.CellWidth;
+            }
+            if (!double.IsFinite(panel.ItemHeight) || Math.Abs(panel.ItemHeight - metrics.MovieCellHeight) > 0.5)
+            {
+                panel.ItemHeight = metrics.MovieCellHeight;
+            }
+        }
+    }
+
+    private void PosterSurface_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is FrameworkElement surface && double.IsFinite(e.NewSize.Width) && e.NewSize.Width > 0)
+        {
+            var height = e.NewSize.Width * LibraryPosterLayout.AspectRatio;
+            if (!double.IsFinite(surface.Height) || Math.Abs(surface.Height - height) > 0.5)
+            {
+                surface.Height = height;
+            }
+        }
     }
 }

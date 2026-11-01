@@ -1,10 +1,8 @@
 # Generates the TBD Movies application icon (multi-size .ico) from code, so the icon is reproducible
 # and versioned as source rather than a checked-in binary of unknown origin.
 #
-# Design: a Windows 11 style rounded-square tile in the TBD Movies blue accent, with three white
-# left-aligned rounded bars of decreasing width - a "sorted list" mark that reads as a media library
-# and matches the product name (sort). Minimal, geometric, legible at 16 px, and it works on both
-# light and dark shells because the mark sits on its own opaque accent tile.
+# Design: Unified Cinema Gold & Obsidian Mica rounded tile base (#18222D / #111822) with a refined
+# Cinema Gold accent frame (#F59E0B) and central Play Prism in Cinema Gold (#F59E0B / #D97706).
 #
 # Output: a single .ico containing 16, 24, 32, 48, 64, 128 and 256 px frames (PNG-compressed, which
 # Windows 10/11 - the app's target - render for the exe, shortcuts and Add/Remove Programs).
@@ -25,8 +23,8 @@ function New-Frame([int]$s) {
     $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
     $g.Clear([System.Drawing.Color]::Transparent)
 
-    # Rounded-square tile with a blue accent gradient (matches the app's accent direction).
-    $pad = [Math]::Max(1, [int]($s * 0.06))
+    # Rounded-square tile with deep obsidian mica gradient (#18222D to #111822)
+    $pad = [Math]::Max(1.0, [float]($s * 0.06))
     $rect = New-Object System.Drawing.RectangleF($pad, $pad, ($s - 2*$pad), ($s - 2*$pad))
     $radius = $rect.Width * 0.22
     $path = New-Object System.Drawing.Drawing2D.GraphicsPath
@@ -36,37 +34,92 @@ function New-Frame([int]$s) {
     $path.AddArc($rect.Right - $d, $rect.Bottom - $d, $d, $d, 0, 90)
     $path.AddArc($rect.X, $rect.Bottom - $d, $d, $d, 90, 90)
     $path.CloseFigure()
-    $c1 = [System.Drawing.Color]::FromArgb(255, 59, 147, 255)   # #3B93FF
-    $c2 = [System.Drawing.Color]::FromArgb(255, 10, 91, 208)    # #0A5BD0
-    $brush = New-Object System.Drawing.Drawing2D.LinearGradientBrush($rect, $c1, $c2, 55.0)
-    $g.FillPath($brush, $path)
 
-    # Three left-aligned rounded bars of decreasing width = a sorted media list.
-    $white = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(255, 255, 255, 255))
-    $barH = $rect.Height * 0.135
-    $gap = $rect.Height * 0.095
-    $left = $rect.X + $rect.Width * 0.22
-    $totalH = 3 * $barH + 2 * $gap
-    $top = $rect.Y + ($rect.Height - $totalH) / 2
-    $widths = 0.56, 0.42, 0.28
-    for ($i = 0; $i -lt 3; $i++) {
-        $w = $rect.Width * $widths[$i]
-        $y = $top + $i * ($barH + $gap)
-        $r = $barH / 2
-        $bp = New-Object System.Drawing.Drawing2D.GraphicsPath
-        $bd = $r * 2
-        $bp.AddArc($left, $y, $bd, $bd, 90, 180)
-        $bp.AddArc($left + $w - $bd, $y, $bd, $bd, 270, 180)
-        $bp.CloseFigure()
-        $g.FillPath($white, $bp)
-        $bp.Dispose()
+    $obsidianTop = [System.Drawing.Color]::FromArgb(255, 24, 34, 45)  # #18222D
+    $obsidianBot = [System.Drawing.Color]::FromArgb(255, 17, 24, 34)  # #111822
+    $baseBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush($rect, $obsidianTop, $obsidianBot, 55.0)
+    $g.FillPath($baseBrush, $path)
+
+    # Refined Cinema Gold accent outline/frame (#F59E0B)
+    $frameWidth = [Math]::Max(1.0, [float]($s * 0.035))
+    $goldColor = [System.Drawing.Color]::FromArgb(255, 245, 158, 11)   # #F59E0B
+    $framePen = New-Object System.Drawing.Pen($goldColor, $frameWidth)
+    $framePen.Alignment = [System.Drawing.Drawing2D.PenAlignment]::Inset
+    $g.DrawPath($framePen, $path)
+
+    # Central Play Prism in Cinema Gold (#F59E0B / #D97706)
+    # Optical horizontal centering for right-pointing triangle:
+    $prismH = $rect.Height * 0.44
+    $prismW = $prismH * 0.866
+    $prismLeft = $rect.X + ($rect.Width - $prismW) * 0.5 + ($rect.Width * 0.03)
+    $prismRight = $prismLeft + $prismW
+    $prismTop = $rect.Y + ($rect.Height - $prismH) * 0.5
+    $prismBottom = $prismTop + $prismH
+    $prismMidY = $rect.Y + $rect.Height * 0.5
+
+    $pTop = New-Object System.Drawing.PointF($prismLeft, $prismTop)
+    $pRight = New-Object System.Drawing.PointF($prismRight, $prismMidY)
+    $pBottom = New-Object System.Drawing.PointF($prismLeft, $prismBottom)
+
+    $goldLight = [System.Drawing.Color]::FromArgb(255, 251, 191, 36)  # #FBBF24
+    $goldMid   = [System.Drawing.Color]::FromArgb(255, 245, 158, 11)  # #F59E0B
+    $goldDark  = [System.Drawing.Color]::FromArgb(255, 217, 119, 6)   # #D97706
+
+    if ($s -le 24) {
+        # At very small sizes, render a unified Cinema Gold gradient triangle for maximum clarity
+        $triPath = New-Object System.Drawing.Drawing2D.GraphicsPath
+        $triPath.AddLine($pTop, $pRight)
+        $triPath.AddLine($pRight, $pBottom)
+        $triPath.CloseFigure()
+        $triRect = New-Object System.Drawing.RectangleF($prismLeft, $prismTop, $prismW, $prismH)
+        $triBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush($triRect, $goldLight, $goldDark, 45.0)
+        $g.FillPath($triBrush, $triPath)
+        $triBrush.Dispose()
+        $triPath.Dispose()
+    } else {
+        # Faceted Play Prism with jewel-like cinema lighting
+        $pCenter = New-Object System.Drawing.PointF(($prismLeft + $prismW * 0.36), $prismMidY)
+
+        # Top facet (Light reflection)
+        $fTop = New-Object System.Drawing.Drawing2D.GraphicsPath
+        $fTop.AddLine($pTop, $pRight)
+        $fTop.AddLine($pRight, $pCenter)
+        $fTop.CloseFigure()
+        $bTop = New-Object System.Drawing.SolidBrush($goldLight)
+        $g.FillPath($bTop, $fTop)
+        $bTop.Dispose(); $fTop.Dispose()
+
+        # Bottom facet (Deep reflection)
+        $fBot = New-Object System.Drawing.Drawing2D.GraphicsPath
+        $fBot.AddLine($pBottom, $pRight)
+        $fBot.AddLine($pRight, $pCenter)
+        $fBot.CloseFigure()
+        $bBot = New-Object System.Drawing.SolidBrush($goldDark)
+        $g.FillPath($bBot, $fBot)
+        $bBot.Dispose(); $fBot.Dispose()
+
+        # Left base facet (Mid reflection)
+        $fLeft = New-Object System.Drawing.Drawing2D.GraphicsPath
+        $fLeft.AddLine($pTop, $pBottom)
+        $fLeft.AddLine($pBottom, $pCenter)
+        $fLeft.CloseFigure()
+        $bLeft = New-Object System.Drawing.SolidBrush($goldMid)
+        $g.FillPath($bLeft, $fLeft)
+        $bLeft.Dispose(); $fLeft.Dispose()
+
+        # Refined seam & edge pen
+        $edgePen = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(80, 255, 255, 255), [Math]::Max(0.5, [float]($s * 0.015)))
+        $g.DrawLine($edgePen, $pCenter, $pRight)
+        $edgePen.Dispose()
     }
 
+    $framePen.Dispose()
+    $baseBrush.Dispose()
+    $path.Dispose()
     $g.Dispose()
     return $bmp
 }
 
-# PLACEHOLDER_PACK
 # Encode each frame as PNG, then assemble a standard multi-frame .ico (ICONDIR + entries + PNG blobs).
 $pngs = @()
 foreach ($s in $sizes) {
@@ -104,4 +157,3 @@ for ($i = 0; $i -lt $count; $i++) {
 foreach ($png in $pngs) { $bw.Write($png) }
 $bw.Flush(); $bw.Close(); $fs.Close()
 Write-Host ("Wrote {0} ({1} frames)" -f $OutPath, $count)
-

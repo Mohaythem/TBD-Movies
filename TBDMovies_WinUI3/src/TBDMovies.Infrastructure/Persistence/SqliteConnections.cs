@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 
 namespace TBDMovies.Infrastructure.Persistence;
 
@@ -12,8 +12,11 @@ internal static class SqliteConnections
         command.CommandText = """
             PRAGMA foreign_keys = ON;
             PRAGMA journal_mode = WAL;
-            PRAGMA synchronous = FULL;
-            PRAGMA busy_timeout = 5000;
+            PRAGMA synchronous = NORMAL;
+            PRAGMA busy_timeout = 10000;
+            PRAGMA cache_size = -64000;
+            PRAGMA mmap_size = 268435456;
+            PRAGMA temp_store = MEMORY;
             """;
         command.ExecuteNonQuery();
         return connection;

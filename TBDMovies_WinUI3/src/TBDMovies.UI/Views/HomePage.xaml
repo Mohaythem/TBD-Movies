@@ -1,4 +1,4 @@
-﻿<Page
+<Page
     x:Class="TBDMovies.UI.Views.HomePage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -111,12 +111,12 @@
                                                            Visibility="{x:Bind PosterVisibility, Mode=OneWay}"
                                                            Stretch="Uniform" />
                                                     <Border Background="{ThemeResource LandscapeCardScrimBrush}" />
-                                                    <Grid Margin="14,68,14,14" ColumnSpacing="12" VerticalAlignment="Bottom">
+                                                    <Grid Margin="16,68,16,16" ColumnSpacing="12" VerticalAlignment="Bottom">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="*" />
                                                             <ColumnDefinition Width="Auto" />
                                                         </Grid.ColumnDefinitions>
-                                                        <StackPanel Spacing="3">
+                                                        <StackPanel Spacing="4">
                                                             <TextBlock Foreground="{ThemeResource LandscapeCardTextBrush}"
                                                                        Style="{StaticResource BodyStrongTextBlockStyle}"
                                                                        Text="{x:Bind Title}" MaxLines="2"
@@ -196,8 +196,8 @@
                                                     <Image Height="196" Source="{x:Bind ArtworkSource, Mode=OneWay}"
                                                            Stretch="UniformToFill" />
                                                     <Border Background="{ThemeResource LandscapeCardScrimBrush}" />
-                                                    <Grid Margin="14,68,14,14" VerticalAlignment="Bottom">
-                                                        <StackPanel Spacing="3">
+                                                    <Grid Margin="16,68,16,16" VerticalAlignment="Bottom">
+                                                        <StackPanel Spacing="4">
                                                             <TextBlock Foreground="{ThemeResource LandscapeCardTextBrush}"
                                                                        Style="{StaticResource BodyStrongTextBlockStyle}"
                                                                        Text="{x:Bind Title}" MaxLines="2"

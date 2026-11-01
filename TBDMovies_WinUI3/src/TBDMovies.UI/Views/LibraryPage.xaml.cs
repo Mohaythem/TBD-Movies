@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Threading.Tasks;
 using TBDMovies.UI.Models;
 using TBDMovies.UI.Services;
@@ -410,6 +410,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         }
 
         var filtered = _query.Length > 0 || _availability != "all";
+        EmptyState.Kind = filtered ? Controls.EmptyStateKind.NoResults : Controls.EmptyStateKind.EmptyLibrary;
         EmptyState.Title = LocalizationService.Text(filtered ? "NoResults" : "EmptyLibrary");
         EmptyState.Message = LocalizationService.Text(filtered ? "NoResultsHelp" : "EmptyLibraryHelp");
         EmptyState.ActionText = LocalizationService.Text("ClearSearch");

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using TBDMovies.Application.Repositories;
 using TBDMovies.Domain.Library.Movies;
@@ -15,7 +15,7 @@ internal sealed class PerCallMovieRepository(ICatalogUnitOfWorkFactory factory) 
 {
     private T Read<T>(Func<IMovieRepository, T> read)
     {
-        using var work = factory.Begin();
+        using var work = factory.BeginReadOnly();
         return read(work.Movies);
     }
 
@@ -73,7 +73,7 @@ internal sealed class PerCallMediaFileRepository(ICatalogUnitOfWorkFactory facto
 {
     private T Read<T>(Func<IMediaFileRepository, T> read)
     {
-        using var work = factory.Begin();
+        using var work = factory.BeginReadOnly();
         return read(work.MediaFiles);
     }
 
@@ -124,7 +124,7 @@ internal sealed class PerCallTvShowRepository(ICatalogUnitOfWorkFactory factory)
 {
     private T Read<T>(Func<TBDMovies.Application.Repositories.ITvShowRepository, T> read)
     {
-        using var work = factory.Begin();
+        using var work = factory.BeginReadOnly();
         return read(work.TvShows);
     }
 
@@ -190,7 +190,7 @@ internal sealed class PerCallTvSeasonRepository(ICatalogUnitOfWorkFactory factor
 {
     private T Read<T>(Func<TBDMovies.Application.Repositories.ITvSeasonRepository, T> read)
     {
-        using var work = factory.Begin();
+        using var work = factory.BeginReadOnly();
         return read(work.TvSeasons);
     }
 
@@ -240,7 +240,7 @@ internal sealed class PerCallTvEpisodeRepository(ICatalogUnitOfWorkFactory facto
 {
     private T Read<T>(Func<TBDMovies.Application.Repositories.ITvEpisodeRepository, T> read)
     {
-        using var work = factory.Begin();
+        using var work = factory.BeginReadOnly();
         return read(work.TvEpisodes);
     }
 

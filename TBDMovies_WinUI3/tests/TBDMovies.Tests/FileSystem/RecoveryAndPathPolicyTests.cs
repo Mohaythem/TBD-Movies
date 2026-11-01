@@ -1,4 +1,4 @@
-﻿using TBDMovies.Domain.Core.Operations;
+using TBDMovies.Domain.Core.Operations;
 using TBDMovies.FileSystem.Operations;
 using TBDMovies.FileSystem.Safety;
 using TBDMovies.Infrastructure.Persistence.Migrations;
@@ -295,6 +295,41 @@ public sealed class RecoveryAndPathPolicyTests : IDisposable
 
         var stale = coordinator.DetectStaleTempFiles([_directory]);
         Assert.Contains(stale, item => item.FileName == ".other.mkv.tbdmovies-test999.tmp");
+    }
+
+    [Theory]
+    [InlineData("CON")]
+    [InlineData("PRN")]
+    [InlineData("AUX")]
+    [InlineData("NUL")]
+    [InlineData("COM1")]
+    [InlineData("COM9")]
+    [InlineData("LPT1")]
+    [InlineData("LPT9")]
+    [InlineData("con.mkv")]
+    [InlineData("aux.txt")]
+    [InlineData("NUL.dat")]
+    [InlineData("com3.mp4")]
+    public void PathPolicy_RejectsDosDeviceNames(string dosDeviceName)
+    {
+        var policy = new PathPolicy([_directory]);
+        var invalidPath = Path.Combine(_directory, dosDeviceName);
+
+        Assert.Throws<UnsafePathException>(() =>
+            policy.ValidatePlan(Create("valid.mkv", "valid"), invalidPath, OperationType.Move));
+    }
+
+    [Theory]
+    [InlineData("valid.mkv:stream")]
+    [InlineData("valid.mkv::$DATA")]
+    [InlineData("folder:stream")]
+    public void PathPolicy_RejectsNtfsAlternateDataStreams(string adsName)
+    {
+        var policy = new PathPolicy([_directory]);
+        var adsPath = Path.Combine(_directory, adsName);
+
+        Assert.Throws<UnsafePathException>(() =>
+            policy.ValidatePlan(Create("valid_src.mkv", "valid"), adsPath, OperationType.Move));
     }
 
     private string Create(string name, string contents)

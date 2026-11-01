@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -1407,6 +1407,16 @@ public sealed class TraktSyncCoordinatorTests : IDisposable
             }
 
             return JsonDocument.Parse("[]").RootElement;
+        }
+
+        public Task<JsonElement> AddHistoryAsync(TraktSyncHistoryPayload payload, string clientId, string accessToken, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(JsonDocument.Parse("{}").RootElement);
+        }
+
+        public Task<JsonElement> RemoveHistoryAsync(TraktSyncHistoryPayload payload, string clientId, string accessToken, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(JsonDocument.Parse("{}").RootElement);
         }
     }
 

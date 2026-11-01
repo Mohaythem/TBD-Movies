@@ -1,4 +1,4 @@
-﻿using System.Collections.Immutable;
+using System.Collections.Immutable;
 using System.Text.Json;
 using TBDMovies.Application.Repositories;
 using TBDMovies.Domain.Library.Movies;
@@ -97,7 +97,7 @@ public sealed class TvShowRepository(SqliteConnection connection, SqliteTransact
     public IReadOnlyList<TvShow> ListAll()
     {
         using var command = Command(
-            $"SELECT {Columns} FROM tv_shows ORDER BY datetime(date_added) DESC, id DESC;");
+            $"SELECT {Columns} FROM tv_shows ORDER BY date_added DESC, id DESC;");
         return ReadMany(command);
     }
 
@@ -128,7 +128,7 @@ public sealed class TvShowRepository(SqliteConnection connection, SqliteTransact
               LEFT JOIN tv_seasons s ON s.show_id = sh.id
               LEFT JOIN episode_availability e ON e.season_id = s.id
              GROUP BY sh.id
-             ORDER BY datetime(sh.date_added) DESC, sh.id DESC;
+             ORDER BY sh.date_added DESC, sh.id DESC;
             """);
         using var reader = command.ExecuteReader();
         var result = new List<TvShowSummary>();

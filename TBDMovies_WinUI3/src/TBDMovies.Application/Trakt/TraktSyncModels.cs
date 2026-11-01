@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace TBDMovies.Application.Trakt;
@@ -80,3 +80,54 @@ public sealed class TraktAccountMismatchException : TraktSyncException
 {
     public TraktAccountMismatchException(string message) : base(message) { }
 }
+
+/// <summary>
+/// Provider identifiers used for remote Trakt sync operations.
+/// </summary>
+public sealed record TraktSyncIds(
+    [property: System.Text.Json.Serialization.JsonPropertyName("tmdb")] int? Tmdb = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("trakt")] long? Trakt = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("imdb")] string? Imdb = null);
+
+/// <summary>
+/// Movie item payload for Trakt history synchronization.
+/// </summary>
+public sealed record TraktSyncMovieItem(
+    [property: System.Text.Json.Serialization.JsonPropertyName("ids")] TraktSyncIds Ids,
+    [property: System.Text.Json.Serialization.JsonPropertyName("watched_at")] DateTimeOffset? WatchedAt = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("title")] string? Title = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("year")] int? Year = null);
+
+/// <summary>
+/// Episode item payload for Trakt history synchronization.
+/// </summary>
+public sealed record TraktSyncEpisodeItem(
+    [property: System.Text.Json.Serialization.JsonPropertyName("number")] int? Number = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("watched_at")] DateTimeOffset? WatchedAt = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("ids")] TraktSyncIds? Ids = null);
+
+/// <summary>
+/// Season item container for Trakt show history synchronization.
+/// </summary>
+public sealed record TraktSyncSeasonItem(
+    [property: System.Text.Json.Serialization.JsonPropertyName("number")] int Number,
+    [property: System.Text.Json.Serialization.JsonPropertyName("episodes")] IReadOnlyList<TraktSyncEpisodeItem>? Episodes = null);
+
+/// <summary>
+/// Show item payload for Trakt history synchronization.
+/// </summary>
+public sealed record TraktSyncShowItem(
+    [property: System.Text.Json.Serialization.JsonPropertyName("ids")] TraktSyncIds Ids,
+    [property: System.Text.Json.Serialization.JsonPropertyName("seasons")] IReadOnlyList<TraktSyncSeasonItem>? Seasons = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("watched_at")] DateTimeOffset? WatchedAt = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("title")] string? Title = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("year")] int? Year = null);
+
+/// <summary>
+/// Root payload sent to POST /sync/history and POST /sync/history/remove.
+/// </summary>
+public sealed record TraktSyncHistoryPayload(
+    [property: System.Text.Json.Serialization.JsonPropertyName("movies")] IReadOnlyList<TraktSyncMovieItem>? Movies = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("shows")] IReadOnlyList<TraktSyncShowItem>? Shows = null,
+    [property: System.Text.Json.Serialization.JsonPropertyName("episodes")] IReadOnlyList<TraktSyncEpisodeItem>? Episodes = null);
+

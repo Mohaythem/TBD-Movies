@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using TBDMovies.Domain.Core.Operations;
 using TBDMovies.Domain.Core.Safety;
 using TBDMovies.Domain.Library.Availability;
@@ -37,6 +37,8 @@ public record PosterAsset(string ImageFormat, byte[] Content);
 public interface IPosterService
 {
     PosterAsset? LoadPoster(PosterRequest request);
+    Task<PosterAsset?> LoadPosterAsync(PosterRequest request, CancellationToken cancellationToken = default) =>
+        Task.FromResult(LoadPoster(request));
     Task<string?> EnsurePosterCachedAsync(string provider, string reference, CancellationToken cancellationToken = default) =>
         Task.FromResult<string?>(null);
     string? GetCachedPosterPath(string provider, string reference) => null;

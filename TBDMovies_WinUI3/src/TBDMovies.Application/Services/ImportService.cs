@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -51,10 +51,13 @@ public class ImportService : IImportUiActions
         return new ImportReviewSession(items);
     }
 
-    public bool IsMediaFileRegistered(string filePath)
+    public bool IsMediaFileRegistered(string filePath) => IsMediaFileRegistered(filePath, null);
+
+    public bool IsMediaFileRegistered(string filePath, ICatalogUnitOfWork? uow)
     {
-        using var uow = _uowFactory.Begin();
-        return uow.MediaFiles.GetByPath(filePath) is not null;
+        if (uow != null) return uow.MediaFiles.GetByPath(filePath) is not null;
+        using var readUow = _uowFactory.BeginReadOnly();
+        return readUow.MediaFiles.GetByPath(filePath) is not null;
     }
 
     public Task<ImportMetadataPreview> RetryMetadataAsync(
@@ -187,65 +190,62 @@ public class ImportService : IImportUiActions
                 .Distinct(StringComparer.Ordinal).Count() > 1)
             .SelectMany(g => g.Select(s => s.Item.Path)).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        var processed = 0;
-        foreach (var selection in selections)
-        {
-            // Real processed/total progress for the bulk-add UI, reported as each selected item is
-            // registered locally. This is the dominant per-item work in a large batch.
-            progress?.Invoke(new ImportProgress(processed, selections.Count));
-            ArgumentNullException.ThrowIfNull(selection);
-            var item = selection.Item;
-            if (selection.IsExcluded)
-            {
-                results.Add(new ImportItemResult(item.Path, item.Classification, false, false,
-                    Status: ImportItemStatus.SkippedByUser));
-                processed++;
-                continue;
-            }
-            if (cancellationToken.IsCancellationRequested) break;
-            if (conflictingTvNames.Contains(item.Path))
-            {
-                results.Add(new ImportItemResult(item.Path, item.Classification, false, false,
-                    Failure: "Conflicting metadata choices for the same local series. Review the series match.",
-                    Status: ImportItemStatus.RegistrationFailed));
-                processed++;
-                continue;
-            }
-            if (item.FileSize is not long size || item.ParsedMedia is null)
-            {
-                results.Add(new ImportItemResult(item.Path, item.Classification, false, false,
-                    Failure: "The discovered item has no verified file facts.",
-                    Status: ImportItemStatus.RegistrationFailed));
-                processed++;
-                continue;
-            }
+        const int BatchSize = 500;
+        ICatalogUnitOfWork? batchUow = null;
+        var pendingInBatch = 0;
 
-            try
+        void CommitBatch()
+        {
+            if (batchUow != null)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                // Path identity is the duplicate boundary. Check it before classification-specific
-                // registration and before any metadata work so an existing file never reaches TMDB.
-                if (IsMediaFileRegistered(item.Path))
+                batchUow.Commit();
+                batchUow.Dispose();
+                batchUow = null;
+                pendingInBatch = 0;
+            }
+        }
+
+        var processed = 0;
+        try
+        {
+            foreach (var selection in selections)
+            {
+                // Real processed/total progress for the bulk-add UI, reported as each selected item is
+                // registered locally. This is the dominant per-item work in a large batch.
+                progress?.Invoke(new ImportProgress(processed, selections.Count));
+                ArgumentNullException.ThrowIfNull(selection);
+                var item = selection.Item;
+                if (selection.IsExcluded)
                 {
-                    results.Add(new ImportItemResult(
-                        item.Path,
-                        item.Classification,
-                        Registered: true,
-                        AutoMatched: false,
-                        Status: ImportItemStatus.AlreadyInLibrary,
-                        AlreadyRegistered: true));
+                    results.Add(new ImportItemResult(item.Path, item.Classification, false, false,
+                        Status: ImportItemStatus.SkippedByUser));
+                    processed++;
+                    continue;
+                }
+                if (cancellationToken.IsCancellationRequested) break;
+                if (conflictingTvNames.Contains(item.Path))
+                {
+                    results.Add(new ImportItemResult(item.Path, item.Classification, false, false,
+                        Failure: "Conflicting metadata choices for the same local series. Review the series match.",
+                        Status: ImportItemStatus.RegistrationFailed));
+                    processed++;
+                    continue;
+                }
+                if (item.FileSize is not long size || item.ParsedMedia is null)
+                {
+                    results.Add(new ImportItemResult(item.Path, item.Classification, false, false,
+                        Failure: "The discovered item has no verified file facts.",
+                        Status: ImportItemStatus.RegistrationFailed));
+                    processed++;
                     continue;
                 }
 
-                if (item.Classification == DiscoveryClassification.MovieCandidate)
+                try
                 {
-                    _fileValidator?.Validate(item, cancellationToken);
                     cancellationToken.ThrowIfCancellationRequested();
-                    var registration = RegisterMovieImport(new ConfirmMovieImportCommand(
-                        item.Path, size, item.ParsedMedia, _clock(),
-                        !selection.LocalOnly && selection.MetadataPreview?.Status == ImportItemStatus.Matched
-                            ? selection.MetadataPreview.MovieCandidate : null));
-                    if (registration.AlreadyRegistered)
+                    // Path identity is the duplicate boundary. Check it before classification-specific
+                    // registration and before any metadata work so an existing file never reaches TMDB.
+                    if (IsMediaFileRegistered(item.Path, batchUow))
                     {
                         results.Add(new ImportItemResult(
                             item.Path,
@@ -257,136 +257,203 @@ public class ImportService : IImportUiActions
                         continue;
                     }
 
-                    var resultIndex = results.Count;
-                    var staged = selection.LocalOnly ? null : selection.MetadataPreview;
-                    var needsMetadata = registration.Movie.MetadataStatus != MetadataStatus.Ready
-                        && !(staged?.MovieCandidate is { } selected && HasSelectedMovieIdentity(registration.Movie, selected));
-                    var canAttemptMetadata = needsMetadata && _matching is not null && _metadataProvider.IsConfigured
-                        && !selection.LocalOnly && (staged is null || staged.Status == ImportItemStatus.Matched);
-                    var initialStatus = selection.LocalOnly ? ImportItemStatus.ReadyToAdd : !needsMetadata ? ImportItemStatus.Matched
-                        : staged is not null && staged.Status != ImportItemStatus.Matched ? staged.Status
-                        : canAttemptMetadata ? ImportItemStatus.Matching : ImportItemStatus.MetadataUnavailable;
-                    results.Add(new ImportItemResult(item.Path, item.Classification, true, false,
-                        MatchStatus: staged?.MatchStatus,
-                        Failure: staged?.Failure,
-                        Status: initialStatus,
-                        MetadataFailureKind: staged?.MetadataFailureKind
-                            ?? (needsMetadata && !selection.LocalOnly && !canAttemptMetadata && staged is null
-                                ? MetadataFailureKind.NotConfigured : null),
-                        AlreadyRegistered: registration.AlreadyRegistered));
-                    if (canAttemptMetadata)
+                    if (item.Classification == DiscoveryClassification.MovieCandidate)
                     {
-                        moviesPending.Add(new MovieImportWork(
-                            resultIndex,
-                            registration.Movie.Id,
-                            registration.Movie.Title,
-                            registration.Movie.Year,
-                            registration.Movie.MetadataStatus,
-                            staged));
-                    }
-                    else if (needsMetadata && !selection.LocalOnly)
-                    {
-                        if (staged?.Status is ImportItemStatus.NeedsMatch or ImportItemStatus.NoMatchFound)
+                        _fileValidator?.Validate(item, cancellationToken);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        batchUow ??= _uowFactory.Begin();
+                        var spName = $"sp_{results.Count}";
+                        batchUow.Savepoint(spName);
+                        MovieFileIngestionResult registration;
+                        try
                         {
-                            TrySetMovieStatus(registration.Movie.Id, MetadataStatus.NeedsMatch, registration.Movie.MetadataStatus);
+                            registration = RegisterMovieImport(new ConfirmMovieImportCommand(
+                                item.Path, size, item.ParsedMedia, _clock(),
+                                !selection.LocalOnly && selection.MetadataPreview?.Status == ImportItemStatus.Matched
+                                    ? selection.MetadataPreview.MovieCandidate : null), batchUow);
+                            batchUow.ReleaseSavepoint(spName);
+                            pendingInBatch++;
                         }
-                        else if (needsMetadata)
+                        catch
                         {
-                            TrySetMovieStatus(registration.Movie.Id, MetadataStatus.Failed, registration.Movie.MetadataStatus);
+                            try { batchUow.RollbackToSavepoint(spName); }
+                            catch { batchUow.Dispose(); batchUow = null; pendingInBatch = 0; }
+                            throw;
+                        }
+
+                        if (registration.AlreadyRegistered)
+                        {
+                            results.Add(new ImportItemResult(
+                                item.Path,
+                                item.Classification,
+                                Registered: true,
+                                AutoMatched: false,
+                                Status: ImportItemStatus.AlreadyInLibrary,
+                                AlreadyRegistered: true));
+                            continue;
+                        }
+
+                        var resultIndex = results.Count;
+                        var staged = selection.LocalOnly ? null : selection.MetadataPreview;
+                        var needsMetadata = registration.Movie.MetadataStatus != MetadataStatus.Ready
+                            && !(staged?.MovieCandidate is { } selected && HasSelectedMovieIdentity(registration.Movie, selected));
+                        var canAttemptMetadata = needsMetadata && _matching is not null && _metadataProvider.IsConfigured
+                            && !selection.LocalOnly && (staged is null || staged.Status == ImportItemStatus.Matched);
+                        var initialStatus = selection.LocalOnly ? ImportItemStatus.ReadyToAdd : !needsMetadata ? ImportItemStatus.Matched
+                            : staged is not null && staged.Status != ImportItemStatus.Matched ? staged.Status
+                            : canAttemptMetadata ? ImportItemStatus.Matching : ImportItemStatus.MetadataUnavailable;
+                        results.Add(new ImportItemResult(item.Path, item.Classification, true, false,
+                            MatchStatus: staged?.MatchStatus,
+                            Failure: staged?.Failure,
+                            Status: initialStatus,
+                            MetadataFailureKind: staged?.MetadataFailureKind
+                                ?? (needsMetadata && !selection.LocalOnly && !canAttemptMetadata && staged is null
+                                    ? MetadataFailureKind.NotConfigured : null),
+                            AlreadyRegistered: registration.AlreadyRegistered));
+                        if (canAttemptMetadata)
+                        {
+                            moviesPending.Add(new MovieImportWork(
+                                resultIndex,
+                                registration.Movie.Id,
+                                registration.Movie.Title,
+                                registration.Movie.Year,
+                                registration.Movie.MetadataStatus,
+                                staged));
+                        }
+                        else if (needsMetadata && !selection.LocalOnly)
+                        {
+                            CommitBatch();
+                            if (staged?.Status is ImportItemStatus.NeedsMatch or ImportItemStatus.NoMatchFound)
+                            {
+                                TrySetMovieStatus(registration.Movie.Id, MetadataStatus.NeedsMatch, registration.Movie.MetadataStatus);
+                            }
+                            else if (needsMetadata)
+                            {
+                                TrySetMovieStatus(registration.Movie.Id, MetadataStatus.Failed, registration.Movie.MetadataStatus);
+                            }
                         }
                     }
-                }
-                else if (item.Classification == DiscoveryClassification.TvEpisodeCandidate)
-                {
-                    _fileValidator?.Validate(item, cancellationToken);
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var registration = RegisterEpisodeImport(new ConfirmEpisodeImportCommand(
-                        item.Path, size, item.ParsedMedia, _clock(), selection.ExistingShowId,
-                        selection.OriginalLocalTitle, !selection.LocalOnly && selection.MetadataPreview?.Status == ImportItemStatus.Matched
-                            ? selection.MetadataPreview.TvCandidate : null));
-                    if (registration.AlreadyRegistered)
+                    else if (item.Classification == DiscoveryClassification.TvEpisodeCandidate)
                     {
-                        results.Add(new ImportItemResult(
-                            item.Path,
-                            item.Classification,
-                            Registered: true,
-                            AutoMatched: false,
-                            Status: ImportItemStatus.AlreadyInLibrary,
-                            AlreadyRegistered: true));
-                        continue;
-                    }
+                        _fileValidator?.Validate(item, cancellationToken);
+                        cancellationToken.ThrowIfCancellationRequested();
+                        batchUow ??= _uowFactory.Begin();
+                        var spName = $"sp_{results.Count}";
+                        batchUow.Savepoint(spName);
+                        EpisodeFileIngestionResult registration;
+                        try
+                        {
+                            registration = RegisterEpisodeImport(new ConfirmEpisodeImportCommand(
+                                item.Path, size, item.ParsedMedia, _clock(), selection.ExistingShowId,
+                                selection.OriginalLocalTitle, !selection.LocalOnly && selection.MetadataPreview?.Status == ImportItemStatus.Matched
+                                    ? selection.MetadataPreview.TvCandidate : null), batchUow);
+                            batchUow.ReleaseSavepoint(spName);
+                            pendingInBatch++;
+                        }
+                        catch
+                        {
+                            try { batchUow.RollbackToSavepoint(spName); }
+                            catch { batchUow.Dispose(); batchUow = null; pendingInBatch = 0; }
+                            throw;
+                        }
 
-                    var resultIndex = results.Count;
-                    var requiresMatch = selection.ExistingShowId is null && registration.Show.MetadataStatus != MetadataStatus.Ready;
-                    var requiresRefresh = selection.ExistingShowId is null && !registration.AlreadyRegistered && !requiresMatch;
-                    var needsMetadata = requiresMatch || requiresRefresh;
-                    var staged = selection.LocalOnly ? null : selection.MetadataPreview;
-                    var canAttemptMetadata = !selection.LocalOnly && selection.ExistingShowId is null
-                        && needsMetadata && _matching is not null && _metadataProvider.IsConfigured
-                        && (staged is null || staged.Status == ImportItemStatus.Matched);
-                    var initialStatus = selection.LocalOnly ? ImportItemStatus.ReadyToAdd : !needsMetadata ? ImportItemStatus.Matched
-                        : staged is not null && staged.Status != ImportItemStatus.Matched ? staged.Status
-                        : canAttemptMetadata ? ImportItemStatus.Matching : ImportItemStatus.MetadataUnavailable;
-                    results.Add(new ImportItemResult(item.Path, item.Classification, true, false,
-                        MatchStatus: staged?.MatchStatus,
-                        Failure: staged?.Failure,
-                        Status: initialStatus,
-                        MetadataFailureKind: staged?.MetadataFailureKind
-                            ?? (needsMetadata && !selection.LocalOnly && !canAttemptMetadata && staged is null
-                                ? MetadataFailureKind.NotConfigured : null),
-                        AlreadyRegistered: registration.AlreadyRegistered));
+                        if (registration.AlreadyRegistered)
+                        {
+                            results.Add(new ImportItemResult(
+                                item.Path,
+                                item.Classification,
+                                Registered: true,
+                                AutoMatched: false,
+                                Status: ImportItemStatus.AlreadyInLibrary,
+                                AlreadyRegistered: true));
+                            continue;
+                        }
 
-                    if (!tvShows.TryGetValue(registration.Show.Id, out var pending))
-                    {
-                        pending = new TvImportGroup(
-                            registration.Show,
-                            item.ParsedMedia.Year,
-                            canAttemptMetadata && requiresMatch,
-                            canAttemptMetadata && requiresRefresh,
-                            registration.Show.MetadataStatus,
-                            staged);
-                        tvShows.Add(registration.Show.Id, pending);
+                        var resultIndex = results.Count;
+                        var requiresMatch = selection.ExistingShowId is null && registration.Show.MetadataStatus != MetadataStatus.Ready;
+                        var requiresRefresh = selection.ExistingShowId is null && !registration.AlreadyRegistered && !requiresMatch;
+                        var needsMetadata = requiresMatch || requiresRefresh;
+                        var staged = selection.LocalOnly ? null : selection.MetadataPreview;
+                        var canAttemptMetadata = !selection.LocalOnly && selection.ExistingShowId is null
+                            && needsMetadata && _matching is not null && _metadataProvider.IsConfigured
+                            && (staged is null || staged.Status == ImportItemStatus.Matched);
+                        var initialStatus = selection.LocalOnly ? ImportItemStatus.ReadyToAdd : !needsMetadata ? ImportItemStatus.Matched
+                            : staged is not null && staged.Status != ImportItemStatus.Matched ? staged.Status
+                            : canAttemptMetadata ? ImportItemStatus.Matching : ImportItemStatus.MetadataUnavailable;
+                        results.Add(new ImportItemResult(item.Path, item.Classification, true, false,
+                            MatchStatus: staged?.MatchStatus,
+                            Failure: staged?.Failure,
+                            Status: initialStatus,
+                            MetadataFailureKind: staged?.MetadataFailureKind
+                                ?? (needsMetadata && !selection.LocalOnly && !canAttemptMetadata && staged is null
+                                    ? MetadataFailureKind.NotConfigured : null),
+                            AlreadyRegistered: registration.AlreadyRegistered));
+
+                        if (!tvShows.TryGetValue(registration.Show.Id, out var pending))
+                        {
+                            pending = new TvImportGroup(
+                                registration.Show,
+                                item.ParsedMedia.Year,
+                                canAttemptMetadata && requiresMatch,
+                                canAttemptMetadata && requiresRefresh,
+                                registration.Show.MetadataStatus,
+                                staged);
+                            tvShows.Add(registration.Show.Id, pending);
+                        }
+                        else
+                        {
+                            pending.ShouldMatch |= canAttemptMetadata && requiresMatch;
+                            pending.ShouldRefresh |= canAttemptMetadata && requiresRefresh;
+                            pending.HasConflictingManualMatches |=
+                                HasConflictingManualMatches(pending.StagedPreview, staged);
+                            pending.StagedPreview = PreferStagedPreview(pending.StagedPreview, staged);
+                        }
+
+                        pending.ResultIndexes.Add(resultIndex);
+                        if (canAttemptMetadata)
+                        {
+                            pending.EnrichmentResultIndexes.Add(resultIndex);
+                        }
+                        else if (requiresMatch && staged is null && !selection.LocalOnly)
+                        {
+                            CommitBatch();
+                            TrySetTvStatus(registration.Show.Id, MetadataStatus.Failed, registration.Show.MetadataStatus);
+                        }
                     }
                     else
                     {
-                        pending.ShouldMatch |= canAttemptMetadata && requiresMatch;
-                        pending.ShouldRefresh |= canAttemptMetadata && requiresRefresh;
-                        pending.HasConflictingManualMatches |=
-                            HasConflictingManualMatches(pending.StagedPreview, staged);
-                        pending.StagedPreview = PreferStagedPreview(pending.StagedPreview, staged);
+                        results.Add(new ImportItemResult(item.Path, item.Classification, false, false,
+                            Failure: "Only resolved movie and TV episode candidates can be imported.",
+                            Status: ImportItemStatus.RegistrationFailed));
                     }
 
-                    pending.ResultIndexes.Add(resultIndex);
-                    if (canAttemptMetadata)
+                    if (pendingInBatch >= BatchSize)
                     {
-                        pending.EnrichmentResultIndexes.Add(resultIndex);
-                    }
-                    else if (requiresMatch && staged is null && !selection.LocalOnly)
-                    {
-                        TrySetTvStatus(registration.Show.Id, MetadataStatus.Failed, registration.Show.MetadataStatus);
+                        CommitBatch();
                     }
                 }
-                else
+                catch (OperationCanceledException)
+                {
+                    CommitBatch();
+                    break;
+                }
+                catch (Exception error)
                 {
                     results.Add(new ImportItemResult(item.Path, item.Classification, false, false,
-                        Failure: "Only resolved movie and TV episode candidates can be imported.",
+                        Failure: error.Message,
                         Status: ImportItemStatus.RegistrationFailed));
                 }
+                finally
+                {
+                    processed = results.Count;
+                }
             }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception error)
-            {
-                results.Add(new ImportItemResult(item.Path, item.Classification, false, false,
-                    Failure: error.Message,
-                    Status: ImportItemStatus.RegistrationFailed));
-            }
-            finally
-            {
-                processed = results.Count;
-            }
+
+            CommitBatch();
+        }
+        finally
+        {
+            batchUow?.Dispose();
         }
 
         // Report actual processed items. Remaining items receive explicit cancellation outcomes.
@@ -991,6 +1058,14 @@ public class ImportService : IImportUiActions
 
     public MovieFileIngestionResult RegisterMovieImport(ConfirmMovieImportCommand command)
     {
+        using var uow = _uowFactory.Begin();
+        var result = RegisterMovieImport(command, uow);
+        uow.Commit();
+        return result;
+    }
+
+    public MovieFileIngestionResult RegisterMovieImport(ConfirmMovieImportCommand command, ICatalogUnitOfWork uow)
+    {
         var movieData = new MovieCatalogData(
             provider: null,
             externalId: null,
@@ -1013,8 +1088,6 @@ public class ImportService : IImportUiActions
             command.ParsedMedia.Source,
             command.ObservedAt);
 
-        using var uow = _uowFactory.Begin();
-        
         var existingFile = uow.MediaFiles.GetByPath(command.FilePath);
         if (existingFile != null && existingFile.MovieId.HasValue)
         {
@@ -1034,8 +1107,7 @@ public class ImportService : IImportUiActions
         var mediaFile = existingFile == null 
             ? uow.MediaFiles.Add(fileFacts, movie.Id)
             : uow.MediaFiles.LinkToMovie(existingFile.Id, movie.Id);
-            
-        uow.Commit();
+
         return new MovieFileIngestionResult(movie, mediaFile);
     }
 
@@ -1097,6 +1169,14 @@ public class ImportService : IImportUiActions
     /// </summary>
     public EpisodeFileIngestionResult RegisterEpisodeImport(ConfirmEpisodeImportCommand command)
     {
+        using var uow = _uowFactory.Begin();
+        var result = RegisterEpisodeImport(command, uow);
+        uow.Commit();
+        return result;
+    }
+
+    public EpisodeFileIngestionResult RegisterEpisodeImport(ConfirmEpisodeImportCommand command, ICatalogUnitOfWork uow)
+    {
         var parsed = command.ParsedMedia;
 
         if (parsed.SeasonNumber is not int seasonNumber || parsed.EpisodeNumber is not int episodeNumber)
@@ -1122,8 +1202,6 @@ public class ImportService : IImportUiActions
 
         var showData = new TvShowCatalogData(provider: null, externalId: null, title: parsed.Title!);
         var now = _clock();
-
-        using var uow = _uowFactory.Begin();
 
         var existingFile = uow.MediaFiles.GetByPath(command.FilePath);
 
@@ -1231,8 +1309,6 @@ public class ImportService : IImportUiActions
 
         var mediaFile = existingFile ?? uow.MediaFiles.Add(facts);
         uow.TvEpisodes.LinkMediaFile(episode.Id, mediaFile.Id, now);
-
-        uow.Commit();
 
         return new EpisodeFileIngestionResult(show, season, episode, mediaFile, AlreadyRegistered: false);
     }

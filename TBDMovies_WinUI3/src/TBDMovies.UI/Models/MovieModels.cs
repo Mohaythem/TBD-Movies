@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Threading.Tasks;
@@ -155,9 +155,9 @@ public sealed record MovieRecord(
             }
 
             var cachedPath = AppServices.Poster.GetCachedPosterPath("TMDB", PosterReference);
-            if (cachedPath != null && File.Exists(cachedPath))
+            if (cachedPath != null)
             {
-                _posterSource = new BitmapImage(new Uri(cachedPath));
+                _posterSource = new BitmapImage(new Uri(cachedPath)) { DecodePixelWidth = 360 };
                 return _posterSource;
             }
 
@@ -174,7 +174,7 @@ public sealed record MovieRecord(
                         {
                             if (PosterReference == posterRef)
                             {
-                                _posterSource = new BitmapImage(new Uri(downloaded));
+                                _posterSource = new BitmapImage(new Uri(downloaded)) { DecodePixelWidth = 360 };
                                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PosterSource)));
                                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPosterMissing)));
                             }

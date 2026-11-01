@@ -1,4 +1,4 @@
-﻿<!--
+<!--
     TBDMovies semantic resource layer.
 
     Everything a native WinUI 3 ThemeResource already provides is consumed directly by the
@@ -123,9 +123,17 @@
             <SolidColorBrush x:Key="DangerControlBackgroundBrush" Color="#14FF99A4" />
             <SolidColorBrush x:Key="DangerControlBorderBrush" Color="#61FF99A4" />
             <SolidColorBrush x:Key="DangerCardStrokeBrush" Color="#61FF99A4" />
-            <SolidColorBrush x:Key="AccentControlBorderBrush" Color="#7A60CDFF" />
+            <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#FFF59E0B" />
+            <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#FFD97706" />
+            <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#FFB45309" />
+            <SolidColorBrush x:Key="AccentFillColorDisabledBrush" Color="#52F59E0B" />
+            <SolidColorBrush x:Key="AccentTextFillColorPrimaryBrush" Color="#FFFBBF24" />
+            <SolidColorBrush x:Key="AccentTextFillColorSecondaryBrush" Color="#FFF59E0B" />
+            <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush" Color="#FF000000" />
+            <SolidColorBrush x:Key="TextOnAccentFillColorSecondaryBrush" Color="#FF000000" />
+            <SolidColorBrush x:Key="AccentControlBorderBrush" Color="#7AF59E0B" />
 
-            <!-- Figma Approved Theme Tokens: Slate / Dark Default -->
+            <!-- Figma Approved Theme Tokens: Cinema Gold & Obsidian Unified Palette -->
             <SolidColorBrush x:Key="FigmaSurfaceAppBrush" Color="#FF111111" />
             <SolidColorBrush x:Key="FigmaSurfaceSecondaryBrush" Color="#FF181818" />
             <SolidColorBrush x:Key="FigmaSurfaceControlBrush" Color="#FF242424" />
@@ -133,11 +141,11 @@
             <SolidColorBrush x:Key="FigmaTextPrimaryBrush" Color="#FFF5F5F5" />
             <SolidColorBrush x:Key="FigmaTextSecondaryBrush" Color="#FFCACACA" />
             <SolidColorBrush x:Key="FigmaTextTertiaryBrush" Color="#FF9E9E9E" />
-            <SolidColorBrush x:Key="FigmaAccentButtonBrush" Color="#FF44C4F6" />
-            <SolidColorBrush x:Key="FigmaAccentForegroundBrush" Color="#FF111111" />
-            <SolidColorBrush x:Key="FigmaAccentSelectedSurfaceBrush" Color="#FF203E4B" />
+            <SolidColorBrush x:Key="FigmaAccentButtonBrush" Color="#FFF59E0B" />
+            <SolidColorBrush x:Key="FigmaAccentForegroundBrush" Color="#FF000000" />
+            <SolidColorBrush x:Key="FigmaAccentSelectedSurfaceBrush" Color="#26F59E0B" />
             <SolidColorBrush x:Key="FigmaStatusAvailableBrush" Color="#FFA5C8AD" />
-            <SolidColorBrush x:Key="FigmaStatusStorageGoldBrush" Color="#FFE6BB70" />
+            <SolidColorBrush x:Key="FigmaStatusStorageGoldBrush" Color="#FFF59E0B" />
             <SolidColorBrush x:Key="ArtworkViewerFrameBrush" Color="#FF000000" />
             <SolidColorBrush x:Key="ArtworkViewerCanvasBrush" Color="#FF000000" />
 
@@ -202,10 +210,17 @@
             <SolidColorBrush x:Key="SlateBackgroundBrush" Color="#FFF3F3F3" />
             <SolidColorBrush x:Key="DangerControlBackgroundBrush" Color="#14C42B1C" />
             <SolidColorBrush x:Key="DangerControlBorderBrush" Color="#61C42B1C" />
-            <SolidColorBrush x:Key="DangerCardStrokeBrush" Color="#61C42B1C" />
-            <SolidColorBrush x:Key="AccentControlBorderBrush" Color="#7A0067C0" />
+            <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#FFF59E0B" />
+            <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#FFD97706" />
+            <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#FFB45309" />
+            <SolidColorBrush x:Key="AccentFillColorDisabledBrush" Color="#52F59E0B" />
+            <SolidColorBrush x:Key="AccentTextFillColorPrimaryBrush" Color="#FFB45309" />
+            <SolidColorBrush x:Key="AccentTextFillColorSecondaryBrush" Color="#FFD97706" />
+            <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="TextOnAccentFillColorSecondaryBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="AccentControlBorderBrush" Color="#7AF59E0B" />
 
-            <!-- Figma Approved Theme Tokens: Light Theme -->
+            <!-- Figma Approved Theme Tokens: Cinema Gold & Obsidian Unified Palette -->
             <SolidColorBrush x:Key="FigmaSurfaceAppBrush" Color="#FFF8F9FA" />
             <SolidColorBrush x:Key="FigmaSurfaceSecondaryBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="FigmaSurfaceControlBrush" Color="#FFF0F2F5" />
@@ -213,11 +228,11 @@
             <SolidColorBrush x:Key="FigmaTextPrimaryBrush" Color="#FF1A2026" />
             <SolidColorBrush x:Key="FigmaTextSecondaryBrush" Color="#FF57606A" />
             <SolidColorBrush x:Key="FigmaTextTertiaryBrush" Color="#FF6E7781" />
-            <SolidColorBrush x:Key="FigmaAccentButtonBrush" Color="#FF0078D4" />
+            <SolidColorBrush x:Key="FigmaAccentButtonBrush" Color="#FFF59E0B" />
             <SolidColorBrush x:Key="FigmaAccentForegroundBrush" Color="#FFFFFFFF" />
-            <SolidColorBrush x:Key="FigmaAccentSelectedSurfaceBrush" Color="#FFDDF4FF" />
+            <SolidColorBrush x:Key="FigmaAccentSelectedSurfaceBrush" Color="#26F59E0B" />
             <SolidColorBrush x:Key="FigmaStatusAvailableBrush" Color="#FF2DA44E" />
-            <SolidColorBrush x:Key="FigmaStatusStorageGoldBrush" Color="#FFBF8700" />
+            <SolidColorBrush x:Key="FigmaStatusStorageGoldBrush" Color="#FFF59E0B" />
             <SolidColorBrush x:Key="ArtworkViewerFrameBrush" Color="#FF202020" />
             <SolidColorBrush x:Key="ArtworkViewerCanvasBrush" Color="#FF202020" />
 

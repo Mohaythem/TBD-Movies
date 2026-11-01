@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using Microsoft.Data.Sqlite;
 
@@ -6,7 +6,7 @@ namespace TBDMovies.Infrastructure.Persistence.Migrations;
 
 public class DatabaseMigrator
 {
-    public const int LatestVersion = 19;
+    public const int LatestVersion = 20;
     private readonly string _connectionString;
 
     public DatabaseMigrator(string connectionString)
@@ -628,6 +628,13 @@ public class DatabaseMigrator
         @"
             ALTER TABLE movies ADD COLUMN custom_display_title TEXT NULL;
             ALTER TABLE tv_shows ADD COLUMN custom_display_title TEXT NULL;
+        ",
+        // v20: scale & sorting indexes for catalog queries.
+        @"
+            CREATE INDEX IF NOT EXISTS idx_movies_date_added ON movies(date_added DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_movies_last_opened ON movies(last_opened_at DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_movies_title ON movies(title COLLATE NOCASE);
+            CREATE INDEX IF NOT EXISTS idx_tv_shows_date_added ON tv_shows(date_added DESC, id DESC);
         "
     };
 
@@ -654,7 +661,8 @@ public class DatabaseMigrator
         EnsureForeignKeyIntegrity(connection, null, "Existing database");
         ExecutePragma(connection, "foreign_keys", "ON");
         ExecutePragma(connection, "journal_mode", "WAL");
-        ExecutePragma(connection, "synchronous", "FULL");
+        ExecutePragma(connection, "synchronous", "NORMAL");
+        ExecutePragma(connection, "busy_timeout", "10000");
 
         // Protect an existing database before a forward migration. A brand-new database (version 0) has
         // no data to protect, so no backup is taken. If the required backup cannot be created or
@@ -686,7 +694,8 @@ public class DatabaseMigrator
                 if (i + 1 >= 14 && targetVersion == LatestVersion)
                     ValidateSchema(connection, tx, includeActivity: i + 1 >= 15,
                         includeViewing: i + 1 >= 16, includeShowPersonal: i + 1 >= 17,
-                        includeTrakt: i + 1 >= 18, includeCustomTitle: i + 1 >= 19);
+                        includeTrakt: i + 1 >= 18, includeCustomTitle: i + 1 >= 19,
+                        includeScaleIndexes: i + 1 >= 20);
 
                 cmd.CommandText = $"PRAGMA user_version = {i + 1};";
                 cmd.ExecuteNonQuery();
@@ -711,7 +720,7 @@ public class DatabaseMigrator
 
     private static void ValidateSchema(SqliteConnection connection, SqliteTransaction? transaction = null,
         bool includeActivity = true, bool includeViewing = true, bool includeShowPersonal = true,
-        bool includeTrakt = true, bool includeCustomTitle = true)
+        bool includeTrakt = true, bool includeCustomTitle = true, bool includeScaleIndexes = true)
     {
         var requiredTables = new[]
         {
@@ -754,6 +763,11 @@ public class DatabaseMigrator
             RequireSchemaObject(connection, "index", "idx_trakt_resource_cache_account", transaction);
             RequireTableColumns(connection, "trakt_resource_cache", transaction,
                 "account_id", "resource_key", "payload_json", "succeeded_at", "attempted_at", "error_code");
+        }
+        if (includeScaleIndexes)
+        {
+            foreach (var index in new[] { "idx_movies_date_added", "idx_movies_last_opened", "idx_movies_title", "idx_tv_shows_date_added" })
+                RequireSchemaObject(connection, "index", index, transaction);
         }
         // Column-level guard: user_version alone cannot detect a table left on an older shape by a
         // migration script that was edited after it had already been stamped (the drift that made

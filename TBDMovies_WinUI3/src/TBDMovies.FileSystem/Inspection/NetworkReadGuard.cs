@@ -1,4 +1,4 @@
-﻿namespace TBDMovies.FileSystem.Inspection;
+namespace TBDMovies.FileSystem.Inspection;
 
 /// <summary>Bounds synchronous filesystem calls against a network share.</summary>
 public sealed class NetworkStorageUnavailableException : IOException
@@ -65,7 +65,14 @@ public sealed class NetworkReadGuard
                 return unavailable();
             if (isCancelled?.Invoke() == true) throw new OperationCanceledException();
             var remainingMs = Math.Max(1, Math.Min(50, (int)((timeoutTicks - elapsed) * 1000L / System.Diagnostics.Stopwatch.Frequency)));
-            _ = Task.WhenAny(task, Task.Delay(remainingMs)).GetAwaiter().GetResult();
+            try
+            {
+                task.Wait(remainingMs);
+            }
+            catch (AggregateException) when (task.IsCompleted)
+            {
+                break;
+            }
         }
 
         RemoveActive(share, task);

@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 using TBDMovies.Application.External;
 using TBDMovies.Domain.Media.Discovery;
 using TBDMovies.Domain.Media.Parser;
@@ -10,19 +10,26 @@ namespace TBDMovies.FileSystem.Discovery;
 public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
 {
     private readonly NetworkReadGuard _networkReads;
+    private readonly bool _useFastEnumeration;
     private readonly Func<string, IEnumerable<string>> _enumerateEntries;
     private readonly Func<string, FileAttributes> _getAttributes;
     private static readonly HashSet<string> MediaExtensions =
         new(StringComparer.OrdinalIgnoreCase) { ".mkv", ".mp4", ".avi", ".mov", ".m4v", ".wmv" };
 
     public MediaDiscoveryService(NetworkReadGuard? networkReads = null)
-        : this(networkReads, Directory.EnumerateFileSystemEntries, File.GetAttributes) { }
+    {
+        _networkReads = networkReads ?? NetworkReadGuard.Shared;
+        _useFastEnumeration = true;
+        _enumerateEntries = Directory.EnumerateFileSystemEntries;
+        _getAttributes = File.GetAttributes;
+    }
 
     internal MediaDiscoveryService(NetworkReadGuard? networkReads,
         Func<string, IEnumerable<string>> enumerateEntries,
         Func<string, FileAttributes> getAttributes)
     {
         _networkReads = networkReads ?? NetworkReadGuard.Shared;
+        _useFastEnumeration = false;
         _enumerateEntries = enumerateEntries;
         _getAttributes = getAttributes;
     }
@@ -42,6 +49,12 @@ public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
             rootReady = _networkReads.Execute(root, () =>
             {
                 PathPolicy.AssertNoReparseComponents(root);
+                if (_useFastEnumeration)
+                {
+                    var di = new DirectoryInfo(root);
+                    if (!di.Exists) throw new DirectoryNotFoundException(root);
+                    return true;
+                }
                 var attributes = _getAttributes(root);
                 if ((attributes & FileAttributes.Directory) == 0) throw new DirectoryNotFoundException(root);
                 return true;
@@ -55,7 +68,7 @@ public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
         if (!rootReady)
             return [DiscoveredMedia.Error(root, new DiscoveryIssue(DiscoveryErrorCode.StorageUnavailable, "Storage is unavailable."))];
 
-        var files = new List<string>();
+        var files = new Dictionary<string, FileObservation?>(StringComparer.OrdinalIgnoreCase);
         var results = new List<DiscoveredMedia>();
         var pending = new Stack<string>();
         pending.Push(root);
@@ -69,8 +82,10 @@ public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
                 DirectorySnapshot? snapshot;
                 try
                 {
-                    snapshot = _networkReads.Execute<DirectorySnapshot?>(directory, () => ReadDirectorySnapshot(directory, _enumerateEntries, _getAttributes, () =>
-                        Volatile.Read(ref abandoned) != 0 || isCancelled?.Invoke() == true),
+                    snapshot = _networkReads.Execute<DirectorySnapshot?>(directory, () =>
+                        _useFastEnumeration
+                            ? ReadDirectorySnapshotFast(directory, () => Volatile.Read(ref abandoned) != 0 || isCancelled?.Invoke() == true)
+                            : ReadDirectorySnapshot(directory, _enumerateEntries, _getAttributes, () => Volatile.Read(ref abandoned) != 0 || isCancelled?.Invoke() == true),
                         () => { Volatile.Write(ref abandoned, 1); return null; }, isCancelled);
                 }
                 catch
@@ -105,7 +120,7 @@ public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
                     {
                         if (recursive && !(snapshot.FatalIssue is not null && NetworkReadGuard.IsNetworkPath(root))) pending.Push(entry);
                     }
-                    else if (MediaExtensions.Contains(Path.GetExtension(entry))) files.Add(entry);
+                    else if (MediaExtensions.Contains(Path.GetExtension(entry))) files[entry] = item.Observation;
                 }
             }
             catch (UnauthorizedAccessException exception)
@@ -128,18 +143,22 @@ public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
         }
 
         var processed = 0;
-        foreach (var file in files.Order(StringComparer.OrdinalIgnoreCase))
+        foreach (var (file, precomputedObservation) in files.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
         {
             if (isCancelled?.Invoke() == true) throw new OperationCanceledException();
             try
             {
-                var observation = _networkReads.Execute<FileObservation?>(file, () =>
+                var observation = precomputedObservation;
+                if (observation is null)
                 {
-                    var attributes = _getAttributes(file);
-                    if ((attributes & FileAttributes.Directory) != 0) throw new FileNotFoundException(file);
-                    var info = new FileInfo(file);
-                    return new FileObservation(info.Length, info.LastWriteTimeUtc);
-                }, () => null, isCancelled);
+                    observation = _networkReads.Execute<FileObservation?>(file, () =>
+                    {
+                        var attributes = _getAttributes(file);
+                        if ((attributes & FileAttributes.Directory) != 0) throw new FileNotFoundException(file);
+                        var info = new FileInfo(file);
+                        return new FileObservation(info.Length, info.LastWriteTimeUtc);
+                    }, () => null, isCancelled);
+                }
                 if (observation is null)
                 {
                     if (NetworkReadGuard.IsNetworkPath(root))
@@ -198,12 +217,50 @@ public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
         return results;
     }
 
+    private sealed record SnapshotEntry(string Path, FileAttributes Attributes, FileObservation? Observation);
+
+    private static DirectorySnapshot ReadDirectorySnapshotFast(string directory, Func<bool> isAbandoned)
+    {
+        var entries = new List<SnapshotEntry>();
+        var issues = new List<DirectoryIssue>();
+        try
+        {
+            var dirInfo = new DirectoryInfo(directory);
+            foreach (var info in dirInfo.EnumerateFileSystemInfos())
+            {
+                if (isAbandoned()) throw new OperationCanceledException();
+                try
+                {
+                    FileObservation? obs = null;
+                    if (info is FileInfo fi)
+                    {
+                        obs = new FileObservation(fi.Length, fi.LastWriteTimeUtc);
+                    }
+                    entries.Add(new SnapshotEntry(info.FullName, info.Attributes, obs));
+                }
+                catch (UnauthorizedAccessException exception)
+                {
+                    issues.Add(new DirectoryIssue(info.FullName, DiscoveryErrorCode.PermissionDenied, exception.Message));
+                }
+                catch (IOException exception)
+                {
+                    issues.Add(new DirectoryIssue(info.FullName, DiscoveryErrorCode.Disappeared, exception.Message));
+                }
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            return new DirectorySnapshot(entries.ToArray(), issues, exception);
+        }
+        return new DirectorySnapshot(entries.ToArray(), issues, null);
+    }
+
     private static DirectorySnapshot ReadDirectorySnapshot(string directory,
         Func<string, IEnumerable<string>> enumerateEntries,
         Func<string, FileAttributes> getAttributes,
         Func<bool> isAbandoned)
     {
-        var entries = new List<(string Path, FileAttributes Attributes)>();
+        var entries = new List<SnapshotEntry>();
         var issues = new List<DirectoryIssue>();
         // Enumeration failure itself is handled by the caller. A child that disappears while the
         // snapshot is being materialized is isolated so healthy siblings remain discoverable.
@@ -214,7 +271,7 @@ public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
                 if (isAbandoned()) throw new OperationCanceledException();
                 try
                 {
-                    entries.Add((entry, getAttributes(entry)));
+                    entries.Add(new SnapshotEntry(entry, getAttributes(entry), null));
                 }
                 catch (UnauthorizedAccessException exception)
                 {
@@ -234,12 +291,12 @@ public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
     }
 
     private sealed record DirectorySnapshot(
-        (string Path, FileAttributes Attributes)[] Entries,
+        SnapshotEntry[] Entries,
         IReadOnlyList<DirectoryIssue> Issues,
         Exception? FatalIssue)
     {
-        public IReadOnlyList<(string Path, FileAttributes Attributes)> Items => Entries;
-        public IEnumerator<(string Path, FileAttributes Attributes)> GetEnumerator() => ((IEnumerable<(string Path, FileAttributes Attributes)>)Entries).GetEnumerator();
+        public IReadOnlyList<SnapshotEntry> Items => Entries;
+        public IEnumerator<SnapshotEntry> GetEnumerator() => ((IEnumerable<SnapshotEntry>)Entries).GetEnumerator();
     }
 
     private sealed record DirectoryIssue(string Path, DiscoveryErrorCode Code, string Message);

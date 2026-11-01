@@ -1,5 +1,6 @@
-﻿using TBDMovies.UI.Models;
+using TBDMovies.UI.Models;
 using TBDMovies.Application.External;
+using TBDMovies.Application.Trakt;
 using TBDMovies.UI.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -589,14 +590,17 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
 
             if (generation != _traktGeneration) return;
 
+            var isOfficial = string.Equals(config.ClientId, TraktDefaults.OfficialClientId, StringComparison.Ordinal);
             var hasSavedConfig = !string.IsNullOrWhiteSpace(config.ClientId) && !string.IsNullOrWhiteSpace(config.RedirectUri);
             TraktConfigSummaryPanel.Visibility = hasSavedConfig && !_editingTraktConfig ? Visibility.Visible : Visibility.Collapsed;
             TraktConfigInputPanel.Visibility = hasSavedConfig && !_editingTraktConfig ? Visibility.Collapsed : Visibility.Visible;
             TraktEditConfigButton.Visibility = hasSavedConfig && !_editingTraktConfig ? Visibility.Visible : Visibility.Collapsed;
             TraktCancelConfigButton.Visibility = hasSavedConfig && _editingTraktConfig ? Visibility.Visible : Visibility.Collapsed;
-            TraktConfigSummaryText.Text = hasSavedConfig ? LocalizationService.Text("TraktConfigConfigured") : string.Empty;
+            TraktConfigSummaryText.Text = isOfficial
+                ? "Official Trakt App (Active · Zero-Config)"
+                : (hasSavedConfig ? LocalizationService.Text("TraktConfigConfigured") : string.Empty);
             TraktClientIdMaskedText.Text = hasSavedConfig
-                ? string.Format(LocalizationService.Text("TraktClientIdMaskedFormat"), MaskTraktClientId(config.ClientId))
+                ? (isOfficial ? "Official Client ID Active" : string.Format(LocalizationService.Text("TraktClientIdMaskedFormat"), MaskTraktClientId(config.ClientId)))
                 : string.Empty;
             if (hasSavedConfig && !_editingTraktConfig)
             {

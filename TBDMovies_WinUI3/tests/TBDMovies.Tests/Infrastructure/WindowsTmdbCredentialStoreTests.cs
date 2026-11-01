@@ -75,6 +75,45 @@ public sealed class WindowsTmdbCredentialStoreTests
     }
 
     [Fact]
+    public void When_settings_has_legacy_no_entropy_dpapi_recovers_and_migrates_to_entropy()
+    {
+        var profile = Path.Combine(Path.GetTempPath(), "TBDMovies-TmdbCredentialTest-" + Guid.NewGuid().ToString("N"));
+        var settings = new TestSettingsRepo();
+        var store = new WindowsTmdbCredentialStore(profile, settings);
+
+        try
+        {
+            // Encrypt directly with DPAPI without entropy (simulating legacy stored credential)
+            var raw = System.Text.Encoding.UTF8.GetBytes("legacy-non-entropy-token");
+            var legacyCipherBytes = System.Security.Cryptography.ProtectedData.Protect(
+                raw, null, System.Security.Cryptography.DataProtectionScope.CurrentUser);
+            var legacyCipher = Convert.ToBase64String(legacyCipherBytes);
+            settings.Set("tmdb_credential_dpapi", legacyCipher, DateTimeOffset.UtcNow);
+
+            // Read should successfully recover token and re-encrypt with entropy
+            var recovered = store.Read();
+            Assert.Equal("legacy-non-entropy-token", recovered);
+
+            // New cipher in settings should be re-encrypted (different from legacy non-entropy cipher)
+            var newCipher = settings.Get("tmdb_credential_dpapi");
+            Assert.NotNull(newCipher);
+            Assert.NotEqual(legacyCipher, newCipher);
+
+            // Deleting native credential and reading again should decrypt successfully with the new entropy
+            var bareStore = new WindowsTmdbCredentialStore(profile);
+            bareStore.Delete();
+            Assert.Null(bareStore.Read());
+
+            var secondRecovered = store.Read();
+            Assert.Equal("legacy-non-entropy-token", secondRecovered);
+        }
+        finally
+        {
+            store.Delete();
+        }
+    }
+
+    [Fact]
     public void When_legacy_target_exists_reads_and_migrates_to_primary_target()
     {
         var profile = Path.Combine(Path.GetTempPath(), "TBDMovies-TmdbMigrateTest-" + Guid.NewGuid().ToString("N"));

@@ -1,4 +1,4 @@
-﻿using TBDMovies.Domain.Core.Operations;
+using TBDMovies.Domain.Core.Operations;
 using TBDMovies.Domain.Core.Safety;
 
 namespace TBDMovies.FileSystem.Safety;
@@ -111,10 +111,94 @@ public sealed class PathPolicy
         throw new UnsafePathException($"Path is outside approved roots: {candidate}");
     }
 
+    private static readonly HashSet<string> ReservedDosDeviceNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+    };
+
+    private static bool HasAlternateDataStream(string path)
+    {
+        int allowedDriveColonIndex = -1;
+        if (path.StartsWith(@"\\?\", StringComparison.Ordinal) && path.Length >= 6 && char.IsLetter(path[4]) && path[5] == ':')
+        {
+            allowedDriveColonIndex = 5;
+        }
+        else if (path.Length >= 2 && char.IsLetter(path[0]) && path[1] == ':')
+        {
+            allowedDriveColonIndex = 1;
+        }
+
+        int colonIndex = path.IndexOf(':');
+        while (colonIndex != -1)
+        {
+            if (colonIndex != allowedDriveColonIndex)
+            {
+                return true;
+            }
+            colonIndex = path.IndexOf(':', colonIndex + 1);
+        }
+
+        return false;
+    }
+
+    private static bool IsDosDeviceName(string segment)
+    {
+        if (string.IsNullOrWhiteSpace(segment)) return false;
+
+        var trimmed = segment.TrimEnd(' ', '.');
+        if (ReservedDosDeviceNames.Contains(trimmed))
+            return true;
+
+        var dotIndex = trimmed.IndexOf('.');
+        if (dotIndex > 0)
+        {
+            var baseName = trimmed[..dotIndex];
+            if (ReservedDosDeviceNames.Contains(baseName))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static void AssertNoDosDeviceNames(string path)
+    {
+        var segments = path.Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries);
+        foreach (var segment in segments)
+        {
+            if (IsDosDeviceName(segment))
+            {
+                throw new UnsafePathException($"DOS reserved device name is not allowed: {segment}");
+            }
+        }
+    }
+
     private static string Canonical(string path)
     {
         if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
             throw new UnsafePathException("Path must be absolute.");
-        return Path.GetFullPath(path);
+
+        if (HasAlternateDataStream(path))
+            throw new UnsafePathException($"NTFS alternate data streams are not allowed: {path}");
+
+        AssertNoDosDeviceNames(path);
+
+        string fullPath;
+        try
+        {
+            fullPath = Path.GetFullPath(path);
+        }
+        catch (Exception ex) when (ex is not UnsafePathException)
+        {
+            throw new UnsafePathException($"Invalid path: {path}");
+        }
+
+        if (HasAlternateDataStream(fullPath))
+            throw new UnsafePathException($"NTFS alternate data streams are not allowed: {fullPath}");
+
+        AssertNoDosDeviceNames(fullPath);
+
+        return fullPath;
     }
 }

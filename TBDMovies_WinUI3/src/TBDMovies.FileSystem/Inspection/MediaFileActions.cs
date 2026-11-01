@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using TBDMovies.Application.External;
 using TBDMovies.Domain.Library.Availability;
 using TBDMovies.Domain.Media;
@@ -90,7 +90,7 @@ public sealed class MediaFileActions
     private static void Launch(string path, bool selectFile)
     {
         var start = selectFile
-            ? new ProcessStartInfo("explorer.exe") { Arguments = "/select,\"" + path + "\"", UseShellExecute = true }
+            ? new ProcessStartInfo("explorer.exe") { Arguments = "/select,\"" + path.Replace("\"", "") + "\"", UseShellExecute = true }
             : new ProcessStartInfo(path) { UseShellExecute = true };
         using var process = Process.Start(start);
     }

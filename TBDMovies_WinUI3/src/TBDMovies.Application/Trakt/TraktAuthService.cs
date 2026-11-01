@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -248,7 +248,7 @@ public sealed class TraktAuthService : ITraktAuthService
                         }
                         catch (Exception storeEx)
                         {
-                            try { _credentialStore.Delete(); } catch { }
+                            try { _credentialStore.Delete(); } catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to delete credentials: {ex.Message}"); }
                             _requiresReconnect = true;
                             _tokens = null;
                             _state = TraktAuthState.RequiresReconnection;
@@ -400,7 +400,7 @@ public sealed class TraktAuthService : ITraktAuthService
             }
             catch (TraktInvalidGrantException ex)
             {
-                try { _credentialStore.Delete(); } catch { }
+                try { _credentialStore.Delete(); } catch (Exception deleteEx) { System.Diagnostics.Debug.WriteLine($"Failed to delete credentials on invalid grant: {deleteEx.Message}"); }
                 _requiresReconnect = true;
                 _tokens = null;
                 _state = TraktAuthState.RequiresReconnection;
@@ -484,7 +484,7 @@ public sealed class TraktAuthService : ITraktAuthService
             catch (Exception ex)
             {
                 // If the marker cannot be saved, try to remove the rejected pair.
-                try { _credentialStore.Delete(); } catch { }
+                try { _credentialStore.Delete(); } catch (Exception deleteEx) { System.Diagnostics.Debug.WriteLine($"Failed to delete credentials on reject error: {deleteEx.Message}"); }
                 throw new TraktAuthException("Failed to persist rejected credential state. Reconnect required.", ex);
             }
             finally
@@ -509,6 +509,19 @@ public sealed class TraktAuthService : ITraktAuthService
         await _authGate.WaitAsync(cancellationToken);
         try
         {
+            var activeToken = _tokens?.AccessToken;
+            if (!string.IsNullOrWhiteSpace(activeToken))
+            {
+                try
+                {
+                    await _authClient.RevokeTokenAsync(_config.ClientId, activeToken, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Trakt token revocation failed during disconnect: {ex.Message}");
+                }
+            }
+
             Interlocked.Increment(ref _generation);
             _activeDeviceCode = null;
             _activeSessionId = 0;
@@ -527,8 +540,9 @@ public sealed class TraktAuthService : ITraktAuthService
                 _requiresReconnect = false;
                 _state = TraktAuthState.NotConfigured;
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"Failed to write disconnect marker: {ex.Message}");
                 _tokens = null;
                 _accountId = null;
                 // Removal can still succeed when writing the protective marker was unavailable.
@@ -542,10 +556,13 @@ public sealed class TraktAuthService : ITraktAuthService
                         return;
                     }
                 }
-                catch { }
+                catch (Exception deleteEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Credential deletion retry failed: {deleteEx.Message}");
+                }
                 _requiresReconnect = true;
                 _state = TraktAuthState.RequiresReconnection;
-                throw new TraktAuthException("Credential removal failed. Reconnect required.");
+                throw new TraktAuthException("Credential removal failed. Reconnect required.", ex);
             }
         }
         finally

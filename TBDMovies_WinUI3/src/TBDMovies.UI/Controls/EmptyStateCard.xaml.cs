@@ -1,7 +1,15 @@
-﻿using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
 namespace TBDMovies.UI.Controls;
+
+public enum EmptyStateKind
+{
+    Default = 0,
+    EmptyLibrary,
+    NoResults,
+    EmptyLists
+}
 
 /// <summary>
 /// The shared empty-result surface used by Library, My Lists and Check Library so that every
@@ -10,10 +18,10 @@ namespace TBDMovies.UI.Controls;
 public sealed partial class EmptyStateCard : UserControl
 {
     public static readonly DependencyProperty GlyphProperty = DependencyProperty.Register(
-        nameof(Glyph), typeof(string), typeof(EmptyStateCard), new PropertyMetadata(""));
+        nameof(Glyph), typeof(string), typeof(EmptyStateCard), new PropertyMetadata("", OnPresentationAffectingPropertyChanged));
 
     public static readonly DependencyProperty TitleProperty = DependencyProperty.Register(
-        nameof(Title), typeof(string), typeof(EmptyStateCard), new PropertyMetadata(string.Empty));
+        nameof(Title), typeof(string), typeof(EmptyStateCard), new PropertyMetadata(string.Empty, OnPresentationAffectingPropertyChanged));
 
     public static readonly DependencyProperty MessageProperty = DependencyProperty.Register(
         nameof(Message), typeof(string), typeof(EmptyStateCard), new PropertyMetadata(string.Empty));
@@ -25,7 +33,10 @@ public sealed partial class EmptyStateCard : UserControl
         nameof(IsActionVisible), typeof(bool), typeof(EmptyStateCard), new PropertyMetadata(false));
 
     public static readonly DependencyProperty IsFramelessProperty = DependencyProperty.Register(
-        nameof(IsFrameless), typeof(bool), typeof(EmptyStateCard), new PropertyMetadata(false, OnIsFramelessChanged));
+        nameof(IsFrameless), typeof(bool), typeof(EmptyStateCard), new PropertyMetadata(false, OnPresentationAffectingPropertyChanged));
+
+    public static readonly DependencyProperty KindProperty = DependencyProperty.Register(
+        nameof(Kind), typeof(EmptyStateKind), typeof(EmptyStateCard), new PropertyMetadata(EmptyStateKind.Default, OnPresentationAffectingPropertyChanged));
 
     public EmptyStateCard()
     {
@@ -34,6 +45,12 @@ public sealed partial class EmptyStateCard : UserControl
     }
 
     public event RoutedEventHandler? ActionClick;
+
+    public EmptyStateKind Kind
+    {
+        get => (EmptyStateKind)GetValue(KindProperty);
+        set => SetValue(KindProperty, value);
+    }
 
     public string Glyph
     {
@@ -71,9 +88,51 @@ public sealed partial class EmptyStateCard : UserControl
         set => SetValue(IsFramelessProperty, value);
     }
 
-    private static void OnIsFramelessChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs args)
+    private static void OnPresentationAffectingPropertyChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs args)
     {
         ((EmptyStateCard)dependencyObject).UpdatePresentation();
+    }
+
+    public EmptyStateKind ResolveEffectiveKind()
+    {
+        if (Kind != EmptyStateKind.Default)
+        {
+            return Kind;
+        }
+
+        // Auto-detect based on Glyph
+        if (Glyph == "\uE721" || Glyph == "&#xE721;")
+        {
+            return EmptyStateKind.NoResults;
+        }
+        if (Glyph == "\uE728" || Glyph == "&#xE728;")
+        {
+            return EmptyStateKind.EmptyLists;
+        }
+        if (Glyph == "\uE8B7" || Glyph == "&#xE8B7;" || Glyph == "\uE838")
+        {
+            return EmptyStateKind.EmptyLibrary;
+        }
+
+        // Auto-detect based on Title text
+        if (!string.IsNullOrEmpty(Title))
+        {
+            var titleLower = Title.ToLowerInvariant();
+            if (titleLower.Contains("library") || titleLower.Contains("مكتبت"))
+            {
+                return EmptyStateKind.EmptyLibrary;
+            }
+            if (titleLower.Contains("result") || titleLower.Contains("نتائج") || titleLower.Contains("search"))
+            {
+                return EmptyStateKind.NoResults;
+            }
+            if (titleLower.Contains("list") || titleLower.Contains("قائم") || titleLower.Contains("watched") || titleLower.Contains("continue"))
+            {
+                return EmptyStateKind.EmptyLists;
+            }
+        }
+
+        return EmptyStateKind.Default;
     }
 
     private void UpdatePresentation()
@@ -89,6 +148,28 @@ public sealed partial class EmptyStateCard : UserControl
         HorizontalAlignment = frameless
             ? Microsoft.UI.Xaml.HorizontalAlignment.Stretch
             : Microsoft.UI.Xaml.HorizontalAlignment.Left;
+
+        var effectiveKind = ResolveEffectiveKind();
+
+        // Frameless icons
+        if (FramelessLibraryView is not null)
+            FramelessLibraryView.Visibility = effectiveKind == EmptyStateKind.EmptyLibrary ? Visibility.Visible : Visibility.Collapsed;
+        if (FramelessNoResultsView is not null)
+            FramelessNoResultsView.Visibility = effectiveKind == EmptyStateKind.NoResults ? Visibility.Visible : Visibility.Collapsed;
+        if (FramelessListsView is not null)
+            FramelessListsView.Visibility = effectiveKind == EmptyStateKind.EmptyLists ? Visibility.Visible : Visibility.Collapsed;
+        if (FramelessGlyphIcon is not null)
+            FramelessGlyphIcon.Visibility = effectiveKind == EmptyStateKind.Default ? Visibility.Visible : Visibility.Collapsed;
+
+        // Framed icons
+        if (FramedLibraryView is not null)
+            FramedLibraryView.Visibility = effectiveKind == EmptyStateKind.EmptyLibrary ? Visibility.Visible : Visibility.Collapsed;
+        if (FramedNoResultsView is not null)
+            FramedNoResultsView.Visibility = effectiveKind == EmptyStateKind.NoResults ? Visibility.Visible : Visibility.Collapsed;
+        if (FramedListsView is not null)
+            FramedListsView.Visibility = effectiveKind == EmptyStateKind.EmptyLists ? Visibility.Visible : Visibility.Collapsed;
+        if (FramedGlyphIcon is not null)
+            FramedGlyphIcon.Visibility = effectiveKind == EmptyStateKind.Default ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void ActionButton_Click(object sender, RoutedEventArgs e) => ActionClick?.Invoke(this, e);

@@ -1,4 +1,4 @@
-﻿<!--
+<!--
     TV show details.
 
     TV hero band (2:3 poster and bounded copy column, progress
@@ -48,7 +48,7 @@
         </Style>
     </Page.Resources>
 
-    <ScrollViewer x:Name="Root" Style="{StaticResource PageScrollViewerStyle}" Padding="40,8,40,48" Background="{ThemeResource FigmaSurfaceAppBrush}">
+    <ScrollViewer x:Name="Root" Style="{StaticResource PageScrollViewerStyle}" Padding="32,16,32,48" Background="Transparent">
         <VisualStateManager.VisualStateGroups>
             <VisualStateGroup x:Name="ShowWidthStates">
                 <VisualState x:Name="ShowWideState">

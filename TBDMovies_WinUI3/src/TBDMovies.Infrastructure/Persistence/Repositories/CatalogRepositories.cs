@@ -1,4 +1,4 @@
-﻿using System.Collections.Immutable;
+using System.Collections.Immutable;
 using System.Text.Json;
 using System.Threading;
 using TBDMovies.Application.Repositories;
@@ -10,9 +10,10 @@ namespace TBDMovies.Infrastructure.Persistence.Repositories;
 public sealed class CatalogUnitOfWork : ICatalogUnitOfWork
 {
     private readonly Action? _committed;
-    private readonly IDisposable _writeGate;
+    private readonly IDisposable? _writeGate;
     private readonly SqliteConnection _connection;
-    private readonly SqliteTransaction _transaction;
+    private readonly SqliteTransaction? _transaction;
+    private readonly bool _readOnly;
     private bool _completed;
     private bool _disposed;
 
@@ -23,27 +24,38 @@ public sealed class CatalogUnitOfWork : ICatalogUnitOfWork
     public ITvEpisodeRepository TvEpisodes { get; }
 
     public CatalogUnitOfWork(string connectionString)
-        : this(connectionString, null)
+        : this(connectionString, null, isReadOnly: false)
     {
     }
 
-    internal CatalogUnitOfWork(string connectionString, Action? committed)
+    internal CatalogUnitOfWork(string connectionString, Action? committed, bool isReadOnly = false)
     {
         _committed = committed;
-        // The unit of work opens an IMMEDIATE transaction (write lock) even for read-only work, so it
-        // must queue behind other writers to this database rather than collide with them in SQLite.
-        _writeGate = DatabaseWriteGate.Enter(connectionString);
-        try
+        _readOnly = isReadOnly;
+        if (!isReadOnly)
         {
+            // The write unit of work opens an IMMEDIATE transaction (write lock), so it
+            // must queue behind other writers to this database rather than collide with them in SQLite.
+            _writeGate = DatabaseWriteGate.Enter(connectionString);
+            try
+            {
+                _connection = SqliteConnections.Open(connectionString);
+                _transaction = _connection.BeginTransaction(deferred: false);
+            }
+            catch
+            {
+                _connection?.Dispose();
+                _writeGate.Dispose();
+                throw;
+            }
+        }
+        else
+        {
+            _writeGate = null;
+            _transaction = null;
             _connection = SqliteConnections.Open(connectionString);
-            _transaction = _connection.BeginTransaction(deferred: false);
         }
-        catch
-        {
-            _connection?.Dispose();
-            _writeGate.Dispose();
-            throw;
-        }
+
         Movies = new MovieRepository(_connection, _transaction);
         MediaFiles = new MediaFileRepository(_connection, _transaction);
         TvShows = new TvShowRepository(_connection, _transaction);
@@ -51,13 +63,49 @@ public sealed class CatalogUnitOfWork : ICatalogUnitOfWork
         TvEpisodes = new TvEpisodeRepository(_connection, _transaction);
     }
 
+    internal static CatalogUnitOfWork CreateReadOnly(string connectionString) =>
+        new(connectionString, committed: null, isReadOnly: true);
+
     public void Commit()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_readOnly) return;
         if (_completed) throw new InvalidOperationException("Unit of work is already complete.");
-        _transaction.Commit();
+        _transaction?.Commit();
         _completed = true;
         _committed?.Invoke();
+    }
+
+    public void Savepoint(string name)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_readOnly || _transaction == null) return;
+        using var cmd = _connection.CreateCommand();
+        cmd.Transaction = _transaction;
+        cmd.CommandText = $"SAVEPOINT \"{name}\";";
+        cmd.ExecuteNonQuery();
+    }
+
+    public void ReleaseSavepoint(string name)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_readOnly || _transaction == null) return;
+        using var cmd = _connection.CreateCommand();
+        cmd.Transaction = _transaction;
+        cmd.CommandText = $"RELEASE \"{name}\";";
+        cmd.ExecuteNonQuery();
+    }
+
+    public void RollbackToSavepoint(string name)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_readOnly || _transaction == null) return;
+        using var cmd = _connection.CreateCommand();
+        cmd.Transaction = _transaction;
+        cmd.CommandText = $"ROLLBACK TO \"{name}\";";
+        cmd.ExecuteNonQuery();
+        cmd.CommandText = $"RELEASE \"{name}\";";
+        cmd.ExecuteNonQuery();
     }
 
     public void Dispose()
@@ -66,13 +114,13 @@ public sealed class CatalogUnitOfWork : ICatalogUnitOfWork
         _disposed = true;
         try
         {
-            if (!_completed) _transaction.Rollback();
-            _transaction.Dispose();
+            if (!_completed && _transaction != null) _transaction.Rollback();
+            _transaction?.Dispose();
             _connection.Dispose();
         }
         finally
         {
-            _writeGate.Dispose();
+            _writeGate?.Dispose();
         }
     }
 }
@@ -84,6 +132,7 @@ public sealed class CatalogUnitOfWorkFactory : ICatalogUnitOfWorkFactory
     public CatalogUnitOfWorkFactory(string connectionString) => _connectionString = connectionString;
     public long Revision => Interlocked.Read(ref _revision);
     public ICatalogUnitOfWork Begin() => new CatalogUnitOfWork(_connectionString, () => Interlocked.Increment(ref _revision));
+    public ICatalogUnitOfWork BeginReadOnly() => CatalogUnitOfWork.CreateReadOnly(_connectionString);
 }
 
 public sealed class MovieRepository : IMovieRepository
@@ -156,7 +205,7 @@ public sealed class MovieRepository : IMovieRepository
 
     public IReadOnlyList<Movie> ListAll()
     {
-        using var command = Command($"SELECT {Columns} FROM movies ORDER BY datetime(date_added) DESC, id DESC;");
+        using var command = Command($"SELECT {Columns} FROM movies ORDER BY date_added DESC, id DESC;");
         return ReadMany(command);
     }
 

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
@@ -182,7 +182,7 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
             }
     }
 
-    public PosterAsset? LoadPoster(PosterRequest request)
+    public async Task<PosterAsset?> LoadPosterAsync(PosterRequest request, CancellationToken cancellationToken = default)
     {
         if (request == null || string.IsNullOrWhiteSpace(request.Reference))
         {
@@ -191,7 +191,46 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
 
         try
         {
-            var localPath = EnsurePosterCachedAsync(request.Provider, request.Reference).GetAwaiter().GetResult();
+            var localPath = await EnsurePosterCachedAsync(request.Provider, request.Reference, cancellationToken).ConfigureAwait(false);
+            if (localPath != null && File.Exists(localPath) && IsValidImage(localPath, out var mimeType))
+            {
+                var bytes = await File.ReadAllBytesAsync(localPath, cancellationToken).ConfigureAwait(false);
+                return new PosterAsset(mimeType, bytes);
+            }
+        }
+        catch
+        {
+            // Safe fallback
+        }
+
+        return null;
+    }
+
+    public PosterAsset? LoadPoster(PosterRequest request)
+    {
+        if (request == null || string.IsNullOrWhiteSpace(request.Reference))
+        {
+            return null;
+        }
+
+        // Fast path: if already cached on disk, avoid entering async machinery entirely
+        var cachedPath = GetCachedPosterPath(request.Provider, request.Reference);
+        if (cachedPath != null && File.Exists(cachedPath) && IsValidImage(cachedPath, out var cachedMime))
+        {
+            try
+            {
+                var cachedBytes = File.ReadAllBytes(cachedPath);
+                return new PosterAsset(cachedMime, cachedBytes);
+            }
+            catch
+            {
+                // Fall back to full cache check
+            }
+        }
+
+        try
+        {
+            var localPath = EnsurePosterCachedAsync(request.Provider, request.Reference).ConfigureAwait(false).GetAwaiter().GetResult();
             if (localPath != null && File.Exists(localPath) && IsValidImage(localPath, out var mimeType))
             {
                 var bytes = File.ReadAllBytes(localPath);

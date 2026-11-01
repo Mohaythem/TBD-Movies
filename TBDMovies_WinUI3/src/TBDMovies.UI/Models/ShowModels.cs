@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Threading.Tasks;
@@ -160,9 +160,9 @@ public sealed record ShowCardItem(TVShowRecord Show, string SecondaryLine) : INo
             }
 
             var cachedPath = AppServices.Poster.GetCachedPosterPath("TMDB", Show.PosterReference);
-            if (cachedPath != null && File.Exists(cachedPath))
+            if (cachedPath != null)
             {
-                _posterSource = new BitmapImage(new Uri(cachedPath));
+                _posterSource = new BitmapImage(new Uri(cachedPath)) { DecodePixelWidth = 360 };
                 return _posterSource;
             }
 
@@ -179,7 +179,7 @@ public sealed record ShowCardItem(TVShowRecord Show, string SecondaryLine) : INo
                         {
                             if (Show.PosterReference == posterRef)
                             {
-                                _posterSource = new BitmapImage(new Uri(downloaded));
+                                _posterSource = new BitmapImage(new Uri(downloaded)) { DecodePixelWidth = 360 };
                                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PosterSource)));
                                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPosterMissing)));
                             }
@@ -506,9 +506,9 @@ internal sealed class ArtworkLoader
             foreach (var reference in candidates)
             {
                 var cached = AppServices.Poster.GetCachedPosterPath("TMDB", reference);
-                if (cached is not null && File.Exists(cached))
+                if (cached is not null)
                 {
-                    return _source = new BitmapImage(new Uri(cached));
+                    return _source = new BitmapImage(new Uri(cached)) { DecodePixelWidth = 360 };
                 }
             }
 
@@ -538,7 +538,7 @@ internal sealed class ArtworkLoader
                 {
                     if (_source is null)
                     {
-                        _source = new BitmapImage(new Uri(downloaded));
+                        _source = new BitmapImage(new Uri(downloaded)) { DecodePixelWidth = 360 };
                         _changed();
                     }
                 });

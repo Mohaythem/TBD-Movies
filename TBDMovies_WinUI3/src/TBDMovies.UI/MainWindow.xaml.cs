@@ -1,7 +1,8 @@
-﻿using TBDMovies.UI.Models;
+using TBDMovies.UI.Models;
 using TBDMovies.UI.Services;
 using TBDMovies.UI.Views;
 using Microsoft.UI;
+using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -125,6 +126,14 @@ public sealed partial class MainWindow : Window
     {
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBarDragRegion);
+
+        if (MicaController.IsSupported())
+        {
+            this.SystemBackdrop = new MicaBackdrop
+            {
+                Kind = MicaKind.BaseAlt
+            };
+        }
 
         var windowHandle = WindowNative.GetWindowHandle(this);
         WindowHandle = windowHandle;
@@ -481,13 +490,7 @@ public sealed partial class MainWindow : Window
             && !_accessibilitySettings.HighContrast
             ? _slatePaletteResources
             : new ResourceDictionary();
-        // Install the palette before changing theme. Slate and Dark share ElementTheme.Dark,
-        // so explicitly refresh inherited ThemeResource values when only the app palette changes.
         var targetTheme = ThemeService.ElementTheme;
-        if (RootGrid.RequestedTheme == targetTheme)
-        {
-            RootGrid.RequestedTheme = targetTheme == ElementTheme.Dark ? ElementTheme.Light : ElementTheme.Dark;
-        }
         RootGrid.RequestedTheme = targetTheme;
         SlateSurface.Visibility = ThemeService.UsesSlateSurface ? Visibility.Visible : Visibility.Collapsed;
         UpdateNavigationPaneBackgrounds();
@@ -569,15 +572,15 @@ public sealed partial class MainWindow : Window
         resources["ControlFillColorTertiaryBrush"] = Brush(0x32, 0x43, 0x55);
         resources["ControlStrongStrokeColorDefaultBrush"] = Brush(0x8B, 0xA8, 0xC7, 0xD0);
 
-        // Peach is intentionally limited to primary/secondary/tertiary accent states.
-        resources["AccentFillColorDefaultBrush"] = Brush(0xF2, 0xB5, 0x9A);
-        resources["AccentFillColorSecondaryBrush"] = Brush(0xD9, 0x9A, 0x7C);
-        resources["AccentFillColorTertiaryBrush"] = Brush(0xB9, 0x78, 0x60);
-        resources["AccentFillColorDisabledBrush"] = Brush(0xF2, 0xB5, 0x9A, 0x52);
-        resources["AccentTextFillColorPrimaryBrush"] = Brush(0xFF, 0xC9, 0xB5);
-        resources["AccentTextFillColorSecondaryBrush"] = Brush(0xF2, 0xB5, 0x9A);
-        resources["TextOnAccentFillColorPrimaryBrush"] = Brush(0x2A, 0x1D, 0x1A);
-        resources["TextOnAccentFillColorSecondaryBrush"] = Brush(0x2A, 0x1D, 0x1A);
+        // Cinema Gold unified accent palette.
+        resources["AccentFillColorDefaultBrush"] = Brush(0xF5, 0x9E, 0x0B);
+        resources["AccentFillColorSecondaryBrush"] = Brush(0xD9, 0x77, 0x06);
+        resources["AccentFillColorTertiaryBrush"] = Brush(0xB4, 0x53, 0x09);
+        resources["AccentFillColorDisabledBrush"] = Brush(0xF5, 0x9E, 0x0B, 0x52);
+        resources["AccentTextFillColorPrimaryBrush"] = Brush(0xFB, 0xBF, 0x24);
+        resources["AccentTextFillColorSecondaryBrush"] = Brush(0xF5, 0x9E, 0x0B);
+        resources["TextOnAccentFillColorPrimaryBrush"] = Brush(0x00, 0x00, 0x00);
+        resources["TextOnAccentFillColorSecondaryBrush"] = Brush(0x00, 0x00, 0x00);
 
         // Native templates consume these aliases directly; replacing the underlying accent
         // brush alone cannot replace aliases already resolved in the WinUI resource dictionary.
@@ -589,12 +592,12 @@ public sealed partial class MainWindow : Window
         resources["AccentButtonForegroundPointerOver"] = resources["TextOnAccentFillColorPrimaryBrush"];
         resources["AccentButtonForegroundPressed"] = resources["TextOnAccentFillColorSecondaryBrush"];
         resources["NavigationViewSelectionIndicatorForeground"] = resources["AccentFillColorDefaultBrush"];
-        resources["NavigationViewItemBackgroundSelected"] = Brush(0xF2, 0xB5, 0x9A, 0x20);
-        resources["NavigationViewItemBackgroundSelectedPointerOver"] = Brush(0xF2, 0xB5, 0x9A, 0x30);
-        resources["NavigationViewItemBackgroundSelectedPressed"] = Brush(0xF2, 0xB5, 0x9A, 0x18);
+        resources["NavigationViewItemBackgroundSelected"] = Brush(0xF5, 0x9E, 0x0B, 0x26);
+        resources["NavigationViewItemBackgroundSelectedPointerOver"] = Brush(0xF5, 0x9E, 0x0B, 0x33);
+        resources["NavigationViewItemBackgroundSelectedPressed"] = Brush(0xF5, 0x9E, 0x0B, 0x1A);
         resources["ButtonBackgroundPointerOver"] = resources["ControlFillColorSecondaryBrush"];
         resources["ButtonBackgroundPressed"] = resources["ControlFillColorTertiaryBrush"];
-        resources["ButtonBorderBrushPointerOver"] = Brush(0xF2, 0xB5, 0x9A, 0xC0);
+        resources["ButtonBorderBrushPointerOver"] = Brush(0xF5, 0x9E, 0x0B, 0xC0);
 
         // Figma semantic surfaces are shared by the details pages. Keep their Slate tint in
         // this window-local overlay; the Default dictionary remains the neutral Dark palette.
@@ -605,11 +608,11 @@ public sealed partial class MainWindow : Window
         resources["FigmaTextPrimaryBrush"] = Brush(0xF4, 0xF2, 0xEF);
         resources["FigmaTextSecondaryBrush"] = Brush(0xB2, 0xBA, 0xC1);
         resources["FigmaTextTertiaryBrush"] = Brush(0x8C, 0x98, 0xA2);
-        resources["FigmaAccentButtonBrush"] = Brush(0x44, 0xC4, 0xF6);
-        resources["FigmaAccentForegroundBrush"] = Brush(0x23, 0x1A, 0x16);
-        resources["FigmaAccentSelectedSurfaceBrush"] = Brush(0x20, 0x3E, 0x4B);
+        resources["FigmaAccentButtonBrush"] = resources["AccentFillColorDefaultBrush"];
+        resources["FigmaAccentForegroundBrush"] = Brush(0x00, 0x00, 0x00);
+        resources["FigmaAccentSelectedSurfaceBrush"] = Brush(0xF5, 0x9E, 0x0B, 0x26);
         resources["FigmaStatusAvailableBrush"] = Brush(0xA5, 0xC8, 0xAD);
-        resources["FigmaStatusStorageGoldBrush"] = Brush(0xE6, 0xBB, 0x70);
+        resources["FigmaStatusStorageGoldBrush"] = Brush(0xF5, 0x9E, 0x0B);
 
         return resources;
     }

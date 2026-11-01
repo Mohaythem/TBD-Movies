@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Threading;
@@ -703,6 +703,34 @@ public sealed class TraktAuthServiceTests
         Assert.Equal(0, _authClient.RefreshCallsCount);
     }
 
+    [Fact]
+    public async Task DisconnectAsync_RevokesActiveToken_WhenTokenPresent()
+    {
+        _credentialStore.Write(new TraktCredentialPayload(_config.ClientId, "active-token-to-revoke", "refresh", "bearer", 7200,
+            "public", _timeProvider.GetUtcNow().ToUnixTimeSeconds()));
+        var service = CreateService();
+
+        await service.DisconnectAsync();
+
+        Assert.Contains("active-token-to-revoke", _authClient.RevokedTokens);
+        Assert.False(service.GetAuthState().IsConnected);
+        Assert.Null(_credentialStore.Read());
+    }
+
+    [Fact]
+    public async Task DisconnectAsync_WhenRevocationFails_ProceedsWithLocalDeletion()
+    {
+        _credentialStore.Write(new TraktCredentialPayload(_config.ClientId, "token-fail-revoke", "refresh", "bearer", 7200,
+            "public", _timeProvider.GetUtcNow().ToUnixTimeSeconds()));
+        _authClient.RevokeExceptionToThrow = new HttpRequestException("Network failure during revoke");
+        var service = CreateService();
+
+        await service.DisconnectAsync();
+
+        Assert.False(service.GetAuthState().IsConnected);
+        Assert.Null(_credentialStore.Read());
+    }
+
     private sealed class FakeTraktAuthClient : ITraktAuthClient
     {
         public TraktDeviceCode? DeviceCodeToReturn { get; set; }
@@ -749,6 +777,16 @@ public sealed class TraktAuthServiceTests
             }
 
             return RefreshTokenToReturn ?? new TraktTokenPair("refreshed-acc", "refreshed-ref", "bearer", 7200, "public", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        }
+
+        public List<string> RevokedTokens { get; } = [];
+        public Exception? RevokeExceptionToThrow { get; set; }
+
+        public Task RevokeTokenAsync(string clientId, string token, CancellationToken cancellationToken = default)
+        {
+            if (RevokeExceptionToThrow != null) throw RevokeExceptionToThrow;
+            RevokedTokens.Add(token);
+            return Task.CompletedTask;
         }
     }
 

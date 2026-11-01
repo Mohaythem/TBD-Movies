@@ -1,4 +1,4 @@
-﻿<Window
+<Window
     x:Class="TBDMovies.UI.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -17,7 +17,7 @@
         controls when Light was selected. The Slate theme is a tint drawn on top instead (see
         SlateSurface), so it needs no code-resolved brush either.
     -->
-    <Grid x:Name="RootGrid" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}" KeyboardAcceleratorPlacementMode="Hidden">
+    <Grid x:Name="RootGrid" Background="Transparent" KeyboardAcceleratorPlacementMode="Hidden">
         <!--
             Esc is a shell-wide Back accelerator. It runs the same navigation as the visible Back
             action (GoBack), so keyboard and pointer stay consistent. PlacementMode is Hidden so the
@@ -37,13 +37,14 @@
 
         <!--
             The Slate theme, exactly like the design's [data-theme='slate'] rule, is the dark palette
-            with a cooler shell tint - so it is one opaque surface drawn under everything and never
-            takes input. Visibility is the only thing the theme code touches.
+            with a cooler shell tint - so it is one semi-transparent surface drawn under everything and never
+            takes input, allowing the native Mica backdrop to shine through. Visibility is the only thing the theme code touches.
         -->
         <Border
             x:Name="SlateSurface"
             Grid.RowSpan="2"
             Background="{ThemeResource SlateBackgroundBrush}"
+            Opacity="0.85"
             IsHitTestVisible="False"
             Visibility="Collapsed" />
 

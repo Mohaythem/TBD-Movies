@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -763,6 +763,22 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         try
         {
             AppServices.Personal.RemoveWatchEvent(eventId);
+            var tmdbId = AppServices.GetMovieTmdbId(_movie.Id);
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+            {
+                var watchedAt = DateTimeOffset.TryParse(entry.Entry.Date, out var parsedDt) ? parsedDt : DateTimeOffset.UtcNow;
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await trakt.PushMovieWatchedAsync(tmdbId.Value, watchedAt, isWatched: false).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[MovieDetailsPage] Trakt PushMovieWatchedAsync(false) failed: {ex.Message}");
+                    }
+                });
+            }
         }
         catch (Exception error)
         {
@@ -783,6 +799,21 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         try
         {
             AppServices.Personal.RecordWatch(_movie.Id, date);
+            var tmdbId = AppServices.GetMovieTmdbId(_movie.Id);
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await trakt.PushMovieWatchedAsync(tmdbId.Value, date, isWatched: true).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[MovieDetailsPage] Trakt PushMovieWatchedAsync failed: {ex.Message}");
+                    }
+                });
+            }
         }
         catch (Exception error)
         {
@@ -866,17 +897,15 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         FavoriteButton.Style = (Style)Resources[
             _preference == "liked" ? "DetailsSelectedButtonStyle" : "DetailsButtonStyle"];
         FavoriteGlyph.Glyph = _preference == "liked" ? "\uEB52" : "\uEB51";
-        UpdateDetailsIcons();
     }
 
     private void UpdateWatchlistVisuals()
     {
         WatchlistButton.Style = (Style)Resources[
             _inWatchlist ? "DetailsSelectedButtonStyle" : "DetailsButtonStyle"];
-        WatchlistGlyph.Glyph = _inWatchlist ? "\uE735" : "\uE734";
+        WatchlistGlyph.Glyph = "\uE8FD";
         WatchlistText.Text = LocalizationService.Text(_inWatchlist ? "InWatchLater" : "AddToWatchLater");
         ToolTipService.SetToolTip(WatchlistButton, LocalizationService.Text(_inWatchlist ? "RemoveFromWatchLater" : "AddToWatchLater"));
-        UpdateDetailsIcons();
     }
 
     /// <summary>Re-stamps the localized remove-button label on rows created under another language.</summary>
@@ -907,28 +936,6 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
 
     private void UpdateDetailsIcons()
     {
-        var native = ActualTheme == ElementTheme.Light || _accessibilitySettings.HighContrast;
-        void Visit(DependencyObject parent)
-        {
-            if (parent is Grid { Tag: string tag } grid && tag.StartsWith("DetailsIcon:", StringComparison.Ordinal)
-                && grid.Children.Count == 2 && grid.Children[0] is Image image && grid.Children[1] is FontIcon glyph)
-            {
-                var dynamicNative = tag == "DetailsIcon:heart" && _preference != "liked"
-                    || tag == "DetailsIcon:bookmark" && !_inWatchlist;
-                image.Visibility = native || dynamicNative ? Visibility.Collapsed : Visibility.Visible;
-                glyph.Visibility = native || dynamicNative ? Visibility.Visible : Visibility.Collapsed;
-                if (tag == "DetailsIcon:back")
-                {
-                    glyph.MirroredWhenRightToLeft = true;
-                    image.RenderTransformOrigin = new Windows.Foundation.Point(0.5, 0.5);
-                    image.RenderTransform = new Microsoft.UI.Xaml.Media.ScaleTransform
-                    { ScaleX = LocalizationService.FlowDirection == FlowDirection.RightToLeft ? -1 : 1 };
-                }
-            }
-            for (var index = 0; index < Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(parent); index++)
-                Visit(Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, index));
-        }
-        Visit(Root);
     }
 
     private bool _pathExpanded;

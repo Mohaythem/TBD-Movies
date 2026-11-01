@@ -1,4 +1,4 @@
-﻿using TBDMovies.Application.Contracts;
+using TBDMovies.Application.Contracts;
 using TBDMovies.Application.External;
 using TBDMovies.Application.Repositories;
 using TBDMovies.Application.Services;
@@ -70,17 +70,13 @@ internal static class AppServices
     internal static string? GetTestDataRoot()
     {
         var testRoot = Environment.GetEnvironmentVariable("TBDMOVIES_TEST_DATA_ROOT");
-        if (string.IsNullOrWhiteSpace(testRoot))
-        {
-            testRoot = Environment.GetEnvironmentVariable("TBDMOVIES_TEST_DATA_ROOT");
-        }
         return string.IsNullOrWhiteSpace(testRoot) ? null : testRoot;
     }
 
     private static string ResolveDataFolder()
     {
         // Opt-in data-root override for QA, scale testing and support of the installed Release build.
-        // It is inert unless TBDMOVIES_TEST_DATA_ROOT or TBDMOVIES_TEST_DATA_ROOT is set to an absolute path, and it never changes the
+        // It is inert unless TBDMOVIES_TEST_DATA_ROOT is set to an absolute path, and it never changes the
         // default per-user location. It lets an installed build run against an isolated, disposable data
         // profile without touching the user's real %LOCALAPPDATA%\TBD Movies library.
         var testRoot = GetTestDataRoot();
@@ -184,23 +180,59 @@ internal static class AppServices
         get
         {
             var store = _settingsRepository;
-            if (store is null) return (string.Empty, string.Empty);
+            if (store is null) return (TraktDefaults.OfficialClientId, TraktDefaults.DefaultRedirectUri);
             try
             {
                 var json = store.Get("trakt_api_config");
-                if (string.IsNullOrWhiteSpace(json)) return (string.Empty, string.Empty);
-                var dto = JsonSerializer.Deserialize<TraktConfigDto>(json, TraktJsonOptions);
-                if (dto is not null && !string.IsNullOrWhiteSpace(dto.ClientId) && !string.IsNullOrWhiteSpace(dto.RedirectUri))
+                if (!string.IsNullOrWhiteSpace(json))
                 {
-                    return (dto.ClientId.Trim(), dto.RedirectUri.Trim());
+                    var dto = JsonSerializer.Deserialize<TraktConfigDto>(json, TraktJsonOptions);
+                    if (dto is not null && !string.IsNullOrWhiteSpace(dto.ClientId) && !string.IsNullOrWhiteSpace(dto.RedirectUri))
+                    {
+                        return (dto.ClientId.Trim(), dto.RedirectUri.Trim());
+                    }
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine($"Failed to parse Trakt config: {ex.Message}");
             }
-            return (string.Empty, string.Empty);
+            return (TraktDefaults.OfficialClientId, TraktDefaults.DefaultRedirectUri);
         }
     }
+
+    public static int? GetMovieTmdbId(int movieId)
+    {
+        if (movieId <= 0 || _movies is null) return null;
+        try
+        {
+            var movie = _movies.GetById(movieId);
+            if (movie is not null && string.Equals(movie.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                int.TryParse(movie.ExternalId, out var tmdbId) && tmdbId > 0)
+            {
+                return tmdbId;
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    public static int? GetShowTmdbId(int showId)
+    {
+        if (showId <= 0 || _tvShows is null) return null;
+        try
+        {
+            var show = _tvShows.GetById(showId);
+            if (show is not null && string.Equals(show.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) &&
+                int.TryParse(show.ExternalId, out var tmdbId) && tmdbId > 0)
+            {
+                return tmdbId;
+            }
+        }
+        catch { }
+        return null;
+    }
+
 
     public static ITraktLocalSnapshotBuilder? TraktLocalSnapshot => _traktLocalSnapshot;
     private static ITraktLocalSnapshotBuilder? _traktLocalSnapshot;
@@ -389,6 +421,8 @@ internal static class AppServices
     private static IMetadataProvider? _metadataProvider;
     private static MetadataMatchingService? _matching;
     private static ILibraryRepairUiActions? _repair;
+    private static IPersonalLibraryRepository? _personalRepo;
+    private static IWatchHistoryRepository? _watchHistoryRepo;
 
     /// <summary>
     /// The two objects that own a resource rather than a connection string: the journal store holds a
@@ -502,7 +536,7 @@ internal static class AppServices
                     matching: matching,
                     fileValidator: new ImportFileValidator());
                 var availabilityInspector = new AvailabilityInspector();
-                var reconciliation = new ReconciliationService(mediaFiles, availabilityInspector, movies);
+                var reconciliation = new ReconciliationService(mediaFiles, availabilityInspector, movies, uowFactory: catalogFactory);
                 var tvShows = new UnitOfWorkTvShowRepository(catalogFactory);
                 var tvSeasons = new UnitOfWorkTvSeasonRepository(catalogFactory);
                 var tvEpisodes = new UnitOfWorkTvEpisodeRepository(catalogFactory);
@@ -540,10 +574,11 @@ internal static class AppServices
                 _posterCache = posterCache;
                 _tmdbClient = tmdbClient;
                 _metadataProvider = tmdbClient;
-                _matching = matching;
                 _repair = repair;
+                _personalRepo = personal;
+                _watchHistoryRepo = personal;
 
-                TryRestoreTraktOnStartup(settingsRepository, connectionString, movies, mediaFiles, tvShows, tvSeasons, tvEpisodes, availabilityInspector);
+                TryRestoreTraktOnStartup(settingsRepository, connectionString, movies, mediaFiles, tvShows, tvSeasons, tvEpisodes, availabilityInspector, personal, personal);
 
                 InitializationError = null;
                 _initialized = true;
@@ -628,6 +663,8 @@ internal static class AppServices
         _metadataProvider = null;
         _matching = null;
         _repair = null;
+        _personalRepo = null;
+        _watchHistoryRepo = null;
         _operationStore = null;
         _coordinator = null;
     }
@@ -652,7 +689,10 @@ internal static class AppServices
                 if (!string.IsNullOrEmpty(showFolder) && !NetworkReadGuard.IsNetworkPath(showFolder) && Directory.Exists(showFolder))
                     approvedRoots.Add(showFolder);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to load approved roots from settings: {ex.Message}");
+            }
 
             foreach (var op in nonterminal)
             {
@@ -720,10 +760,10 @@ internal static class AppServices
             candidateAuth = new TraktAuthClient();
             var auth = new TraktAuthService(candidateAuth, credentials, candidateConfig);
             candidateData = new TraktDataClient();
-            candidateSync = new TraktSyncService(auth, candidateData, cache, candidateConfig, Require(_settingsRepository));
-            candidateSync.SyncCompleted += (_, _) => TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
             var snapshot = new TraktLocalSnapshotBuilder(Require(_movies), Require(_mediaFiles),
                 Require(_tvShows), Require(_tvSeasons), Require(_tvEpisodes), Require(_availabilityInspector));
+            candidateSync = new TraktSyncService(auth, candidateData, cache, candidateConfig, Require(_settingsRepository), timeProvider: null, snapshot, _personalRepo, _watchHistoryRepo);
+            candidateSync.SyncCompleted += (_, _) => TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
             var projection = new TraktProjectionService();
             var json = JsonSerializer.Serialize(new TraktConfigDto(candidateConfig.ClientId, candidateConfig.RedirectUri));
 
@@ -770,7 +810,9 @@ internal static class AppServices
         ITvShowRepository tvShows,
         ITvSeasonRepository tvSeasons,
         ITvEpisodeRepository tvEpisodes,
-        IAvailabilityInspector availabilityInspector)
+        IAvailabilityInspector availabilityInspector,
+        IPersonalLibraryRepository? personalRepo = null,
+        IWatchHistoryRepository? watchHistoryRepo = null)
     {
         TraktAuthClient? startupAuth = null;
         TraktDataClient? startupData = null;
@@ -807,12 +849,18 @@ internal static class AppServices
                         var json = JsonSerializer.Serialize(new TraktConfigDto(trimmedClientId, trimmedRedirectUri));
                         settingsRepository.Set("trakt_api_config", json, DateTimeOffset.UtcNow);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Failed to write default Trakt config to settings: {ex.Message}");
+                    }
                 }
             }
 
             if (string.IsNullOrWhiteSpace(trimmedClientId) || string.IsNullOrWhiteSpace(trimmedRedirectUri))
-                return;
+            {
+                trimmedClientId = TraktDefaults.OfficialClientId;
+                trimmedRedirectUri = TraktDefaults.DefaultRedirectUri;
+            }
 
             if (!Uri.TryCreate(trimmedRedirectUri, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
                 return;
@@ -822,7 +870,23 @@ internal static class AppServices
             var authClient = startupAuth = new TraktAuthClient();
             var authService = new TraktAuthService(authClient, credentialStore, authConfig);
             var dataClient = startupData = new TraktDataClient();
-            var syncService = startupSync = new TraktSyncService(authService, dataClient, cacheRepo, authConfig, settingsRepository);
+            var snapshotBuilder = new TraktLocalSnapshotBuilder(
+                movies,
+                mediaFiles,
+                tvShows,
+                tvSeasons,
+                tvEpisodes,
+                availabilityInspector);
+            var syncService = startupSync = new TraktSyncService(
+                authService,
+                dataClient,
+                cacheRepo,
+                authConfig,
+                settingsRepository,
+                timeProvider: null,
+                snapshotBuilder,
+                personalRepo,
+                watchHistoryRepo);
             syncService.SyncCompleted += (_, _) => TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
 
             _traktAuthClient = authClient;
@@ -830,13 +894,7 @@ internal static class AppServices
             _traktSyncService = syncService;
             _trakt = syncService;
 
-            _traktLocalSnapshot = new TraktLocalSnapshotBuilder(
-                movies,
-                mediaFiles,
-                tvShows,
-                tvSeasons,
-                tvEpisodes,
-                availabilityInspector);
+            _traktLocalSnapshot = snapshotBuilder;
             _traktProjection = new TraktProjectionService();
             TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
         }
@@ -881,7 +939,10 @@ internal static class AppServices
                     roots.Add(showFolder);
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to read scan roots for temp file inspection: {ex.Message}");
+        }
         if (extraRoots is not null)
         {
             foreach (var root in extraRoots)

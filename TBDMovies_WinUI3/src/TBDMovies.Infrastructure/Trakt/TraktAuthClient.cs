@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -357,6 +357,32 @@ public sealed class TraktAuthClient : ITraktAuthClient, IDisposable
         public override string ToString() => "[REDACTED_TOKEN_DTO]";
     }
 
+    public async Task RevokeTokenAsync(string clientId, string token, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrWhiteSpace(clientId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(token);
+
+        var requestUri = new Uri($"{FixedAuthBaseUrl}/oauth/revoke");
+        var requestDto = new TokenRevokeRequestDto(token.Trim(), clientId.Trim());
+        var json = JsonSerializer.Serialize(requestDto);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json")
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        TraktRequestHeaders.IdentifyApplication(request);
+        request.Headers.Add("trakt-api-key", clientId.Trim());
+        request.Headers.Add("trakt-api-version", "2");
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new TraktAuthException($"Trakt token revocation failed with HTTP status {(int)response.StatusCode}.");
+        }
+    }
+
     private sealed record TokenRefreshRequestDto(
         [property: JsonPropertyName("client_id")] string ClientId,
         [property: JsonPropertyName("redirect_uri")] string RedirectUri,
@@ -364,5 +390,12 @@ public sealed class TraktAuthClient : ITraktAuthClient, IDisposable
         [property: JsonPropertyName("grant_type")] string GrantType = "refresh_token")
     {
         public override string ToString() => "[REDACTED_TOKEN_REFRESH_REQUEST]";
+    }
+
+    private sealed record TokenRevokeRequestDto(
+        [property: JsonPropertyName("token")] string Token,
+        [property: JsonPropertyName("client_id")] string ClientId)
+    {
+        public override string ToString() => "[REDACTED_TOKEN_REVOKE_REQUEST]";
     }
 }

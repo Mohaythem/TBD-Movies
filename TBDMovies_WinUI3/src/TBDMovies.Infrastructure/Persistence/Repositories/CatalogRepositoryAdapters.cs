@@ -1,8 +1,10 @@
-﻿using TBDMovies.Application.Repositories;
+using System;
+using System.Collections.Generic;
+using TBDMovies.Application.Repositories;
 using TBDMovies.Domain.Library.Movies;
 using TBDMovies.Domain.Library.Shows;
 
-namespace TBDMovies.UI.Services;
+namespace TBDMovies.Infrastructure.Persistence.Repositories;
 
 /// <summary>
 /// Adapts the transactional catalog unit of work onto the flat repository contracts the application
@@ -14,7 +16,7 @@ namespace TBDMovies.UI.Services;
 /// connections are not thread safe, so one long-lived connection would be a latent crash.
 /// </para>
 /// </summary>
-internal sealed class UnitOfWorkMovieRepository(ICatalogUnitOfWorkFactory factory) : IMovieRepository
+public sealed class UnitOfWorkMovieRepository(ICatalogUnitOfWorkFactory factory) : IMovieRepository
 {
     public void RecordOpened(int id, DateTimeOffset openedAt) => Write<object?>(movies =>
     {
@@ -24,7 +26,7 @@ internal sealed class UnitOfWorkMovieRepository(ICatalogUnitOfWorkFactory factor
 
     private T Read<T>(Func<IMovieRepository, T> read)
     {
-        using var work = factory.Begin();
+        using var work = factory.BeginReadOnly();
         return read(work.Movies);
     }
 
@@ -74,11 +76,11 @@ internal sealed class UnitOfWorkMovieRepository(ICatalogUnitOfWorkFactory factor
 }
 
 /// <summary>Media-file half of <see cref="UnitOfWorkMovieRepository" />; same one-call-one-transaction rule.</summary>
-internal sealed class UnitOfWorkMediaFileRepository(ICatalogUnitOfWorkFactory factory) : IMediaFileRepository
+public sealed class UnitOfWorkMediaFileRepository(ICatalogUnitOfWorkFactory factory) : IMediaFileRepository
 {
     private T Read<T>(Func<IMediaFileRepository, T> read)
     {
-        using var work = factory.Begin();
+        using var work = factory.BeginReadOnly();
         return read(work.MediaFiles);
     }
 
@@ -126,7 +128,7 @@ internal sealed class UnitOfWorkMediaFileRepository(ICatalogUnitOfWorkFactory fa
 }
 
 /// <summary>Show half of the TV catalog; same one-call-one-transaction rule as the movie adapters.</summary>
-internal sealed class UnitOfWorkTvShowRepository(ICatalogUnitOfWorkFactory factory) : ITvShowRepository, ITvShowSummaryReader
+public sealed class UnitOfWorkTvShowRepository(ICatalogUnitOfWorkFactory factory) : ITvShowRepository, ITvShowSummaryReader
 {
     public void RecordOpened(int id, DateTimeOffset openedAt) => Write<object?>(shows =>
     {
@@ -136,7 +138,7 @@ internal sealed class UnitOfWorkTvShowRepository(ICatalogUnitOfWorkFactory facto
 
     private T Read<T>(Func<ITvShowRepository, T> read)
     {
-        using var work = factory.Begin();
+        using var work = factory.BeginReadOnly();
         return read(work.TvShows);
     }
 
@@ -189,11 +191,11 @@ internal sealed class UnitOfWorkTvShowRepository(ICatalogUnitOfWorkFactory facto
 }
 
 /// <summary>Season half of the TV catalog.</summary>
-internal sealed class UnitOfWorkTvSeasonRepository(ICatalogUnitOfWorkFactory factory) : ITvSeasonRepository
+public sealed class UnitOfWorkTvSeasonRepository(ICatalogUnitOfWorkFactory factory) : ITvSeasonRepository
 {
     private T Read<T>(Func<ITvSeasonRepository, T> read)
     {
-        using var work = factory.Begin();
+        using var work = factory.BeginReadOnly();
         return read(work.TvSeasons);
     }
 
@@ -236,11 +238,11 @@ internal sealed class UnitOfWorkTvSeasonRepository(ICatalogUnitOfWorkFactory fac
 }
 
 /// <summary>Episode half of the TV catalog, including the episode-to-media-file links.</summary>
-internal sealed class UnitOfWorkTvEpisodeRepository(ICatalogUnitOfWorkFactory factory) : ITvEpisodeRepository
+public sealed class UnitOfWorkTvEpisodeRepository(ICatalogUnitOfWorkFactory factory) : ITvEpisodeRepository
 {
     private T Read<T>(Func<ITvEpisodeRepository, T> read)
     {
-        using var work = factory.Begin();
+        using var work = factory.BeginReadOnly();
         return read(work.TvEpisodes);
     }
 

@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -88,4 +88,15 @@ public interface ITraktUiActions
     /// Retrieves the raw cache entry for a specific resource key without modifying state.
     /// </summary>
     TraktCacheEntry? GetRawResource(string resourceKey, string? accountId = null);
+
+    /// <summary>
+    /// Pushes movie watched/unwatched status to Trakt history.
+    /// </summary>
+    Task<bool> PushMovieWatchedAsync(int tmdbId, DateTimeOffset watchedAt, bool isWatched, CancellationToken ct = default);
+
+    /// <summary>
+    /// Pushes episode watched/unwatched status to Trakt history.
+    /// </summary>
+    Task<bool> PushEpisodeWatchedAsync(int showTmdbId, int seasonNumber, int episodeNumber, DateTimeOffset watchedAt, bool isWatched, CancellationToken ct = default);
 }
+

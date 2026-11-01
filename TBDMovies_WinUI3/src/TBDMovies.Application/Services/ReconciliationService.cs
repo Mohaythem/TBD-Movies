@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using TBDMovies.Application.Contracts;
 using TBDMovies.Application.Dto;
 using TBDMovies.Application.External;
@@ -17,16 +17,20 @@ public sealed class ReconciliationService : IReconciliationUiActions
     private readonly Func<DateTimeOffset> _clock;
     private readonly ConcurrentDictionary<string, PreparedRelink> _relinks = new(StringComparer.Ordinal);
 
+    private readonly ICatalogUnitOfWorkFactory? _uowFactory;
+
     public ReconciliationService(
         IMediaFileRepository mediaFiles,
         IAvailabilityInspector inspector,
         IMovieRepository? movies = null,
-        Func<DateTimeOffset>? clock = null)
+        Func<DateTimeOffset>? clock = null,
+        ICatalogUnitOfWorkFactory? uowFactory = null)
     {
         _mediaFiles = mediaFiles;
         _inspector = inspector;
         _movies = movies;
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
+        _uowFactory = uowFactory;
     }
 
     public LibraryReconciliationProgress ReconcileLibraryFiles(
@@ -43,63 +47,116 @@ public sealed class ReconciliationService : IReconciliationUiActions
         // with thousands of files is then a single cheap probe, and no file on it is inspected or written.
         var rootAvailable = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var file in files.OrderBy(file => IsNetworkPath(file.CurrentPath)))
+        const int BatchSize = 500;
+        ICatalogUnitOfWork? batchUow = null;
+        var pendingInBatch = 0;
+
+        void CommitBatch()
         {
-            if (isCancelled?.Invoke() == true) throw new OperationCanceledException();
-            checkedCount++;
-
-            var rootKey = StorageRootKey(file.CurrentPath);
-            if (!rootAvailable.TryGetValue(rootKey, out var available))
+            if (batchUow != null)
             {
-                available = _inspector.IsStorageAvailable(file.CurrentPath);
-                rootAvailable[rootKey] = available;
+                batchUow.Commit();
+                batchUow.Dispose();
+                batchUow = null;
+                pendingInBatch = 0;
+            }
+        }
+
+        try
+        {
+            foreach (var file in files.OrderBy(file => IsNetworkPath(file.CurrentPath)))
+            {
                 if (isCancelled?.Invoke() == true) throw new OperationCanceledException();
-            }
+                checkedCount++;
 
-            if (!available)
-            {
-                // Storage unavailable: not deleted media. Do not mark missing and do not rewrite the
-                // path. The registration and its last-known state are preserved; reconnecting restores
-                // availability on the next pass without re-registration. It is reported separately so a
-                // completed check never implies an offline drive's files are available.
-                storageUnavailableCount++;
-                progress?.Invoke(new LibraryReconciliationProgress(checkedCount, missingCount, 0, errors, file.CurrentPath, storageUnavailableCount));
-                continue;
-            }
+                var rootKey = StorageRootKey(file.CurrentPath);
+                if (!rootAvailable.TryGetValue(rootKey, out var available))
+                {
+                    available = _inspector.IsStorageAvailable(file.CurrentPath);
+                    rootAvailable[rootKey] = available;
+                    if (isCancelled?.Invoke() == true) throw new OperationCanceledException();
+                }
 
-            var inspection = _inspector.Inspect(file.CurrentPath);
-            if (isCancelled?.Invoke() == true) throw new OperationCanceledException();
-            if (inspection.Status == AvailabilityInspectionStatus.Missing)
-            {
-                missingCount++;
-                if (file.Status != MediaFileStatus.Missing) _mediaFiles.MarkMissing(file.Id, _clock());
-            }
-            else if (inspection.Status == AvailabilityInspectionStatus.Present)
-            {
-                if (inspection.Size is null) throw new InvalidDataException("Present inspection omitted file size.");
-                _mediaFiles.RefreshVerifiedFacts(
-                    file.Id,
-                    new VerifiedMediaFileFacts(
+                if (!available)
+                {
+                    // Storage unavailable: not deleted media. Do not mark missing and do not rewrite the
+                    // path. The registration and its last-known state are preserved; reconnecting restores
+                    // availability on the next pass without re-registration. It is reported separately so a
+                    // completed check never implies an offline drive's files are available.
+                    storageUnavailableCount++;
+                    progress?.Invoke(new LibraryReconciliationProgress(checkedCount, missingCount, 0, errors, file.CurrentPath, storageUnavailableCount));
+                    continue;
+                }
+
+                var inspection = _inspector.Inspect(file.CurrentPath);
+                if (isCancelled?.Invoke() == true) throw new OperationCanceledException();
+                if (inspection.Status == AvailabilityInspectionStatus.Missing)
+                {
+                    missingCount++;
+                    if (file.Status != MediaFileStatus.Missing)
+                    {
+                        if (_uowFactory != null)
+                        {
+                            batchUow ??= _uowFactory.Begin();
+                            batchUow.MediaFiles.MarkMissing(file.Id, _clock());
+                            pendingInBatch++;
+                            if (pendingInBatch >= BatchSize)
+                            {
+                                CommitBatch();
+                            }
+                        }
+                        else
+                        {
+                            _mediaFiles.MarkMissing(file.Id, _clock());
+                        }
+                    }
+                }
+                else if (inspection.Status == AvailabilityInspectionStatus.Present)
+                {
+                    if (inspection.Size is null) throw new InvalidDataException("Present inspection omitted file size.");
+                    var facts = new VerifiedMediaFileFacts(
                         file.CurrentPath,
                         inspection.Size.Value,
                         file.Extension ?? Path.GetExtension(file.CurrentPath),
                         file.Resolution,
                         file.Codec,
                         file.Source,
-                        _clock()));
+                        _clock());
+
+                    if (_uowFactory != null)
+                    {
+                        batchUow ??= _uowFactory.Begin();
+                        batchUow.MediaFiles.RefreshVerifiedFacts(file.Id, facts);
+                        pendingInBatch++;
+                        if (pendingInBatch >= BatchSize)
+                        {
+                            CommitBatch();
+                        }
+                    }
+                    else
+                    {
+                        _mediaFiles.RefreshVerifiedFacts(file.Id, facts);
+                    }
+                }
+                else if (inspection.Status == AvailabilityInspectionStatus.StorageUnavailable)
+                {
+                    // A root that became unreachable between the batch probe and the per-file inspection.
+                    storageUnavailableCount++;
+                    rootAvailable[rootKey] = false;
+                }
+                else
+                {
+                    // Error: inspection failed for an access/I/O reason. Non-destructive: leave the row as is.
+                    errors++;
+                }
+                progress?.Invoke(new LibraryReconciliationProgress(checkedCount, missingCount, 0, errors, file.CurrentPath, storageUnavailableCount));
             }
-            else if (inspection.Status == AvailabilityInspectionStatus.StorageUnavailable)
-            {
-                // A root that became unreachable between the batch probe and the per-file inspection.
-                storageUnavailableCount++;
-                rootAvailable[rootKey] = false;
-            }
-            else
-            {
-                // Error: inspection failed for an access/I/O reason. Non-destructive: leave the row as is.
-                errors++;
-            }
-            progress?.Invoke(new LibraryReconciliationProgress(checkedCount, missingCount, 0, errors, file.CurrentPath, storageUnavailableCount));
+
+            CommitBatch();
+        }
+        finally
+        {
+            batchUow?.Dispose();
         }
         return new LibraryReconciliationProgress(checkedCount, missingCount, 0, errors, null, storageUnavailableCount);
     }

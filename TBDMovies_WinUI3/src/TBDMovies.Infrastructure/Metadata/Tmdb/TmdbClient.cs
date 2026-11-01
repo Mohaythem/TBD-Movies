@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -585,10 +585,10 @@ public sealed class TmdbClient : IMetadataProvider, ITmdbCredentialValidator, ID
     }
 
     public IReadOnlyList<MovieCandidate> Search(MovieSearchQuery query) =>
-        Task.Run(() => SearchMoviesAsync(query)).GetAwaiter().GetResult();
+        SearchMoviesAsync(query).ConfigureAwait(false).GetAwaiter().GetResult();
 
     public MovieMetadata? GetMovie(string externalId) =>
-        Task.Run(() => GetMovieAsync(externalId)).GetAwaiter().GetResult();
+        GetMovieAsync(externalId).ConfigureAwait(false).GetAwaiter().GetResult();
 
     private static void ThrowForStatus(HttpStatusCode statusCode)
     {

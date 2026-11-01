@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -57,6 +57,8 @@ public sealed partial class TraktPage : Page, ILocalizableView, IActivatableView
     public void Activate()
     {
         _isActivated = true;
+        AppServices.TraktSyncCompleted -= OnTraktSyncCompleted;
+        AppServices.TraktSyncCompleted += OnTraktSyncCompleted;
         RefreshStatusHeader();
         RefreshCustomListsAsync();
         ReloadCurrentResource();
@@ -65,14 +67,29 @@ public sealed partial class TraktPage : Page, ILocalizableView, IActivatableView
     /// <inheritdoc />
     public void Deactivate()
     {
+        AppServices.TraktSyncCompleted -= OnTraktSyncCompleted;
         _isActivated = false;
         _activeLoadCts?.Cancel();
+        _activeLoadCts?.Dispose();
         _activeLoadCts = null;
         Interlocked.Increment(ref _currentGeneration);
 
         _customListsCts?.Cancel();
+        _customListsCts?.Dispose();
         _customListsCts = null;
         Interlocked.Increment(ref _customListsGeneration);
+    }
+
+    private void OnTraktSyncCompleted(object? sender, EventArgs e)
+    {
+        if (!_isActivated) return;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!_isActivated) return;
+            RefreshStatusHeader();
+            RefreshCustomListsAsync();
+            ReloadCurrentResource();
+        });
     }
 
     /// <inheritdoc />
@@ -98,6 +115,7 @@ public sealed partial class TraktPage : Page, ILocalizableView, IActivatableView
         EmptyStateTitleText.Text = LocalizationService.Text("TraktEmptyTitle");
         EmptyStateSubtitleText.Text = LocalizationService.Text("TraktEmptySubtitle");
         GoToSettingsButton.Content = LocalizationService.Text("TraktGoToSettings");
+        ConnectTraktButton.Content = LocalizationService.Text("TraktConnectDevice");
 
         RefreshStatusHeader();
         FilterDisplayedRows();
@@ -176,6 +194,7 @@ public sealed partial class TraktPage : Page, ILocalizableView, IActivatableView
         if (trakt == null) return;
 
         _customListsCts?.Cancel();
+        _customListsCts?.Dispose();
         var cts = new CancellationTokenSource();
         _customListsCts = cts;
         var generation = Interlocked.Increment(ref _customListsGeneration);
@@ -303,6 +322,7 @@ public sealed partial class TraktPage : Page, ILocalizableView, IActivatableView
     private void ReloadCurrentResource()
     {
         _activeLoadCts?.Cancel();
+        _activeLoadCts?.Dispose();
         var cts = new CancellationTokenSource();
         _activeLoadCts = cts;
         var generation = Interlocked.Increment(ref _currentGeneration);
@@ -538,6 +558,9 @@ public sealed partial class TraktPage : Page, ILocalizableView, IActivatableView
 
     private void UpdateEmptyState(bool isNotConfigured)
     {
+        var trakt = AppServices.Trakt;
+        var isConnected = trakt?.GetSyncState().AuthState.IsConnected == true;
+
         // The list is later in the Grid and otherwise intercepts clicks on the empty-state button.
         ItemsListView.Visibility = !LoadingRing.IsActive && !isNotConfigured && DisplayedRows.Count > 0
             ? Visibility.Visible : Visibility.Collapsed;
@@ -547,17 +570,19 @@ public sealed partial class TraktPage : Page, ILocalizableView, IActivatableView
             return;
         }
 
-        if (isNotConfigured)
+        if (!isConnected || isNotConfigured)
         {
-            EmptyStateTitleText.Text = LocalizationService.Text("TraktStatusNotConfigured");
+            EmptyStateTitleText.Text = LocalizationService.Text("TraktStatusDisconnected");
             EmptyStateSubtitleText.Text = LocalizationService.Text("TraktNotConfiguredPrompt");
-            GoToSettingsButton.Visibility = Visibility.Visible;
+            ConnectTraktButton.Visibility = Visibility.Visible;
+            GoToSettingsButton.Visibility = Visibility.Collapsed;
             EmptyStatePanel.Visibility = Visibility.Visible;
         }
         else if (DisplayedRows.Count == 0)
         {
             EmptyStateTitleText.Text = LocalizationService.Text("TraktEmptyTitle");
             EmptyStateSubtitleText.Text = LocalizationService.Text("TraktEmptySubtitle");
+            ConnectTraktButton.Visibility = Visibility.Collapsed;
             GoToSettingsButton.Visibility = Visibility.Collapsed;
             EmptyStatePanel.Visibility = Visibility.Visible;
         }
@@ -622,6 +647,128 @@ public sealed partial class TraktPage : Page, ILocalizableView, IActivatableView
     {
         SettingsRequested?.Invoke(this, EventArgs.Empty);
     }
+
+    private async void ConnectTraktButton_Click(object sender, RoutedEventArgs e)
+    {
+        var trakt = AppServices.Trakt;
+        if (trakt is null) return;
+
+        ConnectTraktButton.IsEnabled = false;
+        var cts = new CancellationTokenSource();
+
+        try
+        {
+            var deviceCode = await Task.Run(() => trakt.BeginAuthAsync(cts.Token), cts.Token);
+
+            var dialogContent = new StackPanel { Spacing = 16 };
+            dialogContent.Children.Add(new TextBlock
+            {
+                Text = LocalizationService.Text("TraktDeviceAuthInstructions") is { Length: > 0 } inst && inst != "TraktDeviceAuthInstructions"
+                    ? inst
+                    : "Enter this code at trakt.tv/activate to authorize TBD Movies:",
+                Style = (Style)App.Current.Resources["SecondaryBodyTextStyle"],
+                TextWrapping = TextWrapping.Wrap
+            });
+
+            var codeBorder = new Border
+            {
+                Background = (Brush)App.Current.Resources["LayerFillColorAltBrush"],
+                BorderBrush = (Brush)App.Current.Resources["ControlStrokeColorDefaultBrush"],
+                BorderThickness = new Thickness(1),
+                CornerRadius = (CornerRadius)App.Current.Resources["ControlCornerRadius"],
+                Padding = new Thickness(16, 8, 16, 8),
+                HorizontalAlignment = HorizontalAlignment.Left
+            };
+            codeBorder.Child = new TextBlock
+            {
+                Text = deviceCode.UserCode,
+                Style = (Style)App.Current.Resources["SubtitleTextBlockStyle"],
+                FontFamily = new FontFamily("Consolas, Cascadia Mono, monospace"),
+                IsTextSelectionEnabled = true
+            };
+            dialogContent.Children.Add(codeBorder);
+
+            var openUrlButton = new Button
+            {
+                Content = LocalizationService.Text("TraktOpenVerificationUrl") is { Length: > 0 } openTxt && openTxt != "TraktOpenVerificationUrl"
+                    ? openTxt
+                    : "Open Trakt Activation Link",
+                Style = (Style)App.Current.Resources["AccentControlButtonStyle"]
+            };
+            openUrlButton.Click += async (_, _) =>
+            {
+                if (Uri.TryCreate(deviceCode.VerificationUrl, UriKind.Absolute, out var uri) &&
+                    uri.Scheme == Uri.UriSchemeHttps)
+                {
+                    await Windows.System.Launcher.LaunchUriAsync(uri);
+                }
+            };
+            dialogContent.Children.Add(openUrlButton);
+
+            var progressStack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+            progressStack.Children.Add(new ProgressRing { IsActive = true, Width = 16, Height = 16 });
+            progressStack.Children.Add(new TextBlock
+            {
+                Text = LocalizationService.Text("TraktStatusSyncing") ?? "Waiting for approval…",
+                Style = (Style)App.Current.Resources["SecondaryCaptionTextStyle"],
+                VerticalAlignment = VerticalAlignment.Center
+            });
+            dialogContent.Children.Add(progressStack);
+
+            var authDialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                RequestedTheme = ThemeService.ElementTheme,
+                FlowDirection = LocalizationService.FlowDirection,
+                Title = LocalizationService.Text("TraktConnectDevice") ?? "Connect to Trakt",
+                Content = dialogContent,
+                CloseButtonText = LocalizationService.Text("Cancel")
+            };
+
+            var completionTask = Task.Run(async () =>
+            {
+                try
+                {
+                    return await trakt.CompleteAuthAsync(deviceCode, cts.Token).ConfigureAwait(false);
+                }
+                catch
+                {
+                    return null;
+                }
+            }, cts.Token);
+
+            var dialogShowTask = ContentDialogCoordinator.ShowAsync(authDialog);
+
+            var completedFirst = await Task.WhenAny(completionTask, dialogShowTask);
+            if (completedFirst == completionTask)
+            {
+                var authState = await completionTask;
+                authDialog.Hide();
+                if (authState?.IsConnected == true)
+                {
+                    RefreshStatusHeader();
+                    ReloadCurrentResource();
+                }
+            }
+            else
+            {
+                cts.Cancel();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TraktPage] Connect failed: {ex.Message}");
+        }
+        finally
+        {
+            ConnectTraktButton.IsEnabled = true;
+            cts.Dispose();
+        }
+    }
+
 
     private void DetailsButton_Click(object sender, RoutedEventArgs e)
     {
