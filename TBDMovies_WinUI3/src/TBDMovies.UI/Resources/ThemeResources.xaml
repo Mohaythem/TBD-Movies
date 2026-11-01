@@ -132,6 +132,8 @@
             <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush" Color="#FF000000" />
             <SolidColorBrush x:Key="TextOnAccentFillColorSecondaryBrush" Color="#FF000000" />
             <SolidColorBrush x:Key="AccentControlBorderBrush" Color="#7AF59E0B" />
+            <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#FF242424" />
+            <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#1FFFFFFF" />
 
             <!-- Figma Approved Theme Tokens: Cinema Gold & Obsidian Unified Palette -->
             <SolidColorBrush x:Key="FigmaSurfaceAppBrush" Color="#FF111111" />
@@ -210,15 +212,18 @@
             <SolidColorBrush x:Key="SlateBackgroundBrush" Color="#FFF3F3F3" />
             <SolidColorBrush x:Key="DangerControlBackgroundBrush" Color="#14C42B1C" />
             <SolidColorBrush x:Key="DangerControlBorderBrush" Color="#61C42B1C" />
+            <SolidColorBrush x:Key="DangerCardStrokeBrush" Color="#61C42B1C" />
             <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#FFF59E0B" />
             <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#FFD97706" />
             <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#FFB45309" />
             <SolidColorBrush x:Key="AccentFillColorDisabledBrush" Color="#52F59E0B" />
             <SolidColorBrush x:Key="AccentTextFillColorPrimaryBrush" Color="#FFB45309" />
             <SolidColorBrush x:Key="AccentTextFillColorSecondaryBrush" Color="#FFD97706" />
-            <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush" Color="#FFFFFFFF" />
-            <SolidColorBrush x:Key="TextOnAccentFillColorSecondaryBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush" Color="#FF000000" />
+            <SolidColorBrush x:Key="TextOnAccentFillColorSecondaryBrush" Color="#FF000000" />
             <SolidColorBrush x:Key="AccentControlBorderBrush" Color="#7AF59E0B" />
+            <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#1F000000" />
 
             <!-- Figma Approved Theme Tokens: Cinema Gold & Obsidian Unified Palette -->
             <SolidColorBrush x:Key="FigmaSurfaceAppBrush" Color="#FFF8F9FA" />
@@ -229,7 +234,7 @@
             <SolidColorBrush x:Key="FigmaTextSecondaryBrush" Color="#FF57606A" />
             <SolidColorBrush x:Key="FigmaTextTertiaryBrush" Color="#FF6E7781" />
             <SolidColorBrush x:Key="FigmaAccentButtonBrush" Color="#FFF59E0B" />
-            <SolidColorBrush x:Key="FigmaAccentForegroundBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="FigmaAccentForegroundBrush" Color="#FF000000" />
             <SolidColorBrush x:Key="FigmaAccentSelectedSurfaceBrush" Color="#26F59E0B" />
             <SolidColorBrush x:Key="FigmaStatusAvailableBrush" Color="#FF2DA44E" />
             <SolidColorBrush x:Key="FigmaStatusStorageGoldBrush" Color="#FFF59E0B" />
@@ -280,6 +285,8 @@
             <SolidColorBrush x:Key="DangerControlBorderBrush" Color="{ThemeResource SystemColorButtonTextColor}" />
             <SolidColorBrush x:Key="DangerCardStrokeBrush" Color="{ThemeResource SystemColorButtonTextColor}" />
             <SolidColorBrush x:Key="AccentControlBorderBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
 
             <!-- Figma Approved Theme Tokens: HighContrast -->
             <SolidColorBrush x:Key="FigmaSurfaceAppBrush" Color="{ThemeResource SystemColorWindowColor}" />

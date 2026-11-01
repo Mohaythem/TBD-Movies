@@ -490,8 +490,33 @@ public sealed partial class MainWindow : Window
             && !_accessibilitySettings.HighContrast
             ? _slatePaletteResources
             : new ResourceDictionary();
+
         var targetTheme = ThemeService.ElementTheme;
+
+        // Slate and Dark share ElementTheme.Dark. When switching between Slate and Dark,
+        // RootGrid.RequestedTheme was already ElementTheme.Dark, so WinUI 3 does not trigger
+        // a property change event on RootGrid.RequestedTheme.
+        // Temporarily toggling RequestedTheme to Default and then back to targetTheme forces
+        // WinUI 3 to re-evaluate all theme resources throughout the visual tree (ShellNavigation,
+        // ContentHost, and cached pages) without flashing white (Default inherits the window's dark base).
+        if (RootGrid.RequestedTheme == targetTheme)
+        {
+            RootGrid.RequestedTheme = ElementTheme.Default;
+        }
         RootGrid.RequestedTheme = targetTheme;
+
+        ShellNavigation.RequestedTheme = ElementTheme.Default;
+        ShellNavigation.RequestedTheme = targetTheme;
+
+        ContentHost.RequestedTheme = ElementTheme.Default;
+        ContentHost.RequestedTheme = targetTheme;
+
+        foreach (var page in ContentHost.Children.OfType<FrameworkElement>())
+        {
+            page.RequestedTheme = ElementTheme.Default;
+            page.RequestedTheme = targetTheme;
+        }
+
         SlateSurface.Visibility = ThemeService.UsesSlateSurface ? Visibility.Visible : Visibility.Collapsed;
         UpdateNavigationPaneBackgrounds();
         UpdateTitleBarColors();
@@ -528,6 +553,17 @@ public sealed partial class MainWindow : Window
         {
             inline.ClearValue(SolidColorBrush.ColorProperty);
             inline.Color = Colors.Transparent;
+        }
+
+        // When in Light theme, "Light" is the active dictionary rather than "Default".
+        // Ensure its expanded pane remains transparent and does not retain stale or clashing colors.
+        if (ShellNavigation.Resources.ThemeDictionaries.TryGetValue("Light", out var lightDictObj)
+            && lightDictObj is ResourceDictionary lightDict
+            && lightDict.TryGetValue("NavigationViewExpandedPaneBackground", out var lightInlineObj)
+            && lightInlineObj is SolidColorBrush lightInline)
+        {
+            lightInline.ClearValue(SolidColorBrush.ColorProperty);
+            lightInline.Color = Colors.Transparent;
         }
     }
 

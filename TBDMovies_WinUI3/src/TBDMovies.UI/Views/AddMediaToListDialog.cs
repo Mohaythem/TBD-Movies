@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -18,7 +18,7 @@ internal readonly record struct MediaPick(CustomListMediaKind Kind, int Id);
 /// <summary>
 /// A lightweight picker for adding existing library items - movies and TV shows - to a custom list. It
 /// never imports files, scans folders or fetches metadata: it lists items already registered in TBDMovies,
-/// tags each with its media type, disables the ones already in the list, and returns what the user chose.
+/// tags each with its media type, excludes the ones already in the list, and returns what the user chose.
 /// Native, searchable and multi-select.
 /// </summary>
 internal sealed class AddMediaToListDialog
@@ -86,20 +86,18 @@ internal sealed class AddMediaToListDialog
     {
         _suppress = true;
         _list.Items.Clear();
-        foreach (var entry in _entries.Where(Matches))
+        foreach (var entry in _entries.Where(e => !e.AlreadyMember && Matches(e)))
         {
             var kindLabel = LocalizationService.Text(entry.Kind == CustomListMediaKind.Show ? "TvShow" : "Movie");
             var title = entry.Year is int year and > 0 ? $"{entry.Title} ({year})" : entry.Title;
             var label = $"{kindLabel} · {title}";
-            if (entry.AlreadyMember) label += " — " + LocalizationService.Text("AlreadyInList");
             var item = new ListViewItem
             {
                 Content = LocalizationService.Digits(label),
                 Tag = new MediaPick(entry.Kind, entry.Id),
-                IsEnabled = !entry.AlreadyMember,
             };
             _list.Items.Add(item);
-            if (!entry.AlreadyMember && _selected.Contains(new MediaPick(entry.Kind, entry.Id)))
+            if (_selected.Contains(new MediaPick(entry.Kind, entry.Id)))
                 _list.SelectedItems.Add(item);
         }
         _suppress = false;
