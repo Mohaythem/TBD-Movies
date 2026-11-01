@@ -651,8 +651,44 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             }
             else if (destinationKey == "watch-later")
             {
-                if (item.Show is { } show) AppServices.ShowPersonal.SetWatchLater(show.Id, false);
-                else if (item.Movie is { } movie) AppServices.Personal.RemoveFromWatchlist(movie.Id);
+                if (item.Show is { } show)
+                {
+                    AppServices.ShowPersonal.SetWatchLater(show.Id, false);
+                    int? showTmdbId = (int.TryParse(show.ExternalId, out var parsedId) && parsedId > 0 ? (int?)parsedId : null) ?? AppServices.GetShowTmdbId(show.Id);
+                    if (showTmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await trakt.PushShowWatchlistAsync(showTmdbId.Value, false).ConfigureAwait(false);
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[MyListsPage] Trakt PushShowWatchlistAsync(false) failed: {ex.Message}");
+                            }
+                        });
+                    }
+                }
+                else if (item.Movie is { } movie)
+                {
+                    AppServices.Personal.RemoveFromWatchlist(movie.Id);
+                    var tmdbId = AppServices.GetMovieTmdbId(movie.Id);
+                    if (tmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await trakt.PushMovieWatchlistAsync(tmdbId.Value, false).ConfigureAwait(false);
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[MyListsPage] Trakt PushMovieWatchlistAsync(false) failed: {ex.Message}");
+                            }
+                        });
+                    }
+                }
             }
             else if (destinationKey == "favorites")
             {
@@ -843,8 +879,44 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 }
                 else if (destinationKey == "watch-later")
                 {
-                    if (pick.Kind == CustomListMediaKind.Show) AppServices.ShowPersonal.SetWatchLater(pick.Id, true);
-                    else AppServices.Personal.AddToWatchlist(pick.Id);
+                    if (pick.Kind == CustomListMediaKind.Show)
+                    {
+                        AppServices.ShowPersonal.SetWatchLater(pick.Id, true);
+                        int? showTmdbId = AppServices.GetShowTmdbId(pick.Id);
+                        if (showTmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+                        {
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await trakt.PushShowWatchlistAsync(showTmdbId.Value, true).ConfigureAwait(false);
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[MyListsPage] Trakt PushShowWatchlistAsync(true) failed: {ex.Message}");
+                                }
+                            });
+                        }
+                    }
+                    else
+                    {
+                        AppServices.Personal.AddToWatchlist(pick.Id);
+                        var tmdbId = AppServices.GetMovieTmdbId(pick.Id);
+                        if (tmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+                        {
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await trakt.PushMovieWatchlistAsync(tmdbId.Value, true).ConfigureAwait(false);
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[MyListsPage] Trakt PushMovieWatchlistAsync(true) failed: {ex.Message}");
+                                }
+                            });
+                        }
+                    }
                 }
                 else if (destinationKey == "favorites")
                 {

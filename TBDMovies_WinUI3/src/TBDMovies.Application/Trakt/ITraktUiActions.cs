@@ -98,5 +98,15 @@ public interface ITraktUiActions
     /// Pushes episode watched/unwatched status to Trakt history.
     /// </summary>
     Task<bool> PushEpisodeWatchedAsync(int showTmdbId, int seasonNumber, int episodeNumber, DateTimeOffset watchedAt, bool isWatched, CancellationToken ct = default);
+
+    /// <summary>
+    /// Pushes movie addition/removal to Trakt watchlist.
+    /// </summary>
+    Task<bool> PushMovieWatchlistAsync(long tmdbId, bool inWatchlist, CancellationToken ct = default);
+
+    /// <summary>
+    /// Pushes show addition/removal to Trakt watchlist.
+    /// </summary>
+    Task<bool> PushShowWatchlistAsync(long tmdbId, bool inWatchlist, CancellationToken ct = default);
 }
 

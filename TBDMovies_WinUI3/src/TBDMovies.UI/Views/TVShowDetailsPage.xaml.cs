@@ -268,6 +268,25 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
             _showWatchLater = saved.WatchLater;
             _showPersonalAvailable = true;
             UpdateShowPersonalVisuals();
+
+            if (!favorite)
+            {
+                int? showTmdbId = (int.TryParse(_show.ExternalId, out var parsedId) && parsedId > 0 ? (int?)parsedId : null) ?? AppServices.GetShowTmdbId(_show.Id);
+                if (showTmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await trakt.PushShowWatchlistAsync(showTmdbId.Value, _showWatchLater).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[TVShowDetailsPage] Trakt PushShowWatchlistAsync failed: {ex.Message}");
+                        }
+                    });
+                }
+            }
         }
         catch (Exception error)
         {

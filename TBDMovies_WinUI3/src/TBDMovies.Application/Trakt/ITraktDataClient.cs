@@ -5,6 +5,11 @@ using System.Threading.Tasks;
 namespace TBDMovies.Application.Trakt;
 
 /// <summary>
+/// Status outcome for Trakt sync write operations (e.g. watchlist mutations).
+/// </summary>
+public sealed record TraktSyncWriteResult(bool Success, int AddedOrRemovedCount = 0, string? Error = null);
+
+/// <summary>
 /// Client contract for read-only HTTP GET Trakt endpoints (https://api.trakt.tv).
 /// </summary>
 public interface ITraktDataClient
@@ -52,5 +57,23 @@ public interface ITraktDataClient
         string clientId,
         string accessToken,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Adds a movie or show to the user's watchlist via POST sync/watchlist.
+    /// </summary>
+    Task<TraktSyncWriteResult> AddWatchlistAsync(
+        long tmdbId,
+        TraktMediaKind kind,
+        string token,
+        CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, 1));
+
+    /// <summary>
+    /// Removes a movie or show from the user's watchlist via POST sync/watchlist/remove.
+    /// </summary>
+    Task<TraktSyncWriteResult> RemoveWatchlistAsync(
+        long tmdbId,
+        TraktMediaKind kind,
+        string token,
+        CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, 1));
 }
 

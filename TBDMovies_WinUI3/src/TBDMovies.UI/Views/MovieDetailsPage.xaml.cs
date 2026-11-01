@@ -655,6 +655,22 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
                 ? AppServices.Personal.RemoveFromWatchlist(_movie.Id)
                 : AppServices.Personal.AddToWatchlist(_movie.Id);
             _inWatchlist = snapshot.Watchlisted;
+
+            var tmdbId = AppServices.GetMovieTmdbId(_movie.Id);
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await trakt.PushMovieWatchlistAsync(tmdbId.Value, _inWatchlist).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[MovieDetailsPage] Trakt PushMovieWatchlistAsync failed: {ex.Message}");
+                    }
+                });
+            }
         }
         catch (Exception error)
         {

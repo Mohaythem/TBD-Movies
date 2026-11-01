@@ -33,7 +33,9 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
 
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly object _ctsLock = new();
+    private readonly object _periodicLock = new();
     private CancellationTokenSource? _activeNetworkCts;
+    private CancellationTokenSource? _periodicSyncCts;
     private long _generation;
 
     private string? _currentAccountId;
@@ -79,6 +81,11 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         _lastAccountId = _currentAccountId ?? (string.IsNullOrWhiteSpace(persistedLastAccount) ? null : persistedLastAccount.Trim());
 
         _syncState = TraktSyncState.Initial(authState, _lastAccountId);
+
+        if (authState.IsConnected && !authState.RequiresReconnect)
+        {
+            StartPeriodicSync();
+        }
     }
 
 
@@ -214,6 +221,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
 
                 if (authState.IsConnected)
                 {
+                    StartPeriodicSync();
                     _ = Task.Run(async () =>
                     {
                         try
@@ -250,6 +258,8 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
     /// <inheritdoc />
     public async Task DisconnectAsync(CancellationToken cancellationToken = default)
     {
+        StopPeriodicSync();
+
         // 1. Immediately invalidate generation and capture CTS atomically under _ctsLock, then cancel outside lock
         CancelActiveNetwork();
 
@@ -816,6 +826,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
     public void Dispose()
     {
         _disposed = true;
+        StopPeriodicSync();
         // Blocker 5: cancel network operations and avoid disposing _operationGate
         // while active operations unwind to prevent ObjectDisposedException on Release().
         CancelActiveNetwork();
@@ -1120,6 +1131,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             {
                 await _dataClient.RemoveHistoryAsync(payload, _config.ClientId, token, ct).ConfigureAwait(false);
             }
+            try { SyncCompleted?.Invoke(this, EventArgs.Empty); } catch { }
             return true;
         }
         catch (Exception ex)
@@ -1162,12 +1174,169 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             {
                 await _dataClient.RemoveHistoryAsync(payload, _config.ClientId, token, ct).ConfigureAwait(false);
             }
+            try { SyncCompleted?.Invoke(this, EventArgs.Empty); } catch { }
             return true;
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[TraktSyncService] PushEpisodeWatchedAsync failed: {ex.Message}");
             return false;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> PushMovieWatchlistAsync(long tmdbId, bool inWatchlist, CancellationToken ct = default)
+    {
+        if (tmdbId <= 0) return false;
+        var auth = _authService.GetAuthState();
+        if (!auth.IsConnected || auth.RequiresReconnect) return false;
+        var token = await _authService.GetAccessTokenAsync(cancellationToken: ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(token)) return false;
+
+        try
+        {
+            var result = inWatchlist
+                ? await _dataClient.AddWatchlistAsync(tmdbId, TraktMediaKind.Movie, token, ct).ConfigureAwait(false)
+                : await _dataClient.RemoveWatchlistAsync(tmdbId, TraktMediaKind.Movie, token, ct).ConfigureAwait(false);
+
+            if (result.Success)
+            {
+                if (!string.IsNullOrWhiteSpace(auth.AccountId))
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await RefreshListAsync(null, auth.AccountId, CancellationToken.None).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Watchlist cache refresh failed: {ex.Message}");
+                        }
+                    });
+                }
+                try { SyncCompleted?.Invoke(this, EventArgs.Empty); } catch { }
+                return true;
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] PushMovieWatchlistAsync failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> PushShowWatchlistAsync(long tmdbId, bool inWatchlist, CancellationToken ct = default)
+    {
+        if (tmdbId <= 0) return false;
+        var auth = _authService.GetAuthState();
+        if (!auth.IsConnected || auth.RequiresReconnect) return false;
+        var token = await _authService.GetAccessTokenAsync(cancellationToken: ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(token)) return false;
+
+        try
+        {
+            var result = inWatchlist
+                ? await _dataClient.AddWatchlistAsync(tmdbId, TraktMediaKind.Show, token, ct).ConfigureAwait(false)
+                : await _dataClient.RemoveWatchlistAsync(tmdbId, TraktMediaKind.Show, token, ct).ConfigureAwait(false);
+
+            if (result.Success)
+            {
+                if (!string.IsNullOrWhiteSpace(auth.AccountId))
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await RefreshListAsync(null, auth.AccountId, CancellationToken.None).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Watchlist cache refresh failed: {ex.Message}");
+                        }
+                    });
+                }
+                try { SyncCompleted?.Invoke(this, EventArgs.Empty); } catch { }
+                return true;
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] PushShowWatchlistAsync failed: {ex.Message}");
+            return false;
+        }
+    }
+
+    internal void StartPeriodicSync()
+    {
+        lock (_periodicLock)
+        {
+            if (_disposed) return;
+            StopPeriodicSync();
+            _periodicSyncCts = new CancellationTokenSource();
+            var token = _periodicSyncCts.Token;
+            _ = Task.Run(() => RunPeriodicSyncLoopAsync(token), token);
+        }
+    }
+
+    internal void StopPeriodicSync()
+    {
+        lock (_periodicLock)
+        {
+            if (_periodicSyncCts != null)
+            {
+                try
+                {
+                    _periodicSyncCts.Cancel();
+                    _periodicSyncCts.Dispose();
+                }
+                catch { }
+                _periodicSyncCts = null;
+            }
+        }
+    }
+
+    private async Task RunPeriodicSyncLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30), ct).ConfigureAwait(false);
+
+            while (!ct.IsCancellationRequested && !_disposed)
+            {
+                var auth = _authService.GetAuthState();
+                if (auth.IsConnected && !auth.RequiresReconnect && !_syncState.IsSyncing)
+                {
+                    if (_operationGate.CurrentCount > 0)
+                    {
+                        try
+                        {
+                            await SyncAsync(ct).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                        {
+                            break;
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Periodic sync failed: {ex.Message}");
+                        }
+                    }
+                }
+
+                await Task.Delay(TimeSpan.FromMinutes(15), ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on cancellation/shutdown
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Periodic sync loop error: {ex.Message}");
         }
     }
 

@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -321,6 +323,147 @@ public sealed class TraktEcosystemAndWatchedSyncTests
         Assert.True(await syncStarted.Task);
     }
 
+    [Fact]
+    public async Task PushMovieWatchlistAsync_WhenConnected_CallsDataClientAndRaisesSyncCompleted()
+    {
+        var authService = new TestTraktAuthService();
+        authService.SetConnected("uuid-123", "valid-token");
+        var dataClient = new TestTraktDataClient();
+        var cacheRepo = new TestTraktCacheRepository();
+        var settingsRepo = new TestSettingsRepository();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero));
+        var config = TraktDefaults.CreateDefaultConfig();
+
+        using var syncService = new TraktSyncService(authService, dataClient, cacheRepo, config, settingsRepo, timeProvider);
+
+        bool syncCompletedFired = false;
+        syncService.SyncCompleted += (_, _) => syncCompletedFired = true;
+
+        var addResult = await syncService.PushMovieWatchlistAsync(550, inWatchlist: true);
+        Assert.True(addResult);
+        Assert.NotNull(dataClient.LastWatchlistCall);
+        Assert.Equal(550, dataClient.LastWatchlistCall!.Value.TmdbId);
+        Assert.Equal(TraktMediaKind.Movie, dataClient.LastWatchlistCall.Value.Kind);
+        Assert.True(dataClient.LastWatchlistCall.Value.IsAdd);
+        Assert.True(syncCompletedFired);
+
+        syncCompletedFired = false;
+        var removeResult = await syncService.PushMovieWatchlistAsync(550, inWatchlist: false);
+        Assert.True(removeResult);
+        Assert.NotNull(dataClient.LastWatchlistCall);
+        Assert.False(dataClient.LastWatchlistCall!.Value.IsAdd);
+        Assert.True(syncCompletedFired);
+    }
+
+    [Fact]
+    public async Task PushShowWatchlistAsync_WhenConnected_CallsDataClientAndRaisesSyncCompleted()
+    {
+        var authService = new TestTraktAuthService();
+        authService.SetConnected("uuid-123", "valid-token");
+        var dataClient = new TestTraktDataClient();
+        var cacheRepo = new TestTraktCacheRepository();
+        var settingsRepo = new TestSettingsRepository();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero));
+        var config = TraktDefaults.CreateDefaultConfig();
+
+        using var syncService = new TraktSyncService(authService, dataClient, cacheRepo, config, settingsRepo, timeProvider);
+
+        bool syncCompletedFired = false;
+        syncService.SyncCompleted += (_, _) => syncCompletedFired = true;
+
+        var addResult = await syncService.PushShowWatchlistAsync(1399, inWatchlist: true);
+        Assert.True(addResult);
+        Assert.NotNull(dataClient.LastWatchlistCall);
+        Assert.Equal(1399, dataClient.LastWatchlistCall!.Value.TmdbId);
+        Assert.Equal(TraktMediaKind.Show, dataClient.LastWatchlistCall.Value.Kind);
+        Assert.True(dataClient.LastWatchlistCall.Value.IsAdd);
+        Assert.True(syncCompletedFired);
+
+        syncCompletedFired = false;
+        var removeResult = await syncService.PushShowWatchlistAsync(1399, inWatchlist: false);
+        Assert.True(removeResult);
+        Assert.NotNull(dataClient.LastWatchlistCall);
+        Assert.False(dataClient.LastWatchlistCall!.Value.IsAdd);
+        Assert.True(syncCompletedFired);
+    }
+
+    [Fact]
+    public async Task PushWatchlist_WhenDisconnected_ReturnsFalseWithoutCallingDataClient()
+    {
+        var authService = new TestTraktAuthService(); // disconnected
+        var dataClient = new TestTraktDataClient();
+        var cacheRepo = new TestTraktCacheRepository();
+        var settingsRepo = new TestSettingsRepository();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero));
+        var config = TraktDefaults.CreateDefaultConfig();
+
+        using var syncService = new TraktSyncService(authService, dataClient, cacheRepo, config, settingsRepo, timeProvider);
+
+        var movieResult = await syncService.PushMovieWatchlistAsync(550, inWatchlist: true);
+        Assert.False(movieResult);
+
+        var showResult = await syncService.PushShowWatchlistAsync(1399, inWatchlist: true);
+        Assert.False(showResult);
+
+        Assert.Null(dataClient.LastWatchlistCall);
+    }
+
+    [Fact]
+    public async Task PushWatched_RaisesSyncCompleted()
+    {
+        var authService = new TestTraktAuthService();
+        authService.SetConnected("uuid-123", "valid-token");
+        var dataClient = new TestTraktDataClient();
+        var cacheRepo = new TestTraktCacheRepository();
+        var settingsRepo = new TestSettingsRepository();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero));
+        var config = TraktDefaults.CreateDefaultConfig();
+
+        using var syncService = new TraktSyncService(authService, dataClient, cacheRepo, config, settingsRepo, timeProvider);
+
+        bool syncCompletedFired = false;
+        syncService.SyncCompleted += (_, _) => syncCompletedFired = true;
+
+        var movieResult = await syncService.PushMovieWatchedAsync(550, DateTimeOffset.UtcNow, isWatched: true);
+        Assert.True(movieResult);
+        Assert.True(syncCompletedFired);
+
+        syncCompletedFired = false;
+        var episodeResult = await syncService.PushEpisodeWatchedAsync(1399, 1, 1, DateTimeOffset.UtcNow, isWatched: true);
+        Assert.True(episodeResult);
+        Assert.True(syncCompletedFired);
+    }
+
+    [Fact]
+    public async Task TraktDataClient_Watchlist_SendsCorrectPayloadAndHeaders()
+    {
+        HttpRequestMessage? capturedRequest = null;
+        string? capturedBody = null;
+
+        using var handler = new SimpleHttpMessageHandler(async req =>
+        {
+            capturedRequest = req;
+            capturedBody = await req.Content!.ReadAsStringAsync();
+            return new HttpResponseMessage(HttpStatusCode.Created)
+            {
+                Content = new StringContent("""{"added":{"movies":1,"shows":0}}""", Encoding.UTF8, "application/json")
+            };
+        });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        var result = await client.AddWatchlistAsync(550, TraktMediaKind.Movie, "test-token");
+        Assert.True(result.Success);
+        Assert.Equal(1, result.AddedOrRemovedCount);
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("Bearer test-token", capturedRequest!.Headers.Authorization?.ToString());
+        Assert.True(capturedRequest.Headers.Contains("trakt-api-key"));
+        Assert.Equal("2", capturedRequest.Headers.GetValues("trakt-api-version").FirstOrDefault());
+        Assert.Contains("550", capturedBody);
+        Assert.Contains("movies", capturedBody);
+    }
+
     // --- Helpers and Fakes ---
 
     private sealed class SimpleHttpMessageHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler) : HttpMessageHandler
@@ -402,6 +545,20 @@ public sealed class TraktEcosystemAndWatchedSyncTests
         {
             LastRemovePayload = payload;
             return Task.FromResult(JsonDocument.Parse("""{"deleted":{"movies":1}}""").RootElement);
+        }
+
+        public (long TmdbId, TraktMediaKind Kind, bool IsAdd)? LastWatchlistCall { get; private set; }
+
+        public Task<TraktSyncWriteResult> AddWatchlistAsync(long tmdbId, TraktMediaKind kind, string token, CancellationToken ct = default)
+        {
+            LastWatchlistCall = (tmdbId, kind, true);
+            return Task.FromResult(new TraktSyncWriteResult(true, 1));
+        }
+
+        public Task<TraktSyncWriteResult> RemoveWatchlistAsync(long tmdbId, TraktMediaKind kind, string token, CancellationToken ct = default)
+        {
+            LastWatchlistCall = (tmdbId, kind, false);
+            return Task.FromResult(new TraktSyncWriteResult(true, 1));
         }
     }
 
