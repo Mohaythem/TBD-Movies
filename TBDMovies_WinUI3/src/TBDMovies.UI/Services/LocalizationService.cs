@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text;
 using Microsoft.UI.Xaml;
 
@@ -17,6 +17,9 @@ public static class LocalizationService
         ["TraktEditConfig"] = "Edit configuration",
         ["TraktLists"] = "Sync Trakt lists",
         ["TraktWatchlist"] = "Watchlist",
+        ["TraktWatchedMovies"] = "Watched Movies",
+        ["TraktWatchedShows"] = "Watched Shows",
+        ["TraktHistory"] = "Playback History",
         ["TraktList"] = "List",
         ["AddToTrakt"] = "Add movie to Trakt",
         ["SyncTraktList"] = "Sync this Trakt list",
@@ -710,6 +713,9 @@ public static class LocalizationService
         ["TraktEditConfig"] = "تعديل إعدادات الربط",
         ["TraktLists"] = "تحديث قوائم Trakt",
         ["TraktWatchlist"] = "قائمة المشاهدة",
+        ["TraktWatchedMovies"] = "الأفلام المشاهدة",
+        ["TraktWatchedShows"] = "المسلسلات المشاهدة",
+        ["TraktHistory"] = "سجل المشاهدة",
         ["TraktList"] = "قائمة",
         ["AddToTrakt"] = "إضافة فيلم إلى Trakt",
         ["SyncTraktList"] = "تحديث قائمة Trakt دي",

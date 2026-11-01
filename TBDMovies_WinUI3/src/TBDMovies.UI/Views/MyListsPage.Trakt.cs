@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using TBDMovies.Application.Trakt;
@@ -17,6 +19,9 @@ namespace TBDMovies.UI.Views;
 public sealed partial class MyListsPage
 {
     private const string TraktWatchlistKey = "trakt:watchlist";
+    private const string TraktWatchedMoviesKey = "trakt:watched-movies";
+    private const string TraktWatchedShowsKey = "trakt:watched-shows";
+    private const string TraktHistoryKey = "trakt:history";
     private readonly List<(RadioButton Tab, TextBlock Label, TextBlock Count, string Key)> _traktPlaylistsTabs = [];
     private string _selectedTraktKey = TraktWatchlistKey;
     private static readonly ConcurrentDictionary<long, string?> _traktPosterCache = new();
@@ -33,8 +38,17 @@ public sealed partial class MyListsPage
 
     public void SelectTraktList(string key)
     {
-        if (!IsTraktKey(key)) return;
-        _selectedTraktKey = key == "trakt" ? TraktWatchlistKey : key;
+        var normalized = key switch
+        {
+            "trakt" or "watchlist" or "trakt:watchlist" => TraktWatchlistKey,
+            "watched-movies" or "watched_movies" or "trakt:watched-movies" or "trakt:watched_movies" => TraktWatchedMoviesKey,
+            "watched-shows" or "watched_shows" or "trakt:watched-shows" or "trakt:watched_shows" => TraktWatchedShowsKey,
+            "history" or "trakt:history" => TraktHistoryKey,
+            _ when IsTraktKey(key) => key,
+            _ => null
+        };
+        if (normalized is null) return;
+        _selectedTraktKey = normalized;
         _selectedKey = _selectedTraktKey;
         _query = string.Empty;
         SearchBox.Text = string.Empty;
@@ -52,12 +66,29 @@ public sealed partial class MyListsPage
         var account = state.AuthState.IsConnected ? state.CurrentAccountId : state.LastAccountId;
         _traktAccount = account;
         IReadOnlyList<TraktCustomList> lists;
-        int watchCount;
-        try { watchCount = trakt.GetWatchlist(account).Count; lists = trakt.GetLists(account); }
-        catch { watchCount = 0; lists = []; }
+        int watchCount = 0;
+        int watchedMoviesCount = 0;
+        int watchedShowsCount = 0;
+        int historyCount = 0;
+        try
+        {
+            watchCount = trakt.GetWatchlist(account).Count;
+            watchedMoviesCount = trakt.GetWatchedMovies(account).Count;
+            watchedShowsCount = trakt.GetWatchedShows(account).Count;
+            historyCount = trakt.GetHistory(account).Count;
+            lists = trakt.GetLists(account);
+        }
+        catch
+        {
+            lists = [];
+        }
+
         var defs = new List<(string Key, string Name, int Count, string Glyph)>
         {
-            (TraktWatchlistKey, LocalizationService.Text("TraktWatchlist"), watchCount, "\uE8FD")
+            (TraktWatchlistKey, LocalizationService.Text("TraktWatchlist"), watchCount, "\uE8FD"),
+            (TraktWatchedMoviesKey, LocalizationService.Text("TraktWatchedMovies"), watchedMoviesCount, "\uE8B2"),
+            (TraktWatchedShowsKey, LocalizationService.Text("TraktWatchedShows"), watchedShowsCount, "\uE7F4"),
+            (TraktHistoryKey, LocalizationService.Text("TraktHistory"), historyCount, "\uE81C")
         };
         foreach (var list in lists) defs.Add(($"trakt:list:{list.TraktId}", list.Name, list.ItemCount, "\uE8BD"));
         if (IsTraktKey(_selectedKey) && !defs.Any(x => x.Key == _selectedKey))
@@ -122,9 +153,7 @@ public sealed partial class MyListsPage
 
         SyncTraktSelectedTab();
         TraktPlaylistsScroll.Visibility = Visibility.Visible;
-        ListGrid.Visibility = Visibility.Visible;
         ContinueGrid.Visibility = Visibility.Collapsed;
-        HistoryGrid.Visibility = Visibility.Collapsed;
         RenameListButton.Visibility = Visibility.Collapsed;
         DeleteListButton.Visibility = Visibility.Collapsed;
 
@@ -133,19 +162,21 @@ public sealed partial class MyListsPage
         try { state = trakt?.GetSyncState(); } catch { }
         var account = state is null ? null : state.AuthState.IsConnected ? state.CurrentAccountId : state.LastAccountId;
         _traktAccount = account;
-        var name = _selectedKey == TraktWatchlistKey
-            ? LocalizationService.Text("TraktWatchlist")
-            : SafeTraktListName(trakt, account, _selectedKey);
+        var name = SafeTraktListName(trakt, account, _selectedKey);
         ListNameText.Text = "Trakt · " + name;
 
-        var canWrite = state?.AuthState.IsConnected == true && !state.AuthState.RequiresReconnect && !string.IsNullOrWhiteSpace(state.CurrentAccountId);
+        var isWritableList = _selectedKey == TraktWatchlistKey || ParseTraktListId(_selectedKey) is not null;
+        var canWrite = isWritableList && state?.AuthState.IsConnected == true && !state.AuthState.RequiresReconnect && !string.IsNullOrWhiteSpace(state.CurrentAccountId);
         AddMoviesButton.Visibility = canWrite ? Visibility.Visible : Visibility.Collapsed;
         UpdateTraktSyncVisibility();
         AddMoviesButton.IsEnabled = canWrite && !_traktBusy;
-        SyncTraktButton.IsEnabled = canWrite && !_traktBusy;
+        SyncTraktButton.IsEnabled = (state?.AuthState.IsConnected == true) && !_traktBusy;
         AddMoviesButtonText.Text = LocalizationService.Text("AddToTrakt");
 
+        var isHistory = _selectedKey == TraktHistoryKey;
         var loadedItems = new List<ListMediaItem>();
+        var loadedHistory = new List<WatchHistoryCardRecord>();
+
         if (trakt is not null && ReferenceEquals(displayCoordinator, AppServices.Trakt))
         {
             var builder = AppServices.TraktLocalSnapshot;
@@ -172,6 +203,27 @@ public sealed partial class MyListsPage
                     var mapped = await Task.Run(() => projected.Select(x => CreateMediaItemFromTrakt(x.DisplayTitle, x.Year, x.Type, x.MatchedLocalId, x.MatchedLocalKind, x.Availability, x.RemoteIdentity?.TmdbId, snapshot)).ToList(), displayToken);
                     loadedItems.AddRange(mapped);
                 }
+                else if (_selectedKey == TraktWatchedMoviesKey)
+                {
+                    var rawList = trakt.GetWatchedMovies(account);
+                    var projected = projection.ProjectWatchedMovies(rawList, snapshot);
+                    var mapped = await Task.Run(() => projected.Select(x => CreateMediaItemFromTrakt(x.DisplayTitle, x.Year, "movie", x.MatchedLocalId, x.MatchedLocalKind, x.Availability, x.RemoteIdentity?.TmdbId ?? x.TmdbId, snapshot)).ToList(), displayToken);
+                    loadedItems.AddRange(mapped);
+                }
+                else if (_selectedKey == TraktWatchedShowsKey)
+                {
+                    var rawList = trakt.GetWatchedShows(account);
+                    var projected = projection.ProjectWatchedShows(rawList, snapshot);
+                    var mapped = await Task.Run(() => projected.Select(x => CreateMediaItemFromTrakt(x.DisplayTitle, x.Year, "show", x.MatchedLocalId, x.MatchedLocalKind, x.Availability, x.RemoteIdentity?.TmdbId ?? x.TmdbId, snapshot)).ToList(), displayToken);
+                    loadedItems.AddRange(mapped);
+                }
+                else if (_selectedKey == TraktHistoryKey)
+                {
+                    var rawList = trakt.GetHistory(account);
+                    var projected = projection.ProjectHistory(rawList, snapshot);
+                    var mapped = await Task.Run(() => projected.Select(x => CreateHistoryCardFromTrakt(x, snapshot)).ToList(), displayToken);
+                    loadedHistory.AddRange(mapped);
+                }
                 else if (ParseTraktListId(_selectedKey) is long id)
                 {
                     var rawList = trakt.GetListItems(id, account);
@@ -182,22 +234,51 @@ public sealed partial class MyListsPage
             }
         }
 
-        var filtered = _query.Length == 0
-            ? loadedItems
-            : loadedItems.Where(x => MediaTitleSearch.Matches(x.Title, x.CanonicalTitle, x.Year, _query)).ToList();
+        if (displayToken.IsCancellationRequested || displayGeneration != _traktDisplayGeneration || operationGeneration != _traktGeneration || !_traktActive || !ReferenceEquals(displayCoordinator, AppServices.Trakt) || _selectedKey != displayKey || !IsTraktKey(_selectedKey)) return;
 
-        ListGrid.ItemsSource = filtered;
-        ListCountText.Text = FormatCount(filtered.Count);
-        ListGrid.Visibility = filtered.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-        EmptyState.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        EmptyState.Kind = _query.Length == 0 ? Controls.EmptyStateKind.EmptyLists : Controls.EmptyStateKind.NoResults;
-        EmptyState.Title = LocalizationService.Text(_query.Length == 0 ? "TraktListEmpty" : "NoResults");
-        EmptyState.Message = LocalizationService.Text(_query.Length == 0 ? "TraktListOfflineHelp" : "NoResultsHelp");
-        EmptyState.IsActionVisible = false;
+        if (isHistory)
+        {
+            var filtered = _query.Length == 0
+                ? loadedHistory
+                : loadedHistory.Where(x => x.Title.Contains(_query, StringComparison.CurrentCultureIgnoreCase) ||
+                                           x.Context.Contains(_query, StringComparison.CurrentCultureIgnoreCase)).ToList();
 
-        TraktTabCount.Text = filtered.Count > 0 ? LocalizationService.Number(filtered.Count) : string.Empty;
-        foreach (var (_, _, count, key) in _traktPlaylistsTabs)
-            count.Text = key == _selectedKey ? LocalizationService.Number(filtered.Count) : count.Text;
+            HistoryGrid.ItemsSource = filtered;
+            ListGrid.ItemsSource = null;
+            ListCountText.Text = FormatCount(filtered.Count);
+            HistoryGrid.Visibility = filtered.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            ListGrid.Visibility = Visibility.Collapsed;
+            EmptyState.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            EmptyState.Kind = _query.Length == 0 ? Controls.EmptyStateKind.EmptyLists : Controls.EmptyStateKind.NoResults;
+            EmptyState.Title = LocalizationService.Text(_query.Length == 0 ? "TraktListEmpty" : "NoResults");
+            EmptyState.Message = LocalizationService.Text(_query.Length == 0 ? "TraktListOfflineHelp" : "NoResultsHelp");
+            EmptyState.IsActionVisible = false;
+
+            TraktTabCount.Text = filtered.Count > 0 ? LocalizationService.Number(filtered.Count) : string.Empty;
+            foreach (var (_, _, count, key) in _traktPlaylistsTabs)
+                count.Text = key == _selectedKey ? LocalizationService.Number(filtered.Count) : count.Text;
+        }
+        else
+        {
+            var filtered = _query.Length == 0
+                ? loadedItems
+                : loadedItems.Where(x => MediaTitleSearch.Matches(x.Title, x.CanonicalTitle, x.Year, _query)).ToList();
+
+            ListGrid.ItemsSource = filtered;
+            HistoryGrid.ItemsSource = null;
+            ListCountText.Text = FormatCount(filtered.Count);
+            ListGrid.Visibility = filtered.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            HistoryGrid.Visibility = Visibility.Collapsed;
+            EmptyState.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            EmptyState.Kind = _query.Length == 0 ? Controls.EmptyStateKind.EmptyLists : Controls.EmptyStateKind.NoResults;
+            EmptyState.Title = LocalizationService.Text(_query.Length == 0 ? "TraktListEmpty" : "NoResults");
+            EmptyState.Message = LocalizationService.Text(_query.Length == 0 ? "TraktListOfflineHelp" : "NoResultsHelp");
+            EmptyState.IsActionVisible = false;
+
+            TraktTabCount.Text = filtered.Count > 0 ? LocalizationService.Number(filtered.Count) : string.Empty;
+            foreach (var (_, _, count, key) in _traktPlaylistsTabs)
+                count.Text = key == _selectedKey ? LocalizationService.Number(filtered.Count) : count.Text;
+        }
     }
 
     private static ListMediaItem CreateMediaItemFromTrakt(
@@ -315,9 +396,159 @@ public sealed partial class MyListsPage
         return new ListMediaItem(placeholderMovie, showLocalBadge: true, isLocal: false, localBadgeText: LocalizationService.Text("Unavailable"));
     }
 
+    private static WatchHistoryCardRecord CreateHistoryCardFromTrakt(
+        TraktProjectedHistoryItem item,
+        TraktLocalSnapshot? snapshot)
+    {
+        var isEpisode = string.Equals(item.Type, "episode", StringComparison.OrdinalIgnoreCase) ||
+                        item.MatchedLocalKind == TraktMediaKind.Episode;
+
+        int? movieId = null;
+        int? showId = null;
+        bool isAvailable = item.Availability == TraktAvailability.Available;
+
+        string title = item.DisplayTitle;
+        string context = string.Empty;
+        List<string?> artwork = [];
+
+        if (isEpisode)
+        {
+            if (item.RawElement.ValueKind == JsonValueKind.Object &&
+                item.RawElement.TryGetProperty("show", out var showObj) &&
+                showObj.ValueKind == JsonValueKind.Object &&
+                showObj.TryGetProperty("title", out var showTitleProp) &&
+                !string.IsNullOrWhiteSpace(showTitleProp.GetString()))
+            {
+                title = showTitleProp.GetString()!;
+            }
+
+            string epTitle = string.Empty;
+            if (item.RawElement.ValueKind == JsonValueKind.Object &&
+                item.RawElement.TryGetProperty("episode", out var epObj) &&
+                epObj.ValueKind == JsonValueKind.Object &&
+                epObj.TryGetProperty("title", out var epTitleProp) &&
+                !string.IsNullOrWhiteSpace(epTitleProp.GetString()))
+            {
+                epTitle = epTitleProp.GetString()!;
+            }
+
+            if (item.SeasonNumber is int s && item.EpisodeNumber is int ep)
+            {
+                context = !string.IsNullOrWhiteSpace(epTitle)
+                    ? LocalizationService.Digits(LocalizationService.Format("HomeContinueEpisodeFormat", s, ep, epTitle))
+                    : $"S{s:D2}E{ep:D2}";
+            }
+            else if (!string.IsNullOrWhiteSpace(epTitle))
+            {
+                context = epTitle;
+            }
+
+            if (item.MatchedLocalId is int localId && localId > 0)
+            {
+                if (item.MatchedLocalKind == TraktMediaKind.Show)
+                {
+                    showId = localId;
+                }
+                else if (snapshot is not null)
+                {
+                    var showCandidate = snapshot.ForKind(TraktMediaKind.Show)
+                        .FirstOrDefault(sc => item.RemoteIdentity != null &&
+                            ((item.RemoteIdentity.ShowTmdbId is > 0 && sc.Identity.TmdbId == item.RemoteIdentity.ShowTmdbId) ||
+                             (item.RemoteIdentity.ShowTraktId is > 0 && sc.Identity.TraktId == item.RemoteIdentity.ShowTraktId)));
+                    if (showCandidate != null && showCandidate.LocalId > 0)
+                    {
+                        showId = showCandidate.LocalId;
+                    }
+                }
+
+                if (showId is int sid && AppServices.Tv.ListShows().FirstOrDefault(x => x.Id == sid) is { } localShow)
+                {
+                    if (localShow.PosterReference is not null) artwork.Add(localShow.PosterReference);
+                }
+            }
+        }
+        else
+        {
+            if (item.RawElement.ValueKind == JsonValueKind.Object &&
+                item.RawElement.TryGetProperty("movie", out var movieObj) &&
+                movieObj.ValueKind == JsonValueKind.Object)
+            {
+                if (movieObj.TryGetProperty("year", out var yProp) && yProp.ValueKind == JsonValueKind.Number && yProp.TryGetInt32(out var y))
+                {
+                    context = LocalizationService.Digits(y.ToString(CultureInfo.InvariantCulture));
+                }
+            }
+
+            if (item.MatchedLocalKind == TraktMediaKind.Movie && item.MatchedLocalId is int localMovieId && localMovieId > 0)
+            {
+                movieId = localMovieId;
+                if (AppServices.Library.ListMovies().FirstOrDefault(x => x.Id == localMovieId) is { } localMovie)
+                {
+                    artwork.Add(localMovie.BackdropReference);
+                    artwork.Add(localMovie.PosterReference);
+                }
+            }
+        }
+
+        if (artwork.Count == 0 && item.RemoteIdentity?.TmdbId is > 0)
+        {
+            var tmdbId = item.RemoteIdentity.TmdbId.Value;
+            if (_traktPosterCache.TryGetValue(tmdbId, out var cachedRef))
+            {
+                if (!string.IsNullOrWhiteSpace(cachedRef)) artwork.Add(cachedRef);
+            }
+            else if (AppServices.Metadata is { IsConfigured: true })
+            {
+                try
+                {
+                    var meta = AppServices.Metadata.GetMovie(tmdbId.ToString());
+                    var pRef = meta?.PosterReference;
+                    _traktPosterCache[tmdbId] = pRef;
+                    if (!string.IsNullOrWhiteSpace(pRef)) artwork.Add(pRef);
+                }
+                catch
+                {
+                    _traktPosterCache[tmdbId] = null;
+                }
+            }
+        }
+
+        var watchedAtText = item.WatchedAt.HasValue
+            ? LocalizationService.Digits(item.WatchedAt.Value.ToLocalTime().ToString("d", LocalizationService.Culture))
+            : string.Empty;
+
+        var availabilityText = isAvailable ? string.Empty : LocalizationService.Text("Unavailable");
+        var eventId = checked((int)(item.HistoryId % int.MaxValue));
+        var mediaKind = isEpisode ? WatchEventMediaKind.Episode : WatchEventMediaKind.Movie;
+
+        return new WatchHistoryCardRecord(
+            eventId,
+            mediaKind,
+            movieId,
+            showId,
+            title,
+            context,
+            watchedAtText,
+            isAvailable,
+            availabilityText,
+            artwork);
+    }
+
     private static long? ParseTraktListId(string key) => key.StartsWith("trakt:list:", StringComparison.Ordinal) && long.TryParse(key.AsSpan(11), out var id) && id > 0 ? id : null;
 
     private static string SafeTraktListName(ITraktUiActions? trakt, string? account, string key)
+    {
+        return key switch
+        {
+            TraktWatchlistKey => LocalizationService.Text("TraktWatchlist"),
+            TraktWatchedMoviesKey => LocalizationService.Text("TraktWatchedMovies"),
+            TraktWatchedShowsKey => LocalizationService.Text("TraktWatchedShows"),
+            TraktHistoryKey => LocalizationService.Text("TraktHistory"),
+            _ => SafeCustomListName(trakt, account, key)
+        };
+    }
+
+    private static string SafeCustomListName(ITraktUiActions? trakt, string? account, string key)
     {
         try { return trakt?.GetLists(account).FirstOrDefault(x => $"trakt:list:{x.TraktId}" == key)?.Name ?? LocalizationService.Text("TraktList"); }
         catch { return LocalizationService.Text("TraktList"); }
@@ -349,7 +580,8 @@ public sealed partial class MyListsPage
             TraktListRefreshResult? listResult = null;
             var state = trakt.GetSyncState();
             var account = state.AuthState.IsConnected ? state.CurrentAccountId : null;
-            if (selectedOnly && IsTraktKey(_selectedKey) && trakt is ITraktListActions actions && !string.IsNullOrWhiteSpace(account))
+            var isSpecificList = _selectedKey == TraktWatchlistKey || ParseTraktListId(_selectedKey) is not null;
+            if (selectedOnly && isSpecificList && trakt is ITraktListActions actions && !string.IsNullOrWhiteSpace(account))
                 listResult = await actions.RefreshListAsync(ParseTraktListId(_selectedKey), account, _traktCts.Token);
             else
                 fullResult = await trakt.SyncAsync(_traktCts.Token);

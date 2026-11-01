@@ -605,10 +605,12 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
 
         if (item.Show is { } show)
         {
+            if (show.Id <= 0) return;
             ShowSelected?.Invoke(this, show);
         }
         else if (item.Movie is { } movie)
         {
+            if (movie.Id <= 0) return;
             MovieSelected?.Invoke(this, movie);
         }
     }
