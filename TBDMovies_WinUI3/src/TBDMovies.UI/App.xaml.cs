@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using TBDMovies.UI.Services;
 using Microsoft.UI.Xaml;
 
@@ -18,15 +19,11 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         // Claim single-instance ownership before any window exists. A second TBDMovies process must not
         // open a normal (empty) window it can never fill: the library is already owned, so migration,
-        // recovery and every database read are refused. Tell the user once and exit instead. This never
-        // weakens LibraryInstanceGuard - it acts on the same refusal, only earlier.
+        // recovery and every database read are refused. Bring the existing running instance to front
+        // and exit cleanly instead. This never weakens LibraryInstanceGuard - it acts on the same refusal, only earlier.
         if (!AppServices.TryClaimSingleInstance())
         {
-            _ = MessageBox(
-                IntPtr.Zero,
-                LocalizationService.Text("AlreadyRunningBody"),
-                LocalizationService.Text("AlreadyRunningTitle"),
-                MessageBoxOkIcon);
+            TryActivateExistingInstance();
             Environment.Exit(0);
             return;
         }
@@ -39,10 +36,78 @@ public partial class App : Microsoft.UI.Xaml.Application
         _window.Activate();
     }
 
-    private const uint MessageBoxOkIcon = 0x00000040; // MB_OK | MB_ICONINFORMATION
+    private static void TryActivateExistingInstance()
+    {
+        try
+        {
+            var current = Process.GetCurrentProcess();
+            var other = Process.GetProcessesByName(current.ProcessName)
+                .FirstOrDefault(p => p.Id != current.Id);
 
-    [DllImport("user32.dll", EntryPoint = "MessageBoxW", CharSet = CharSet.Unicode)]
-    private static extern int MessageBox(IntPtr hWnd, string text, string caption, uint type);
+            if (other is null)
+                return;
+
+            var hWnd = other.MainWindowHandle;
+            if (hWnd == IntPtr.Zero)
+            {
+                EnumWindows((wnd, _) =>
+                {
+                    GetWindowThreadProcessId(wnd, out var pid);
+                    if (pid == (uint)other.Id && IsWindowVisible(wnd))
+                    {
+                        if (GetWindowTextLength(wnd) > 0)
+                        {
+                            hWnd = wnd;
+                            return false;
+                        }
+
+                        if (hWnd == IntPtr.Zero)
+                        {
+                            hWnd = wnd;
+                        }
+                    }
+
+                    return true;
+                }, IntPtr.Zero);
+            }
+
+            if (hWnd != IntPtr.Zero)
+            {
+                ShowWindowAsync(hWnd, SW_RESTORE);
+                SetForegroundWindow(hWnd);
+            }
+        }
+        catch
+        {
+            // Best effort: never prevent a clean exit on secondary launch.
+        }
+    }
+
+    private const int SW_RESTORE = 9;
+
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern int GetWindowTextLength(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
 
     /// <summary>
     /// XAML load failures surface as a stowed exception with no message in the event log, so the
@@ -61,3 +126,4 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
     }
 }
+
