@@ -29,22 +29,25 @@
         <Style TargetType="Button" x:Key="TvDetailsButtonStyle" BasedOn="{StaticResource SubtleControlButtonStyle}">
             <Setter Property="Background" Value="{ThemeResource FigmaSurfaceControlBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource FigmaBorderDefaultBrush}" />
-            <Setter Property="Foreground" Value="{ThemeResource FigmaTextPrimaryBrush}" />
-            <Setter Property="MinHeight" Value="40" />
-            <Setter Property="Padding" Value="14,4" />
-            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Foreground" Value="{ThemeResource FigmaTextSecondaryBrush}" />
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="Padding" Value="16,6" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
             <Setter Property="CornerRadius" Value="8" />
         </Style>
         <Style TargetType="Button" x:Key="TvDetailsSelectedButtonStyle" BasedOn="{StaticResource TvDetailsButtonStyle}">
             <Setter Property="Background" Value="{ThemeResource FigmaAccentSelectedSurfaceBrush}" />
             <Setter Property="BorderBrush" Value="{ThemeResource FigmaAccentButtonBrush}" />
+            <Setter Property="Foreground" Value="{ThemeResource FigmaTextPrimaryBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         <Style TargetType="Button" x:Key="TvDetailsAccentButtonStyle" BasedOn="{StaticResource AccentControlButtonStyle}">
             <Setter Property="Background" Value="{ThemeResource FigmaAccentButtonBrush}" />
             <Setter Property="Foreground" Value="{ThemeResource FigmaAccentForegroundBrush}" />
-            <Setter Property="MinHeight" Value="40" />
-            <Setter Property="Padding" Value="16,4" />
+            <Setter Property="MinHeight" Value="42" />
+            <Setter Property="Padding" Value="20,6" />
             <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
     </Page.Resources>
 
@@ -180,20 +183,6 @@
         </VisualStateManager.VisualStateGroups>
         <Grid x:Name="PageContent">
             <StackPanel>
-                <Button
-                    x:Name="BackButton"
-                    Click="BackButton_Click"
-                    Style="{StaticResource BackNavigationButtonStyle}">
-                    <StackPanel Orientation="Horizontal" Spacing="4">
-                        <FontIcon
-                            VerticalAlignment="Center"
-                            FontSize="14"
-                            Glyph="&#xE72B;"
-                            MirroredWhenRightToLeft="True" />
-                        <TextBlock x:Name="BackText" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Button>
-
                 <Border BorderBrush="{ThemeResource ControlStrokeColorSecondaryBrush}" BorderThickness="0,0,0,1" Padding="0,0,0,32">
                     <Grid x:Name="HeroGrid" ColumnSpacing="32">
                         <Grid.ColumnDefinitions>
@@ -246,7 +235,27 @@
                                              KeyDown="ShowTitleEditBox_KeyDown"
                                              LostFocus="ShowTitleEditBox_LostFocus" />
                                 </Grid>
-                                <TextBlock x:Name="ShowMetaText" Style="{StaticResource SecondaryBodyTextStyle}" TextWrapping="Wrap" />
+                                <Grid ColumnSpacing="16" x:Name="ShowIdentityGrid">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="ShowMetaText" Style="{StaticResource SecondaryBodyTextStyle}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                    <Border x:Name="RatingPanel"
+                                            Grid.Column="1"
+                                            Style="{StaticResource StatusPillStyle}"
+                                            Background="{ThemeResource LayerFillColorAltBrush}"
+                                            BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            Padding="8,2"
+                                            VerticalAlignment="Center"
+                                            Visibility="Collapsed">
+                                        <StackPanel Spacing="6" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <FontIcon Glyph="&#xE735;" FontSize="14" Foreground="{ThemeResource FigmaStatusStorageGoldBrush}" VerticalAlignment="Center" />
+                                            <TextBlock Style="{StaticResource SecondaryBodyTextStyle}" x:Name="RatingText" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
                                 <TextBlock x:Name="OverviewText" HorizontalAlignment="Left" MaxWidth="{StaticResource ProseMaxWidth}" Style="{StaticResource TvDetailsOverviewStyle}" TextWrapping="Wrap" />
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <TextBlock x:Name="ProgressValueText" Style="{StaticResource BodyStrongTextBlockStyle}" />
@@ -267,13 +276,13 @@
                                         <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
                                     <Button x:Name="PlayNextButton" Grid.Column="0" HorizontalAlignment="Left" Click="PlayNextButton_Click" Style="{StaticResource TvDetailsAccentButtonStyle}">
-                                        <Grid ColumnSpacing="8">
+                                        <Grid ColumnSpacing="8" VerticalAlignment="Center">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
-                                            <FontIcon FontSize="14" Glyph="&#xE768;" />
-                                            <TextBlock x:Name="PlayNextText" Grid.Column="1" TextWrapping="Wrap" />
+                                            <FontIcon FontSize="15" Glyph="&#xE768;" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="PlayNextText" Grid.Column="1" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
                                         </Grid>
                                     </Button>
                                     <DropDownButton x:Name="AddToListButton" Grid.Column="1" HorizontalAlignment="Left" Style="{StaticResource TvDetailsButtonStyle}">
@@ -337,242 +346,231 @@
                         </StackPanel>
                     </Grid>
                 </Border>
-                <StackPanel Margin="0,32,0,0" Spacing="12">
-                    <StackPanel Spacing="4">
-                        <TextBlock x:Name="SeasonsTitleText" Style="{StaticResource SubtitleTextBlockStyle}" />
-                        <TextBlock
-                            x:Name="SeasonsHelpText"
-                            Style="{StaticResource SecondaryCaptionTextStyle}"
-                            TextWrapping="Wrap" />
-                    </StackPanel>
+                <StackPanel Margin="0,32,0,0" Spacing="16">
+                    <Grid>
+                        <StackPanel Spacing="4">
+                            <TextBlock x:Name="SeasonsTitleText" Style="{StaticResource SubtitleTextBlockStyle}" FontSize="20" FontWeight="SemiBold" />
+                            <TextBlock x:Name="CurrentSeasonMetaText" Style="{StaticResource SecondaryCaptionTextStyle}" Foreground="{ThemeResource FigmaTextSecondaryBrush}" />
+                        </StackPanel>
+                    </Grid>
 
-                    <ItemsRepeater x:Name="SeasonsRepeater">
+                    <!-- Horizontal Season Selector Tabs -->
+                    <ScrollViewer x:Name="SeasonTabsScrollViewer"
+                                  HorizontalScrollBarVisibility="Auto"
+                                  HorizontalScrollMode="Enabled"
+                                  VerticalScrollMode="Disabled"
+                                  VerticalScrollBarVisibility="Disabled"
+                                  Padding="0,4,0,8">
+                        <ItemsRepeater x:Name="SeasonTabsRepeater">
+                            <ItemsRepeater.Layout>
+                                <StackLayout Orientation="Horizontal" Spacing="8" />
+                            </ItemsRepeater.Layout>
+                            <ItemsRepeater.ItemTemplate>
+                                <DataTemplate x:DataType="models:SeasonTabItem">
+                                    <Grid Margin="0,0,8,0">
+                                        <Button
+                                            Click="SeasonTab_Click"
+                                            Tag="{x:Bind}"
+                                            AutomationProperties.Name="{x:Bind Title}"
+                                            Style="{StaticResource TvDetailsSelectedButtonStyle}"
+                                            Visibility="{x:Bind IsSelected, Mode=OneWay}">
+                                            <TextBlock Text="{x:Bind Title}" FontSize="14" FontWeight="SemiBold" />
+                                        </Button>
+                                        <Button
+                                            Click="SeasonTab_Click"
+                                            Tag="{x:Bind}"
+                                            AutomationProperties.Name="{x:Bind Title}"
+                                            Style="{StaticResource TvDetailsButtonStyle}"
+                                            Visibility="{x:Bind IsUnselected, Mode=OneWay}">
+                                            <TextBlock Text="{x:Bind Title}" FontSize="14" FontWeight="Normal" />
+                                        </Button>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsRepeater.ItemTemplate>
+                        </ItemsRepeater>
+                    </ScrollViewer>
+
+                    <!-- Episode Cards List -->
+                    <ItemsRepeater x:Name="EpisodesRepeater" Margin="0,8,0,0">
                         <ItemsRepeater.Layout>
                             <StackLayout Spacing="12" />
                         </ItemsRepeater.Layout>
                         <ItemsRepeater.ItemTemplate>
-                            <DataTemplate x:DataType="models:SeasonDisplayRecord">
-                                <Expander
-                                    HorizontalAlignment="Stretch"
-                                    HorizontalContentAlignment="Stretch"
-                                    IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}"
-                                    Tag="{x:Bind}"
-                                    Expanding="SeasonExpander_Expanding"
-                                    Collapsed="SeasonExpander_Collapsed">
-                                    <Expander.Header>
-                                        <!--
-                                            One season component: badge, then the title block, then
-                                            the progress track. The row is 64 epx tall with 20 epx
-                                            between the three parts and 8 epx of air above and below,
-                                            so the badge no longer touches the title, the title and
-                                            its meta line each keep a full line box, and the track
-                                            keeps its distance from the Expander's own chevron. Every
-                                            value is a margin or a gap on this grid - nothing is
-                                            positioned per language, so the row mirrors as a whole
-                                            under RTL.
-                                        -->
-                                        <Grid
-                                            MinHeight="64"
-                                            Margin="0,8"
-                                            ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="*" />
-                                                <!--
-                                                    The progress track takes a share of the row rather
-                                                    than a fixed 160 epx, capped so it never grows past
-                                                    the designed width. A fixed track was squeezing the
-                                                    title block on a narrow window; this way the track
-                                                    gives room back instead.
-                                                -->
-                                                <ColumnDefinition Width="0.4*" MaxWidth="172" />
-                                            </Grid.ColumnDefinitions>
-                                            <Border
-                                                Width="52"
-                                                Height="52"
-                                                VerticalAlignment="Center"
-                                                Style="{StaticResource TileSurfaceStyle}">
-                                                <TextBlock
-                                                    HorizontalAlignment="Center"
+                            <DataTemplate x:DataType="models:EpisodeDisplayRecord">
+                                <Border
+                                    MinHeight="120"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Opacity="{x:Bind RowOpacity}"
+                                    Padding="16,12">
+                                    <Grid ColumnSpacing="16">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="192" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Episode Thumbnail (16:9) -->
+                                        <Border
+                                            Width="192"
+                                            Height="108"
+                                            VerticalAlignment="Center"
+                                            CornerRadius="6"
+                                            Background="{ThemeResource FigmaSurfaceControlBrush}"
+                                            BorderBrush="{ThemeResource FigmaBorderDefaultBrush}"
+                                            BorderThickness="1">
+                                            <Grid>
+                                                <StackPanel
                                                     VerticalAlignment="Center"
-                                                    Style="{StaticResource BodyStrongTextBlockStyle}"
-                                                    Text="{x:Bind ArtLabel}" />
+                                                    HorizontalAlignment="Center"
+                                                    Spacing="4"
+                                                    Visibility="{x:Bind FallbackArtVisibility, Mode=OneWay}">
+                                                    <FontIcon
+                                                        FontSize="28"
+                                                        Foreground="{ThemeResource FigmaTextTertiaryBrush}"
+                                                        Glyph="&#xE7F4;"
+                                                        HorizontalAlignment="Center" />
+                                                    <TextBlock
+                                                        HorizontalAlignment="Center"
+                                                        Style="{StaticResource SecondaryCaptionTextStyle}"
+                                                        Foreground="{ThemeResource FigmaTextTertiaryBrush}"
+                                                        Text="{x:Bind ThumbnailLabel}" />
+                                                </StackPanel>
+                                                <Image
+                                                    Source="{x:Bind ArtworkSource, Mode=OneWay}"
+                                                    Stretch="UniformToFill"
+                                                    Visibility="{x:Bind ArtworkVisibility, Mode=OneWay}" />
+                                            </Grid>
+                                        </Border>
+
+                                        <!-- Center Info -->
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                                            <TextBlock
+                                                Style="{StaticResource BodyStrongTextBlockStyle}"
+                                                FontSize="15"
+                                                Text="{x:Bind FormattedTitle}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <TextBlock
+                                                Style="{StaticResource SecondaryCaptionTextStyle}"
+                                                Foreground="{ThemeResource FigmaTextSecondaryBrush}"
+                                                Text="{x:Bind SubtitleMeta}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <TextBlock
+                                                Style="{StaticResource TvDetailsOverviewStyle}"
+                                                FontSize="13"
+                                                LineHeight="18"
+                                                Foreground="{ThemeResource FigmaTextSecondaryBrush}"
+                                                Text="{x:Bind Overview}"
+                                                TextWrapping="Wrap"
+                                                MaxLines="3"
+                                                TextTrimming="CharacterEllipsis"
+                                                Margin="0,4,0,0"
+                                                Visibility="{x:Bind OverviewVisibility}" />
+                                        </StackPanel>
+
+                                        <!-- Status Badges -->
+                                        <StackPanel
+                                            Grid.Column="2"
+                                            Orientation="Horizontal"
+                                            Spacing="8"
+                                            VerticalAlignment="Center">
+                                            <Border Style="{StaticResource StatusPillStyle}" Visibility="{x:Bind Watched, Mode=OneWay}">
+                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    <FontIcon
+                                                        VerticalAlignment="Center"
+                                                        FontSize="12"
+                                                        Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+                                                        Glyph="&#xE73E;" />
+                                                    <TextBlock
+                                                        VerticalAlignment="Center"
+                                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                                        Text="{x:Bind Labels.Watched}" />
+                                                </StackPanel>
                                             </Border>
-                                            <StackPanel
-                                                Grid.Column="1"
-                                                VerticalAlignment="Center"
-                                                Spacing="6">
-                                                <TextBlock
-                                                    Style="{StaticResource BodyStrongTextBlockStyle}"
-                                                    Text="{x:Bind Title}"
-                                                    TextTrimming="CharacterEllipsis" />
-                                                <TextBlock
-                                                    Style="{StaticResource SecondaryCaptionTextStyle}"
-                                                    Text="{x:Bind Meta}"
-                                                    TextTrimming="CharacterEllipsis" />
-                                            </StackPanel>
-                                            <ProgressBar
-                                                Grid.Column="2"
-                                                Height="4"
-                                                MinWidth="72"
-                                                Margin="0,0,12,0"
-                                                HorizontalAlignment="Stretch"
-                                                VerticalAlignment="Center"
-                                                Maximum="100"
-                                                Value="{x:Bind ProgressValue}" />
-                                        </Grid>
-                                    </Expander.Header>
-                                    <!--
-                                        .episode-thread: inset with a hairline rail, mirrored under
-                                        RTL. The bottom padding matches the top so the last episode
-                                        card is not flush against the season card's edge.
-                                    -->
-                                    <Border
-                                        Margin="26,0,0,0"
-                                        BorderBrush="{ThemeResource ControlStrokeColorSecondaryBrush}"
-                                        BorderThickness="1,0,0,0"
-                                        Padding="24,12,0,12">
-                                        <ItemsRepeater ItemsSource="{x:Bind Episodes}">
-                                            <ItemsRepeater.Layout>
-                                                <StackLayout Spacing="8" />
-                                            </ItemsRepeater.Layout>
-                                            <ItemsRepeater.ItemTemplate>
-                                                <DataTemplate x:DataType="models:EpisodeDisplayRecord">
-                                                    <Border
-                                                        Height="66"
-                                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                                        BorderThickness="1"
-                                                        CornerRadius="{ThemeResource ControlCornerRadius}"
-                                                        Opacity="{x:Bind RowOpacity}"
-                                                        Padding="12,8,12,8">
-                                                        <Grid Height="50" ColumnSpacing="12">
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="88" />
-                                                                <ColumnDefinition Width="*" />
-                                                                <ColumnDefinition Width="Auto" />
-                                                                <ColumnDefinition Width="Auto" />
-                                                            </Grid.ColumnDefinitions>
-                                                            <Border
-                                                                Width="88"
-                                                                Height="50"
-                                                                VerticalAlignment="Center"
-                                                                Style="{StaticResource TileSurfaceStyle}">
-                                                                <TextBlock
-                                                                    HorizontalAlignment="Center"
-                                                                    VerticalAlignment="Center"
-                                                                    Style="{StaticResource SecondaryCaptionTextStyle}"
-                                                                    Text="{x:Bind ThumbnailLabel}" />
-                                                            </Border>
-                                                            <StackPanel
-                                                                Grid.Column="1"
-                                                                VerticalAlignment="Center"
-                                                                Spacing="2">
-                                                                <TextBlock
-                                                                    Style="{StaticResource BodyStrongTextBlockStyle}"
-                                                                    Text="{x:Bind Title}"
-                                                                    TextTrimming="CharacterEllipsis" />
-                                                                <TextBlock
-                                                                    Style="{StaticResource SecondaryCaptionTextStyle}"
-                                                                    Text="{x:Bind Meta}"
-                                                                    TextTrimming="CharacterEllipsis" />
-                                                            </StackPanel>
-                                                            <StackPanel
-                                                                Grid.Column="2"
-                                                                Orientation="Horizontal"
-                                                                Spacing="8"
-                                                                VerticalAlignment="Center">
-                                                                <Border Style="{StaticResource StatusPillStyle}" Visibility="{x:Bind Watched, Mode=OneWay}">
-                                                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                                                        <FontIcon
-                                                                            VerticalAlignment="Center"
-                                                                            FontSize="12"
-                                                                            Foreground="{ThemeResource SystemFillColorSuccessBrush}"
-                                                                            Glyph="&#xE73E;" />
-                                                                        <TextBlock
-                                                                            VerticalAlignment="Center"
-                                                                            Style="{StaticResource CaptionTextBlockStyle}"
-                                                                            Text="{x:Bind Labels.Watched}" />
-                                                                    </StackPanel>
-                                                                </Border>
-                                                                <Border Style="{StaticResource StatusPillStyle}" Visibility="{x:Bind IsMissing, Mode=OneWay}">
-                                                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                                                        <FontIcon
-                                                                            VerticalAlignment="Center"
-                                                                            FontSize="12"
-                                                                            Foreground="{ThemeResource SystemFillColorCautionBrush}"
-                                                                            Glyph="&#xE7BA;" />
-                                                                        <TextBlock
-                                                                            VerticalAlignment="Center"
-                                                                            Foreground="{ThemeResource SystemFillColorCautionBrush}"
-                                                                            Style="{StaticResource CaptionTextBlockStyle}"
-                                                                            Text="{x:Bind Labels.Missing}" />
-                                                                    </StackPanel>
-                                                                </Border>
-                                                                <Border Style="{StaticResource StatusPillStyle}" Visibility="{x:Bind StorageUnavailable, Mode=OneWay}">
-                                                                    <StackPanel Orientation="Horizontal" Spacing="4">
-                                                                        <FontIcon
-                                                                            VerticalAlignment="Center"
-                                                                            FontSize="12"
-                                                                            Foreground="{ThemeResource SystemFillColorCautionBrush}"
-                                                                            Glyph="&#xEA6A;" />
-                                                                        <TextBlock
-                                                                            VerticalAlignment="Center"
-                                                                            Foreground="{ThemeResource SystemFillColorCautionBrush}"
-                                                                            Style="{StaticResource CaptionTextBlockStyle}"
-                                                                            Text="{x:Bind Labels.StorageUnavailable}" />
-                                                                    </StackPanel>
-                                                                </Border>
-                                                            </StackPanel>
-                                                            <StackPanel
-                                                                Grid.Column="3"
-                                                                Orientation="Horizontal"
-                                                                Spacing="4"
-                                                                VerticalAlignment="Center"
-                                                                Visibility="{x:Bind HasActions}">
-                                                                <Button
-                                                                    AutomationProperties.Name="{x:Bind MarkWatchedLabel, Mode=OneWay}"
-                                                                    Click="EpisodeMarkWatched_Click"
-                                                                    IsEnabled="{x:Bind CanMarkWatched}"
-                                                                    Style="{StaticResource SubtleIconActionButtonStyle}"
-                                                                    Tag="{x:Bind}"
-                                                                    ToolTipService.ToolTip="{x:Bind MarkWatchedLabel, Mode=OneWay}">
-                                                                    <FontIcon FontSize="14" Glyph="&#xE73E;" />
-                                                                </Button>
-                                                                <Button
-                                                                    AutomationProperties.Name="{x:Bind Labels.Play}"
-                                                                    Click="EpisodePlay_Click"
-                                                                    IsEnabled="{x:Bind CanOpenFile, Mode=OneWay}"
-                                                                    Style="{StaticResource SubtleIconActionButtonStyle}"
-                                                                    Tag="{x:Bind}"
-                                                                    ToolTipService.ToolTip="{x:Bind Labels.Play}">
-                                                                    <FontIcon FontSize="14" Glyph="&#xE768;" />
-                                                                </Button>
-                                                                <Button
-                                                                    AutomationProperties.Name="{x:Bind Labels.OpenFolder}"
-                                                                    Click="EpisodeOpenFolder_Click"
-                                                                    IsEnabled="{x:Bind CanOpenFile, Mode=OneWay}"
-                                                                    Style="{StaticResource SubtleIconActionButtonStyle}"
-                                                                    Tag="{x:Bind}"
-                                                                    ToolTipService.ToolTip="{x:Bind Labels.OpenFolder}">
-                                                                    <FontIcon FontSize="14" Glyph="&#xE8B7;" />
-                                                                </Button>
-                                                                <Button
-                                                                    AutomationProperties.Name="{x:Bind Labels.More}"
-                                                                    Click="EpisodeDetails_Click"
-                                                                    Style="{StaticResource SubtleIconActionButtonStyle}"
-                                                                    Tag="{x:Bind}"
-                                                                    ToolTipService.ToolTip="{x:Bind Labels.More}">
-                                                                    <FontIcon FontSize="14" Glyph="&#xE712;" />
-                                                                </Button>
-                                                            </StackPanel>
-                                                        </Grid>
-                                                    </Border>
-                                                </DataTemplate>
-                                            </ItemsRepeater.ItemTemplate>
-                                        </ItemsRepeater>
-                                    </Border>
-                                </Expander>
+                                            <Border Style="{StaticResource StatusPillStyle}" Visibility="{x:Bind IsMissing, Mode=OneWay}">
+                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    <FontIcon
+                                                        VerticalAlignment="Center"
+                                                        FontSize="12"
+                                                        Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                                        Glyph="&#xE7BA;" />
+                                                    <TextBlock
+                                                        VerticalAlignment="Center"
+                                                        Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                                        Text="{x:Bind Labels.Missing}" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Style="{StaticResource StatusPillStyle}" Visibility="{x:Bind StorageUnavailable, Mode=OneWay}">
+                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    <FontIcon
+                                                        VerticalAlignment="Center"
+                                                        FontSize="12"
+                                                        Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                                        Glyph="&#xEA6A;" />
+                                                    <TextBlock
+                                                        VerticalAlignment="Center"
+                                                        Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                                        Text="{x:Bind Labels.StorageUnavailable}" />
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+
+                                        <!-- Actions -->
+                                        <StackPanel
+                                            Grid.Column="3"
+                                            Orientation="Horizontal"
+                                            Spacing="6"
+                                            VerticalAlignment="Center"
+                                            Visibility="{x:Bind HasActions}">
+                                            <Button
+                                                AutomationProperties.Name="{x:Bind Labels.Play}"
+                                                Click="EpisodePlay_Click"
+                                                IsEnabled="{x:Bind CanOpenFile, Mode=OneWay}"
+                                                Style="{StaticResource TvDetailsAccentButtonStyle}"
+                                                Padding="12,6"
+                                                MinHeight="36"
+                                                CornerRadius="6"
+                                                Tag="{x:Bind}"
+                                                ToolTipService.ToolTip="{x:Bind Labels.Play}">
+                                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                    <FontIcon FontSize="12" Glyph="&#xE768;" />
+                                                    <TextBlock Text="{x:Bind Labels.Play}" FontSize="13" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button
+                                                AutomationProperties.Name="{x:Bind MarkWatchedLabel, Mode=OneWay}"
+                                                Click="EpisodeMarkWatched_Click"
+                                                IsEnabled="{x:Bind CanMarkWatched}"
+                                                Style="{StaticResource SubtleIconActionButtonStyle}"
+                                                Tag="{x:Bind}"
+                                                ToolTipService.ToolTip="{x:Bind MarkWatchedLabel, Mode=OneWay}">
+                                                <FontIcon FontSize="14" Glyph="&#xE73E;" />
+                                            </Button>
+                                            <Button
+                                                AutomationProperties.Name="{x:Bind Labels.OpenFolder}"
+                                                Click="EpisodeOpenFolder_Click"
+                                                IsEnabled="{x:Bind CanOpenFile, Mode=OneWay}"
+                                                Style="{StaticResource SubtleIconActionButtonStyle}"
+                                                Tag="{x:Bind}"
+                                                ToolTipService.ToolTip="{x:Bind Labels.OpenFolder}">
+                                                <FontIcon FontSize="14" Glyph="&#xE8B7;" />
+                                            </Button>
+                                            <Button
+                                                AutomationProperties.Name="{x:Bind Labels.More}"
+                                                Click="EpisodeDetails_Click"
+                                                Style="{StaticResource SubtleIconActionButtonStyle}"
+                                                Tag="{x:Bind}"
+                                                ToolTipService.ToolTip="{x:Bind Labels.More}">
+                                                <FontIcon FontSize="14" Glyph="&#xE712;" />
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
                             </DataTemplate>
                         </ItemsRepeater.ItemTemplate>
                     </ItemsRepeater>

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -135,7 +135,7 @@ public sealed class TvLibraryService(
     private static TvShowDetails ComposeDetails(TvShow show, IReadOnlyList<TvSeasonDetails> seasonDetails) =>
         new(show.Id, show.DisplayTitle, show.Data.OriginalTitle, show.Year, show.Overview, show.Genres,
             show.PosterReference, seasonDetails, show.ExternalId, show.MetadataStatus,
-            show.CustomDisplayTitle, show.Title);
+            show.CustomDisplayTitle, show.Title, show.Rating, show.Data.BackdropReference);
 
     private readonly record struct ShowGraph(
         TvShow Show,
@@ -256,7 +256,10 @@ public sealed class TvLibraryService(
                     dbEp.RuntimeMinutes ?? providerEp.RuntimeMinutes,
                     Availability(files, dbEp.Id),
                     files.TryGetValue(dbEp.Id, out var episodeFiles) ? episodeFiles : [],
-                    watched.Contains(dbEp.Id)));
+                    watched.Contains(dbEp.Id),
+                    StillReference: dbEp.StillReference ?? providerEp.StillReference,
+                    Overview: dbEp.Overview ?? providerEp.Overview,
+                    AirDate: dbEp.AirDate?.ToString("yyyy-MM-dd") ?? providerEp.AirDate));
             }
             else
             {
@@ -267,7 +270,10 @@ public sealed class TvLibraryService(
                     providerEp.RuntimeMinutes,
                     EpisodeAvailability.NoFile,
                     [],
-                    false));
+                    false,
+                    StillReference: providerEp.StillReference,
+                    Overview: providerEp.Overview,
+                    AirDate: providerEp.AirDate));
             }
         }
 
@@ -282,7 +288,10 @@ public sealed class TvLibraryService(
                     dbEp.RuntimeMinutes,
                     Availability(files, dbEp.Id),
                     files.TryGetValue(dbEp.Id, out var episodeFiles) ? episodeFiles : [],
-                    watched.Contains(dbEp.Id)));
+                    watched.Contains(dbEp.Id),
+                    StillReference: dbEp.StillReference,
+                    Overview: dbEp.Overview,
+                    AirDate: dbEp.AirDate?.ToString("yyyy-MM-dd")));
             }
         }
 
@@ -312,7 +321,10 @@ public sealed class TvLibraryService(
                 dbEp.RuntimeMinutes,
                 Availability(files, dbEp.Id),
                 files.TryGetValue(dbEp.Id, out var episodeFiles) ? episodeFiles : [],
-                watched.Contains(dbEp.Id)))];
+                watched.Contains(dbEp.Id),
+                StillReference: dbEp.StillReference,
+                Overview: dbEp.Overview,
+                AirDate: dbEp.AirDate?.ToString("yyyy-MM-dd")))];
         }
 
         var min = dbEpisodes.Min(e => e.Number);
@@ -330,7 +342,10 @@ public sealed class TvLibraryService(
                     dbEp.RuntimeMinutes,
                     Availability(files, dbEp.Id),
                     files.TryGetValue(dbEp.Id, out var episodeFiles) ? episodeFiles : [],
-                    watched.Contains(dbEp.Id)));
+                    watched.Contains(dbEp.Id),
+                    StillReference: dbEp.StillReference,
+                    Overview: dbEp.Overview,
+                    AirDate: dbEp.AirDate?.ToString("yyyy-MM-dd")));
             }
             else
             {

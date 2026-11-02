@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using TBDMovies.Application.Dto;
 using TBDMovies.Domain.Library.Movies;
 using TBDMovies.Domain.Library.Shows;
@@ -59,7 +59,9 @@ internal static class TvProjection
         ExternalId: details.ExternalId,
         MetadataStatus: details.MetadataStatus,
         CustomDisplayTitle: details.CustomDisplayTitle,
-        CanonicalTitle: details.CanonicalTitle);
+        CanonicalTitle: details.CanonicalTitle,
+        BackdropReference: details.BackdropReference,
+        Rating: details.Rating);
 
     private static EpisodeRecord ToEpisode(int seasonNumber, TvEpisodeDetails episode)
     {
@@ -79,6 +81,9 @@ internal static class TvProjection
             Watched: episode.Watched,
             HasLocalFile: episode.Availability == EpisodeAvailability.Present,
             IsFileMissing: episode.Availability is EpisodeAvailability.Missing or EpisodeAvailability.NoFile || episode.Id == 0,
-            FilePath: file?.CurrentPath);
+            FilePath: file?.CurrentPath,
+            StillReference: episode.StillReference,
+            Overview: episode.Overview,
+            AirDate: episode.AirDate);
     }
 }

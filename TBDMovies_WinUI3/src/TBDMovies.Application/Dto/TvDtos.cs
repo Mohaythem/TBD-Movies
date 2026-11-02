@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using TBDMovies.Domain.Library.Movies;
 using TBDMovies.Domain.Library.Shows;
@@ -49,7 +49,9 @@ public record TvShowDetails(
     string? ExternalId = null,
     MetadataStatus MetadataStatus = MetadataStatus.Pending,
     string? CustomDisplayTitle = null,
-    string? CanonicalTitle = null);
+    string? CanonicalTitle = null,
+    double? Rating = null,
+    string? BackdropReference = null);
 
 public record TvSeasonDetails(
     int Id,
@@ -68,7 +70,10 @@ public record TvEpisodeDetails(
     int? RuntimeMinutes,
     EpisodeAvailability Availability,
     IReadOnlyList<MediaFile> MediaFiles,
-    bool Watched = false);
+    bool Watched = false,
+    string? StillReference = null,
+    string? Overview = null,
+    string? AirDate = null);
 
 /// <summary>
 /// The outcome of registering one episode file. Show, season and episode are the rows the file was

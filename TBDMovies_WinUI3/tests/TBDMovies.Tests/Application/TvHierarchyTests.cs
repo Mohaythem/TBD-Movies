@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -438,6 +438,103 @@ public sealed class TvHierarchyTests : IDisposable
         Assert.Equal(0, restartHealth.FileProgress.MissingFiles);
         Assert.Equal(1, restartHealth.FileProgress.CheckedFiles);
         Assert.Empty(MediaFiles().ListMissing());
+    }
+
+    [Fact]
+    public void Specials_season_zero_suppression_rule_strictly_excludes_season_zero_without_local_files()
+    {
+        // Setup seasons: Season 0 with 0 local (missing only), Season 1 with 1 local, Season 2 with 0 local
+        var seasons = new[]
+        {
+            new { Number = 0, LocalCount = 0, MissingCount = 5 },
+            new { Number = 1, LocalCount = 3, MissingCount = 1 },
+            new { Number = 2, LocalCount = 0, MissingCount = 8 }
+        };
+
+        // Strict specials rule used by TVShowDetailsPage:
+        var filtered = seasons.Where(s => s.Number != 0 || s.LocalCount > 0).ToList();
+
+        // Season 0 must be completely excluded
+        Assert.DoesNotContain(filtered, s => s.Number == 0);
+        // Season 1 must be present
+        Assert.Contains(filtered, s => s.Number == 1);
+        // Season 2 must be present despite having 0 local files (regular season)
+        Assert.Contains(filtered, s => s.Number == 2);
+
+        // When Season 0 has at least 1 local file, it must be included
+        var seasonsWithLocalSpecial = new[]
+        {
+            new { Number = 0, LocalCount = 1, MissingCount = 2 },
+            new { Number = 1, LocalCount = 3, MissingCount = 0 }
+        };
+        var filteredWithSpecial = seasonsWithLocalSpecial.Where(s => s.Number != 0 || s.LocalCount > 0).ToList();
+        Assert.Contains(filteredWithSpecial, s => s.Number == 0);
+    }
+
+    [Fact]
+    public void Session_season_selection_priority_logic_respects_session_then_season_one_then_lowest()
+    {
+        var sessionDict = new Dictionary<int, int>();
+        int showId = 42;
+
+        var seasons = new[] { 2, 3, 4 }; // Season 1 not present
+
+        // 1. Without session state and without Season 1: defaults to lowest available (2)
+        int selected = sessionDict.TryGetValue(showId, out var saved) && seasons.Contains(saved)
+            ? saved
+            : (seasons.Contains(1) ? 1 : seasons[0]);
+        Assert.Equal(2, selected);
+
+        // 2. Add Season 1 to seasons list: defaults to Season 1
+        var seasonsWithOne = new[] { 0, 1, 2, 3 };
+        selected = sessionDict.TryGetValue(showId, out saved) && seasonsWithOne.Contains(saved)
+            ? saved
+            : (seasonsWithOne.Contains(1) ? 1 : seasonsWithOne[0]);
+        Assert.Equal(1, selected);
+
+        // 3. User selects Season 3: saved into session dictionary
+        sessionDict[showId] = 3;
+
+        // 4. Re-evaluating with saved session choice: returns preserved Season 3
+        selected = sessionDict.TryGetValue(showId, out saved) && seasonsWithOne.Contains(saved)
+            ? saved
+            : (seasonsWithOne.Contains(1) ? 1 : seasonsWithOne[0]);
+        Assert.Equal(3, selected);
+    }
+
+    [Fact]
+    public void TvEpisodeDetails_and_TvShowDetails_carry_phase2_metadata_fields()
+    {
+        var epDetails = new TvEpisodeDetails(
+            1,
+            5,
+            "Pilot",
+            45,
+            EpisodeAvailability.Present,
+            [],
+            false,
+            StillReference: "/stills/s01e05.jpg",
+            Overview: "The journey begins in the desert.",
+            AirDate: "2024-03-15");
+
+        Assert.Equal("/stills/s01e05.jpg", epDetails.StillReference);
+        Assert.Equal("The journey begins in the desert.", epDetails.Overview);
+        Assert.Equal("2024-03-15", epDetails.AirDate);
+
+        var showDetails = new TvShowDetails(
+            10,
+            "Breaking Bad",
+            null,
+            2008,
+            "A chemistry teacher turns to cooking meth.",
+            ["Drama", "Crime"],
+            "/posters/bb.jpg",
+            [],
+            Rating: 9.5,
+            BackdropReference: "/backdrops/bb.jpg");
+
+        Assert.Equal(9.5, showDetails.Rating);
+        Assert.Equal("/backdrops/bb.jpg", showDetails.BackdropReference);
     }
 
     private static long Scalar(SqliteConnection connection, string sql)

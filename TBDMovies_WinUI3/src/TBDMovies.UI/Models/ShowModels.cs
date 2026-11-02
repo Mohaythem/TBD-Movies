@@ -25,7 +25,10 @@ public sealed record EpisodeRecord(
     bool Watched,
     bool HasLocalFile,
     bool IsFileMissing = false,
-    string? FilePath = null);
+    string? FilePath = null,
+    string? StillReference = null,
+    string? Overview = null,
+    string? AirDate = null);
 
 public sealed record SeasonRecord(int Id, int Number, IReadOnlyList<EpisodeRecord> Episodes)
 {
@@ -68,7 +71,8 @@ public sealed record TVShowRecord(
     DateTimeOffset? LastOpenedAt = null,
     string? BackdropReference = null,
     string? CustomDisplayTitle = null,
-    string? CanonicalTitle = null)
+    string? CanonicalTitle = null,
+    double? Rating = null)
 {
     public DateTimeOffset? LastOpenedAt { get; private set; } = LastOpenedAt;
 
@@ -262,8 +266,46 @@ public sealed class SeasonDisplayRecord : INotifyPropertyChanged
     public IReadOnlyList<EpisodeDisplayRecord> Episodes { get; }
 }
 
+public sealed class SeasonTabItem : INotifyPropertyChanged
+{
+    private bool _isSelected;
+
+    public SeasonTabItem(int seasonNumber, string title, string meta, bool isSelected, SeasonDisplayRecord season)
+    {
+        SeasonNumber = seasonNumber;
+        Title = title;
+        Meta = meta;
+        _isSelected = isSelected;
+        Season = season;
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public int SeasonNumber { get; }
+    public string Title { get; }
+    public string Meta { get; }
+    public SeasonDisplayRecord Season { get; }
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected != value)
+            {
+                _isSelected = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsUnselected)));
+            }
+        }
+    }
+
+    public bool IsUnselected => !_isSelected;
+}
+
 public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
 {
+    private readonly ArtworkLoader? _artwork;
     private bool _watched;
     private bool _hasLocalFile;
     private bool _isFileMissing;
@@ -281,7 +323,11 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
         bool hasLocalFile,
         bool isFileMissing,
         EpisodeActionLabels labels,
-        bool StorageUnavailable = false)
+        bool StorageUnavailable = false,
+        string? stillReference = null,
+        string? overview = null,
+        string? airDate = null,
+        IEnumerable<string?>? fallbackArtReferences = null)
     {
         ShowId = showId;
         SeasonNumber = seasonNumber;
@@ -295,6 +341,29 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
         _isFileMissing = isFileMissing;
         Labels = labels;
         _storageUnavailable = StorageUnavailable;
+        StillReference = stillReference;
+        Overview = overview ?? string.Empty;
+        AirDate = airDate ?? string.Empty;
+
+        var artCandidates = new List<string?>();
+        if (!string.IsNullOrWhiteSpace(stillReference))
+        {
+            artCandidates.Add(stillReference);
+        }
+        if (fallbackArtReferences != null)
+        {
+            artCandidates.AddRange(fallbackArtReferences);
+        }
+
+        if (artCandidates.Count > 0)
+        {
+            _artwork = new ArtworkLoader(artCandidates, () =>
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ArtworkSource)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ArtworkVisibility)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FallbackArtVisibility)));
+            });
+        }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -306,6 +375,42 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
     public string ThumbnailLabel { get; }
     public string Title { get; }
     public string Meta { get; }
+    public string? StillReference { get; }
+    public string Overview { get; }
+    public Visibility OverviewVisibility => !string.IsNullOrWhiteSpace(Overview) ? Visibility.Visible : Visibility.Collapsed;
+    public string AirDate { get; }
+
+    public ImageSource? ArtworkSource => _artwork?.Source;
+    public Visibility ArtworkVisibility => ArtworkSource is not null ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility FallbackArtVisibility => ArtworkSource is null ? Visibility.Visible : Visibility.Collapsed;
+
+    public string FormattedTitle
+    {
+        get
+        {
+            var epLabel = LocalizationService.Digits(LocalizationService.Format("EpisodeNumberFormat", EpisodeNumber));
+            return string.IsNullOrWhiteSpace(Title) || Title == ShowFormatting.EpisodeCode(SeasonNumber, EpisodeNumber)
+                ? epLabel
+                : $"{epLabel} · {Title}";
+        }
+    }
+
+    public string SubtitleMeta
+    {
+        get
+        {
+            var list = new List<string>();
+            if (!string.IsNullOrWhiteSpace(Meta))
+            {
+                list.Add(Meta);
+            }
+            if (!string.IsNullOrWhiteSpace(AirDate))
+            {
+                list.Add(AirDate);
+            }
+            return LocalizationService.Digits(string.Join(" · ", list));
+        }
+    }
 
     public bool Watched
     {

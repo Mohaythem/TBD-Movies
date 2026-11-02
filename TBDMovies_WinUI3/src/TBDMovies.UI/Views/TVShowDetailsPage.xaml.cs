@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using TBDMovies.UI.Models;
 using TBDMovies.Application.Services;
@@ -35,7 +36,13 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
     private readonly PostHandoffRequestLifetime _enrichmentRequests = new();
     private readonly PostHandoffRequestLifetime _availabilityRequests = new();
     private readonly PostHandoffRequestLifetime _actionRequests = new();
-    private readonly HashSet<int> _expandedSeasonNumbers = [];
+    private static readonly Dictionary<int, int> _selectedSeasonByShowId = new();
+    private int _activeSeasonNumber;
+    public int ActiveSeasonNumber => _activeSeasonNumber;
+    public static IReadOnlyDictionary<int, int> SelectedSeasonByShowId => _selectedSeasonByShowId;
+    private IReadOnlyList<SeasonDisplayRecord> _seasons = [];
+    private IReadOnlyList<SeasonTabItem> _seasonTabs = [];
+    private SeasonDisplayRecord? _currentSeason;
     private readonly TitleInteractionController _titleController;
 
     public TVShowDetailsPage()
@@ -116,7 +123,6 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
     public void SetReturnDestination(string destination)
     {
         _returnDestination = destination;
-        UpdateBackLabel();
     }
 
     /// <summary>Loads one show's hierarchy from the catalog.</summary>
@@ -173,7 +179,6 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         HeroCopyPanel.FlowDirection = LocalizationService.FlowDirection;
         ReadingPane.FlowDirection = LocalizationService.FlowDirection;
 
-        UpdateBackLabel();
         KindText.Text = LocalizationService.Text("TvShow");
         ShowTitleCopiedText.Text = LocalizationService.Text("TitleCopied");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(ShowTitleText, LocalizationService.Text("CustomTitleAccessibleHelp"));
@@ -188,10 +193,9 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         RemoveShowFromLibraryItem.Text = LocalizationService.Text("RemoveFromLibrary");
         RemoveShowFromLibraryItem.IsEnabled = _show.Id > 0;
         SeasonsTitleText.Text = LocalizationService.Text("Seasons");
-        SeasonsHelpText.Text = LocalizationService.Text("SeasonsHelp");
 
         UpdateShowSummary();
-        SeasonsRepeater.ItemsSource = BuildSeasons(_show);
+        UpdateSeasonsUI(BuildSeasons(_show));
         UpdateMatchButtonVisuals();
         ProbeEpisodeStorageAvailability(_show);
     }
@@ -206,6 +210,17 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
             " · ",
             new[] { _show.MetaLine, seasonLabel, episodeLabel }
                 .Where(value => !string.IsNullOrWhiteSpace(value)));
+
+        if (_show.Rating is { } rating && rating > 0)
+        {
+            RatingText.Text = LocalizationService.Digits(rating.ToString("0.0", CultureInfo.InvariantCulture));
+            RatingPanel.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            RatingPanel.Visibility = Visibility.Collapsed;
+        }
+
         ProgressValueText.Text = _show.ProgressLine;
         var next = _show.NextPlayableEpisode;
         PlayNextButton.IsEnabled = next is not null;
@@ -357,9 +372,9 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
                 if (!request.IsCurrent || _show.Id != showId) return;
 
                 // Update storage unavailable state in-place on existing display records
-                if (SeasonsRepeater.ItemsSource is IReadOnlyList<SeasonDisplayRecord> seasonList)
+                if (_seasons.Count > 0)
                 {
-                    foreach (var s in seasonList)
+                    foreach (var s in _seasons)
                     {
                         foreach (var ep in s.Episodes)
                         {
@@ -427,7 +442,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
     {
         _show = enriched;
         UpdateShowSummary();
-        SeasonsRepeater.ItemsSource = BuildSeasons(_show);
+        UpdateSeasonsUI(BuildSeasons(_show));
         ProbeEpisodeStorageAvailability(_show);
     }
 
@@ -489,18 +504,6 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         }
     }
 
-    private void UpdateBackLabel()
-    {
-        BackText.Text = LocalizationService.Text(_returnDestination switch
-        {
-            "home" => "BackToHome",
-            "lists" => "BackToMyLists",
-            _ => "BackToLibrary",
-        });
-    }
-
-    private void BackButton_Click(object sender, RoutedEventArgs e) => BackRequested?.Invoke(this, EventArgs.Empty);
-
     private async void RemoveShowFromLibrary_Click(object sender, RoutedEventArgs e)
     {
         MoreButton.Flyout?.Hide();
@@ -547,6 +550,8 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         }
     }
 
+    private void PlayNext_Click(object sender, RoutedEventArgs e) => PlayNextButton_Click(sender, e);
+
     private async void EpisodePlay_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: EpisodeDisplayRecord row })
@@ -555,19 +560,88 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         }
     }
 
-    private void SeasonExpander_Expanding(Expander sender, ExpanderExpandingEventArgs args)
+    private void PlayEpisode_Click(object sender, RoutedEventArgs e) => EpisodePlay_Click(sender, e);
+    private void ToggleEpisodeWatched_Click(object sender, RoutedEventArgs e) => EpisodeMarkWatched_Click(sender, e);
+    private void OpenEpisodeFolder_Click(object sender, RoutedEventArgs e) => EpisodeOpenFolder_Click(sender, e);
+
+    private void UpdateSeasonsUI(IReadOnlyList<SeasonDisplayRecord> seasons)
     {
-        if (sender.Tag is SeasonDisplayRecord season)
+        _seasons = seasons;
+        if (seasons.Count == 0)
         {
-            _expandedSeasonNumbers.Add(season.Number);
+            _activeSeasonNumber = 0;
+            SeasonTabsScrollViewer.Visibility = Visibility.Collapsed;
+            EpisodesRepeater.ItemsSource = null;
+            CurrentSeasonMetaText.Text = string.Empty;
+            _currentSeason = null;
+            _seasonTabs = [];
+            return;
         }
+
+        SeasonTabsScrollViewer.Visibility = Visibility.Visible;
+
+        // Requirement 4: Remember selected season in session dictionary.
+        // Default to saved season for that showId (or Season 1 / lowest season if none saved).
+        int targetSeasonNumber = -1;
+        if (_show.Id > 0 && _selectedSeasonByShowId.TryGetValue(_show.Id, out var saved) && seasons.Any(s => s.Number == saved))
+        {
+            targetSeasonNumber = saved;
+        }
+        else if (seasons.Any(s => s.Number == 1))
+        {
+            targetSeasonNumber = 1;
+        }
+        else
+        {
+            targetSeasonNumber = seasons[0].Number;
+        }
+
+        SelectSeason(targetSeasonNumber);
     }
 
-    private void SeasonExpander_Collapsed(Expander sender, ExpanderCollapsedEventArgs args)
+    private void SelectSeason(int seasonNumber)
     {
-        if (sender.Tag is SeasonDisplayRecord season)
+        var target = _seasons.FirstOrDefault(s => s.Number == seasonNumber) ?? _seasons.FirstOrDefault();
+        if (target is null) return;
+
+        _activeSeasonNumber = target.Number;
+
+        if (_show.Id > 0)
         {
-            _expandedSeasonNumbers.Remove(season.Number);
+            _selectedSeasonByShowId[_show.Id] = target.Number;
+        }
+
+        _currentSeason = target;
+
+        if (_seasonTabs.Count == _seasons.Count && _seasonTabs.All(t => _seasons.Any(s => s.Number == t.SeasonNumber)))
+        {
+            foreach (var tab in _seasonTabs)
+            {
+                tab.IsSelected = (tab.SeasonNumber == target.Number);
+            }
+        }
+        else
+        {
+            var tabs = _seasons.Select(s => new SeasonTabItem(
+                s.Number,
+                s.Title,
+                s.Meta,
+                isSelected: s.Number == target.Number,
+                season: s)).ToList();
+
+            _seasonTabs = tabs;
+            SeasonTabsRepeater.ItemsSource = _seasonTabs;
+        }
+
+        EpisodesRepeater.ItemsSource = target.Episodes;
+        CurrentSeasonMetaText.Text = target.Meta;
+    }
+
+    private void SeasonTab_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: SeasonTabItem tab })
+        {
+            SelectSeason(tab.SeasonNumber);
         }
     }
 
@@ -832,7 +906,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         await ContentDialogCoordinator.ShowAsync(dialog);
     }
 
-    /// <summary>Builds seasons preserving currently opened expander states.</summary>
+    /// <summary>Builds seasons applying strict Specials rules and enriching episodes with thumbnails and metadata.</summary>
     private IReadOnlyList<SeasonDisplayRecord> BuildSeasons(TVShowRecord show, IReadOnlySet<string>? unavailablePaths = null)
     {
         var labels = new EpisodeActionLabels(
@@ -847,10 +921,10 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
 
         return
         [
-            // A real TMDB Specials season (0) with no local files is noise in a local library, so it is
-            // hidden here; a Specials that actually has files on disk (present or missing) still shows.
+            // Requirement 3: Ensure Season 0 ("Specials") is ONLY shown if season.LocalCount > 0.
+            // If season.LocalCount == 0, exclude it completely! Do NOT show it even if MissingCount > 0.
             .. show.Seasons
-                .Where(season => season.Number != 0 || season.LocalCount > 0 || season.MissingCount > 0)
+                .Where(season => season.Number != 0 || season.LocalCount > 0)
                 .Select(season => new SeasonDisplayRecord(
                 show.Id,
                 season.Number,
@@ -858,7 +932,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
                 ShowFormatting.SeasonLabel(season.Number),
                 SeasonMeta(season),
                 season.Episodes.Count == 0 ? 0 : 100.0 * season.LocalCount / season.Episodes.Count,
-                _expandedSeasonNumbers.Contains(season.Number),
+                isExpanded: false,
                 [
                     .. season.Episodes.Select(episode => new EpisodeDisplayRecord(
                         show.Id,
@@ -874,7 +948,11 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
                         labels,
                         StorageUnavailable: episode.HasLocalFile
                             && episode.FilePath is { Length: > 0 } path
-                            && unavailablePaths?.Contains(path) == true)),
+                            && unavailablePaths?.Contains(path) == true,
+                        stillReference: episode.StillReference,
+                        overview: episode.Overview,
+                        airDate: episode.AirDate,
+                        fallbackArtReferences: [show.BackdropReference, show.PosterReference])),
                 ])),
         ];
     }
