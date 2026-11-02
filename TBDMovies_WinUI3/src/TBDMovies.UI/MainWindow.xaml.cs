@@ -608,15 +608,15 @@ public sealed partial class MainWindow : Window
         resources["ControlFillColorTertiaryBrush"] = Brush(0x32, 0x43, 0x55);
         resources["ControlStrongStrokeColorDefaultBrush"] = Brush(0x8B, 0xA8, 0xC7, 0xD0);
 
-        // Cinema Gold unified accent palette.
-        resources["AccentFillColorDefaultBrush"] = Brush(0xF5, 0x9E, 0x0B);
-        resources["AccentFillColorSecondaryBrush"] = Brush(0xD9, 0x77, 0x06);
-        resources["AccentFillColorTertiaryBrush"] = Brush(0xB4, 0x53, 0x09);
-        resources["AccentFillColorDisabledBrush"] = Brush(0xF5, 0x9E, 0x0B, 0x52);
-        resources["AccentTextFillColorPrimaryBrush"] = Brush(0xFB, 0xBF, 0x24);
-        resources["AccentTextFillColorSecondaryBrush"] = Brush(0xF5, 0x9E, 0x0B);
-        resources["TextOnAccentFillColorPrimaryBrush"] = Brush(0x00, 0x00, 0x00);
-        resources["TextOnAccentFillColorSecondaryBrush"] = Brush(0x00, 0x00, 0x00);
+        // Windows 11 Fluent Blue unified accent palette.
+        resources["AccentFillColorDefaultBrush"] = Brush(0x00, 0x78, 0xD4);
+        resources["AccentFillColorSecondaryBrush"] = Brush(0x00, 0x67, 0xC0);
+        resources["AccentFillColorTertiaryBrush"] = Brush(0x00, 0x5F, 0xB8);
+        resources["AccentFillColorDisabledBrush"] = Brush(0x00, 0x78, 0xD4, 0x52);
+        resources["AccentTextFillColorPrimaryBrush"] = Brush(0x60, 0xCD, 0xFF);
+        resources["AccentTextFillColorSecondaryBrush"] = Brush(0x00, 0x78, 0xD4);
+        resources["TextOnAccentFillColorPrimaryBrush"] = Brush(0xFF, 0xFF, 0xFF);
+        resources["TextOnAccentFillColorSecondaryBrush"] = Brush(0xFF, 0xFF, 0xFF);
 
         // Native templates consume these aliases directly; replacing the underlying accent
         // brush alone cannot replace aliases already resolved in the WinUI resource dictionary.
@@ -628,12 +628,12 @@ public sealed partial class MainWindow : Window
         resources["AccentButtonForegroundPointerOver"] = resources["TextOnAccentFillColorPrimaryBrush"];
         resources["AccentButtonForegroundPressed"] = resources["TextOnAccentFillColorSecondaryBrush"];
         resources["NavigationViewSelectionIndicatorForeground"] = resources["AccentFillColorDefaultBrush"];
-        resources["NavigationViewItemBackgroundSelected"] = Brush(0xF5, 0x9E, 0x0B, 0x26);
-        resources["NavigationViewItemBackgroundSelectedPointerOver"] = Brush(0xF5, 0x9E, 0x0B, 0x33);
-        resources["NavigationViewItemBackgroundSelectedPressed"] = Brush(0xF5, 0x9E, 0x0B, 0x1A);
+        resources["NavigationViewItemBackgroundSelected"] = Brush(0x00, 0x78, 0xD4, 0x26);
+        resources["NavigationViewItemBackgroundSelectedPointerOver"] = Brush(0x00, 0x78, 0xD4, 0x33);
+        resources["NavigationViewItemBackgroundSelectedPressed"] = Brush(0x00, 0x78, 0xD4, 0x1A);
         resources["ButtonBackgroundPointerOver"] = resources["ControlFillColorSecondaryBrush"];
         resources["ButtonBackgroundPressed"] = resources["ControlFillColorTertiaryBrush"];
-        resources["ButtonBorderBrushPointerOver"] = Brush(0xF5, 0x9E, 0x0B, 0xC0);
+        resources["ButtonBorderBrushPointerOver"] = Brush(0x00, 0x78, 0xD4, 0xC0);
 
         // Figma semantic surfaces are shared by the details pages. Keep their Slate tint in
         // this window-local overlay; the Default dictionary remains the neutral Dark palette.
@@ -645,10 +645,10 @@ public sealed partial class MainWindow : Window
         resources["FigmaTextSecondaryBrush"] = Brush(0xB2, 0xBA, 0xC1);
         resources["FigmaTextTertiaryBrush"] = Brush(0x8C, 0x98, 0xA2);
         resources["FigmaAccentButtonBrush"] = resources["AccentFillColorDefaultBrush"];
-        resources["FigmaAccentForegroundBrush"] = Brush(0x00, 0x00, 0x00);
-        resources["FigmaAccentSelectedSurfaceBrush"] = Brush(0xF5, 0x9E, 0x0B, 0x26);
+        resources["FigmaAccentForegroundBrush"] = Brush(0xFF, 0xFF, 0xFF);
+        resources["FigmaAccentSelectedSurfaceBrush"] = Brush(0x00, 0x78, 0xD4, 0x26);
         resources["FigmaStatusAvailableBrush"] = Brush(0xA5, 0xC8, 0xAD);
-        resources["FigmaStatusStorageGoldBrush"] = Brush(0xF5, 0x9E, 0x0B);
+        resources["FigmaStatusStorageGoldBrush"] = Brush(0x00, 0x78, 0xD4);
 
         return resources;
     }

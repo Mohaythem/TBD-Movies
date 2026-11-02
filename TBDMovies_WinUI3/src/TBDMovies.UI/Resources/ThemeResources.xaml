@@ -75,24 +75,24 @@
     -->
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Default">
-            <!-- Dark uses a neutral near-black surface. Slate applies its tinted palette locally
+            <!-- Dark uses a pure OLED neutral black surface. Slate applies its navy tinted palette locally
                  from MainWindow, so these values must not be shared with the Slate surface. -->
             <SolidColorBrush x:Key="LandscapeCardTextBrush" Color="#FFF8F9FB" />
             <SolidColorBrush x:Key="LandscapeCardSecondaryTextBrush" Color="#FFE1E6EB" />
-            <!-- Artwork badges sit over poster imagery. Keep a solid scrim so text remains legible. -->
-            <SolidColorBrush x:Key="ArtworkBadgeBackgroundBrush" Color="#CC080F16" />
+            <!-- Artwork badges sit over poster imagery. Neutral black scrim so text remains legible. -->
+            <SolidColorBrush x:Key="ArtworkBadgeBackgroundBrush" Color="#CC000000" />
             <SolidColorBrush x:Key="ArtworkBadgeForegroundBrush" Color="#FFF8F9FB" />
             <LinearGradientBrush x:Key="LandscapeCardScrimBrush" StartPoint="0,0" EndPoint="0,1">
-                <GradientStop Offset="0" Color="#10080F16" />
-                <GradientStop Offset="0.35" Color="#33080F16" />
-                <GradientStop Offset="0.65" Color="#CC080F16" />
-                <GradientStop Offset="1" Color="#F5080F16" />
+                <GradientStop Offset="0" Color="#10000000" />
+                <GradientStop Offset="0.35" Color="#33000000" />
+                <GradientStop Offset="0.65" Color="#CC000000" />
+                <GradientStop Offset="1" Color="#F5000000" />
             </LinearGradientBrush>
             <LinearGradientBrush x:Key="HeroBackdropScrimBrush" StartPoint="0.5,0" EndPoint="0.5,1">
-                <GradientStop Offset="0.0" Color="#00111111" />
-                <GradientStop Offset="0.45" Color="#66111111" />
-                <GradientStop Offset="0.80" Color="#D9111111" />
-                <GradientStop Offset="1.0" Color="#FF111111" />
+                <GradientStop Offset="0.0" Color="#00000000" />
+                <GradientStop Offset="0.45" Color="#66000000" />
+                <GradientStop Offset="0.80" Color="#D9000000" />
+                <GradientStop Offset="1.0" Color="#FF000000" />
             </LinearGradientBrush>
 
             <SolidColorBrush x:Key="ShellPaneBackgroundBrush" Color="#3D000000" />
@@ -111,43 +111,65 @@
             <SolidColorBrush x:Key="NavigationViewItemForegroundSelectedPressed" Color="#FFFFFFFF" />
 
             <LinearGradientBrush x:Key="PosterMoviePlaceholderBrush" StartPoint="0,0" EndPoint="0.85,1">
-                <GradientStop Offset="0" Color="#FF3A5866" />
-                <GradientStop Offset="1" Color="#FF2B2B2B" />
+                <GradientStop Offset="0" Color="#FF262626" />
+                <GradientStop Offset="1" Color="#FF141414" />
             </LinearGradientBrush>
             <LinearGradientBrush x:Key="PosterShowPlaceholderBrush" StartPoint="0,0" EndPoint="0.85,1">
-                <GradientStop Offset="0" Color="#FF46425D" />
-                <GradientStop Offset="1" Color="#FF2B2B2B" />
+                <GradientStop Offset="0" Color="#FF262626" />
+                <GradientStop Offset="1" Color="#FF141414" />
             </LinearGradientBrush>
             <SolidColorBrush x:Key="PosterGlyphForegroundBrush" Color="#61FFFFFF" />
-            <SolidColorBrush x:Key="SlateBackgroundBrush" Color="#FF1F2933" />
+            <SolidColorBrush x:Key="SlateBackgroundBrush" Color="#FF18222D" />
             <SolidColorBrush x:Key="DangerControlBackgroundBrush" Color="#14FF99A4" />
             <SolidColorBrush x:Key="DangerControlBorderBrush" Color="#61FF99A4" />
             <SolidColorBrush x:Key="DangerCardStrokeBrush" Color="#61FF99A4" />
-            <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#FFF59E0B" />
-            <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#FFD97706" />
-            <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#FFB45309" />
-            <SolidColorBrush x:Key="AccentFillColorDisabledBrush" Color="#52F59E0B" />
-            <SolidColorBrush x:Key="AccentTextFillColorPrimaryBrush" Color="#FFFBBF24" />
-            <SolidColorBrush x:Key="AccentTextFillColorSecondaryBrush" Color="#FFF59E0B" />
-            <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush" Color="#FF000000" />
-            <SolidColorBrush x:Key="TextOnAccentFillColorSecondaryBrush" Color="#FF000000" />
-            <SolidColorBrush x:Key="AccentControlBorderBrush" Color="#7AF59E0B" />
-            <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#FF242424" />
-            <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#1FFFFFFF" />
 
-            <!-- Figma Approved Theme Tokens: Cinema Gold & Obsidian Unified Palette -->
+            <!-- Pure OLED Black & Neutral Dark Charcoal Surfaces -->
+            <Color x:Key="SolidBackgroundFillColorBase">#FF000000</Color>
+            <SolidColorBrush x:Key="SolidBackgroundFillColorBaseBrush" Color="#FF000000" />
+            <SolidColorBrush x:Key="ApplicationPageBackgroundThemeBrush" Color="#FF000000" />
+            <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#FF161616" />
+            <SolidColorBrush x:Key="CardBackgroundFillColorSecondaryBrush" Color="#FF181818" />
+            <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#FF2E2E2E" />
+            <SolidColorBrush x:Key="ControlFillColorDefaultBrush" Color="#FF181818" />
+            <SolidColorBrush x:Key="ControlFillColorSecondaryBrush" Color="#FF222222" />
+            <SolidColorBrush x:Key="ControlFillColorTertiaryBrush" Color="#FF2A2A2A" />
+            <SolidColorBrush x:Key="ControlStrokeColorDefaultBrush" Color="#FF2E2E2E" />
+            <SolidColorBrush x:Key="ControlStrongStrokeColorDefaultBrush" Color="#FF383838" />
+
+            <!-- Windows 11 Fluent Blue Unified Accent Palette: Dark -->
+            <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#FF0078D4" />
+            <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#FF0067C0" />
+            <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#FF005FB8" />
+            <SolidColorBrush x:Key="AccentFillColorDisabledBrush" Color="#520078D4" />
+            <SolidColorBrush x:Key="AccentTextFillColorPrimaryBrush" Color="#FF60CDFF" />
+            <SolidColorBrush x:Key="AccentTextFillColorSecondaryBrush" Color="#FF0078D4" />
+            <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="TextOnAccentFillColorSecondaryBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="AccentControlBorderBrush" Color="#7A0078D4" />
+
+            <!-- Native Button Overrides for Accent -->
+            <SolidColorBrush x:Key="AccentButtonBackground" Color="#FF0078D4" />
+            <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver" Color="#FF0067C0" />
+            <SolidColorBrush x:Key="AccentButtonBackgroundPressed" Color="#FF005FB8" />
+            <SolidColorBrush x:Key="AccentButtonBackgroundDisabled" Color="#520078D4" />
+            <SolidColorBrush x:Key="AccentButtonForeground" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="#FFFFFFFF" />
+
+            <!-- Figma Approved Theme Tokens: Neutral Near-Black & Fluent Blue -->
             <SolidColorBrush x:Key="FigmaSurfaceAppBrush" Color="#FF111111" />
             <SolidColorBrush x:Key="FigmaSurfaceSecondaryBrush" Color="#FF181818" />
-            <SolidColorBrush x:Key="FigmaSurfaceControlBrush" Color="#FF242424" />
-            <SolidColorBrush x:Key="FigmaBorderDefaultBrush" Color="#FF454545" />
+            <SolidColorBrush x:Key="FigmaSurfaceControlBrush" Color="#FF181818" />
+            <SolidColorBrush x:Key="FigmaBorderDefaultBrush" Color="#FF2E2E2E" />
             <SolidColorBrush x:Key="FigmaTextPrimaryBrush" Color="#FFF5F5F5" />
             <SolidColorBrush x:Key="FigmaTextSecondaryBrush" Color="#FFCACACA" />
             <SolidColorBrush x:Key="FigmaTextTertiaryBrush" Color="#FF9E9E9E" />
-            <SolidColorBrush x:Key="FigmaAccentButtonBrush" Color="#FFF59E0B" />
-            <SolidColorBrush x:Key="FigmaAccentForegroundBrush" Color="#FF000000" />
-            <SolidColorBrush x:Key="FigmaAccentSelectedSurfaceBrush" Color="#26F59E0B" />
+            <SolidColorBrush x:Key="FigmaAccentButtonBrush" Color="#FF0078D4" />
+            <SolidColorBrush x:Key="FigmaAccentForegroundBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="FigmaAccentSelectedSurfaceBrush" Color="#260078D4" />
             <SolidColorBrush x:Key="FigmaStatusAvailableBrush" Color="#FFA5C8AD" />
-            <SolidColorBrush x:Key="FigmaStatusStorageGoldBrush" Color="#FFF59E0B" />
+            <SolidColorBrush x:Key="FigmaStatusStorageGoldBrush" Color="#FF0078D4" />
             <SolidColorBrush x:Key="ArtworkViewerFrameBrush" Color="#FF000000" />
             <SolidColorBrush x:Key="ArtworkViewerCanvasBrush" Color="#FF000000" />
 
@@ -161,9 +183,9 @@
             <SolidColorBrush x:Key="BadgeCriticalBackgroundBrush" Color="#1FF87171" />
             <SolidColorBrush x:Key="BadgeCriticalForegroundBrush" Color="#FFF87171" />
             <SolidColorBrush x:Key="BadgeCriticalBorderBrush" Color="#4DF87171" />
-            <SolidColorBrush x:Key="BadgeAccentBackgroundBrush" Color="#1F38BDF8" />
-            <SolidColorBrush x:Key="BadgeAccentForegroundBrush" Color="#FF38BDF8" />
-            <SolidColorBrush x:Key="BadgeAccentBorderBrush" Color="#4D38BDF8" />
+            <SolidColorBrush x:Key="BadgeAccentBackgroundBrush" Color="#1F0078D4" />
+            <SolidColorBrush x:Key="BadgeAccentForegroundBrush" Color="#FF60CDFF" />
+            <SolidColorBrush x:Key="BadgeAccentBorderBrush" Color="#4D60CDFF" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Light">
@@ -173,10 +195,10 @@
             <SolidColorBrush x:Key="ArtworkBadgeBackgroundBrush" Color="#D9000000" />
             <SolidColorBrush x:Key="ArtworkBadgeForegroundBrush" Color="#FFFFFFFF" />
             <LinearGradientBrush x:Key="LandscapeCardScrimBrush" StartPoint="0,0" EndPoint="0,1">
-                <GradientStop Offset="0" Color="#10080F16" />
-                <GradientStop Offset="0.35" Color="#33080F16" />
-                <GradientStop Offset="0.65" Color="#CC080F16" />
-                <GradientStop Offset="1" Color="#F5080F16" />
+                <GradientStop Offset="0" Color="#10000000" />
+                <GradientStop Offset="0.35" Color="#33000000" />
+                <GradientStop Offset="0.65" Color="#CC000000" />
+                <GradientStop Offset="1" Color="#F5000000" />
             </LinearGradientBrush>
             <LinearGradientBrush x:Key="HeroBackdropScrimBrush" StartPoint="0.5,0" EndPoint="0.5,1">
                 <GradientStop Offset="0.0" Color="#00F8F9FA" />
@@ -213,19 +235,30 @@
             <SolidColorBrush x:Key="DangerControlBackgroundBrush" Color="#14C42B1C" />
             <SolidColorBrush x:Key="DangerControlBorderBrush" Color="#61C42B1C" />
             <SolidColorBrush x:Key="DangerCardStrokeBrush" Color="#61C42B1C" />
-            <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#FFF59E0B" />
-            <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#FFD97706" />
-            <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#FFB45309" />
-            <SolidColorBrush x:Key="AccentFillColorDisabledBrush" Color="#52F59E0B" />
-            <SolidColorBrush x:Key="AccentTextFillColorPrimaryBrush" Color="#FFB45309" />
-            <SolidColorBrush x:Key="AccentTextFillColorSecondaryBrush" Color="#FFD97706" />
-            <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush" Color="#FF000000" />
-            <SolidColorBrush x:Key="TextOnAccentFillColorSecondaryBrush" Color="#FF000000" />
-            <SolidColorBrush x:Key="AccentControlBorderBrush" Color="#7AF59E0B" />
+
+            <!-- Windows 11 Fluent Blue Unified Accent Palette: Light -->
+            <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#FF005FB8" />
+            <SolidColorBrush x:Key="AccentFillColorSecondaryBrush" Color="#FF0067C0" />
+            <SolidColorBrush x:Key="AccentFillColorTertiaryBrush" Color="#FF004E8C" />
+            <SolidColorBrush x:Key="AccentFillColorDisabledBrush" Color="#52005FB8" />
+            <SolidColorBrush x:Key="AccentTextFillColorPrimaryBrush" Color="#FF005FB8" />
+            <SolidColorBrush x:Key="AccentTextFillColorSecondaryBrush" Color="#FF0067C0" />
+            <SolidColorBrush x:Key="TextOnAccentFillColorPrimaryBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="TextOnAccentFillColorSecondaryBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="AccentControlBorderBrush" Color="#7A005FB8" />
+
+            <!-- Native Button Overrides for Accent -->
+            <SolidColorBrush x:Key="AccentButtonBackground" Color="#FF005FB8" />
+            <SolidColorBrush x:Key="AccentButtonBackgroundPointerOver" Color="#FF0067C0" />
+            <SolidColorBrush x:Key="AccentButtonBackgroundPressed" Color="#FF004E8C" />
+            <SolidColorBrush x:Key="AccentButtonBackgroundDisabled" Color="#52005FB8" />
+            <SolidColorBrush x:Key="AccentButtonForeground" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="AccentButtonForegroundPointerOver" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="AccentButtonForegroundPressed" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#1F000000" />
 
-            <!-- Figma Approved Theme Tokens: Cinema Gold & Obsidian Unified Palette -->
+            <!-- Figma Approved Theme Tokens: Windows 11 Fluent Blue & Light Unified Palette -->
             <SolidColorBrush x:Key="FigmaSurfaceAppBrush" Color="#FFF8F9FA" />
             <SolidColorBrush x:Key="FigmaSurfaceSecondaryBrush" Color="#FFFFFFFF" />
             <SolidColorBrush x:Key="FigmaSurfaceControlBrush" Color="#FFF0F2F5" />
@@ -233,11 +266,11 @@
             <SolidColorBrush x:Key="FigmaTextPrimaryBrush" Color="#FF1A2026" />
             <SolidColorBrush x:Key="FigmaTextSecondaryBrush" Color="#FF57606A" />
             <SolidColorBrush x:Key="FigmaTextTertiaryBrush" Color="#FF6E7781" />
-            <SolidColorBrush x:Key="FigmaAccentButtonBrush" Color="#FFF59E0B" />
-            <SolidColorBrush x:Key="FigmaAccentForegroundBrush" Color="#FF000000" />
-            <SolidColorBrush x:Key="FigmaAccentSelectedSurfaceBrush" Color="#26F59E0B" />
+            <SolidColorBrush x:Key="FigmaAccentButtonBrush" Color="#FF005FB8" />
+            <SolidColorBrush x:Key="FigmaAccentForegroundBrush" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="FigmaAccentSelectedSurfaceBrush" Color="#26005FB8" />
             <SolidColorBrush x:Key="FigmaStatusAvailableBrush" Color="#FF2DA44E" />
-            <SolidColorBrush x:Key="FigmaStatusStorageGoldBrush" Color="#FFF59E0B" />
+            <SolidColorBrush x:Key="FigmaStatusStorageGoldBrush" Color="#FF005FB8" />
             <SolidColorBrush x:Key="ArtworkViewerFrameBrush" Color="#FF202020" />
             <SolidColorBrush x:Key="ArtworkViewerCanvasBrush" Color="#FF202020" />
 
@@ -251,9 +284,9 @@
             <SolidColorBrush x:Key="BadgeCriticalBackgroundBrush" Color="#14DC2626" />
             <SolidColorBrush x:Key="BadgeCriticalForegroundBrush" Color="#FFDC2626" />
             <SolidColorBrush x:Key="BadgeCriticalBorderBrush" Color="#4DDC2626" />
-            <SolidColorBrush x:Key="BadgeAccentBackgroundBrush" Color="#140284C7" />
-            <SolidColorBrush x:Key="BadgeAccentForegroundBrush" Color="#FF0284C7" />
-            <SolidColorBrush x:Key="BadgeAccentBorderBrush" Color="#4D0284C7" />
+            <SolidColorBrush x:Key="BadgeAccentBackgroundBrush" Color="#14005FB8" />
+            <SolidColorBrush x:Key="BadgeAccentForegroundBrush" Color="#FF005FB8" />
+            <SolidColorBrush x:Key="BadgeAccentBorderBrush" Color="#4D005FB8" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="HighContrast">

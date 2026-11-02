@@ -1,8 +1,8 @@
 # Generates the TBD Movies application icon (multi-size .ico) from code, so the icon is reproducible
 # and versioned as source rather than a checked-in binary of unknown origin.
 #
-# Design: Unified Cinema Gold & Obsidian Mica rounded tile base (#18222D / #111822) with a refined
-# Cinema Gold accent frame (#F59E0B) and central Play Prism in Cinema Gold (#F59E0B / #D97706).
+# Design: Unified Fluent Blue & Obsidian Mica rounded tile base (#18222D / #111822) with a refined
+# Fluent Blue accent frame (#0078D4) and central Play Prism in Fluent Blue (#0078D4 / #0067C0 / #60CDFF).
 #
 # Output: a single .ico containing 16, 24, 32, 48, 64, 128 and 256 px frames (PNG-compressed, which
 # Windows 10/11 - the app's target - render for the exe, shortcuts and Add/Remove Programs).
@@ -40,14 +40,14 @@ function New-Frame([int]$s) {
     $baseBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush($rect, $obsidianTop, $obsidianBot, 55.0)
     $g.FillPath($baseBrush, $path)
 
-    # Refined Cinema Gold accent outline/frame (#F59E0B)
+    # Refined Fluent Blue accent outline/frame (#0078D4)
     $frameWidth = [Math]::Max(1.0, [float]($s * 0.035))
-    $goldColor = [System.Drawing.Color]::FromArgb(255, 245, 158, 11)   # #F59E0B
-    $framePen = New-Object System.Drawing.Pen($goldColor, $frameWidth)
+    $blueColor = [System.Drawing.Color]::FromArgb(255, 0, 120, 212)    # #0078D4
+    $framePen = New-Object System.Drawing.Pen($blueColor, $frameWidth)
     $framePen.Alignment = [System.Drawing.Drawing2D.PenAlignment]::Inset
     $g.DrawPath($framePen, $path)
 
-    # Central Play Prism in Cinema Gold (#F59E0B / #D97706)
+    # Central Play Prism in Fluent Blue (#0078D4 / #0067C0 / #60CDFF)
     # Optical horizontal centering for right-pointing triangle:
     $prismH = $rect.Height * 0.44
     $prismW = $prismH * 0.866
@@ -61,18 +61,18 @@ function New-Frame([int]$s) {
     $pRight = New-Object System.Drawing.PointF($prismRight, $prismMidY)
     $pBottom = New-Object System.Drawing.PointF($prismLeft, $prismBottom)
 
-    $goldLight = [System.Drawing.Color]::FromArgb(255, 251, 191, 36)  # #FBBF24
-    $goldMid   = [System.Drawing.Color]::FromArgb(255, 245, 158, 11)  # #F59E0B
-    $goldDark  = [System.Drawing.Color]::FromArgb(255, 217, 119, 6)   # #D97706
+    $blueLight = [System.Drawing.Color]::FromArgb(255, 96, 205, 255)  # #60CDFF
+    $blueMid   = [System.Drawing.Color]::FromArgb(255, 0, 120, 212)   # #0078D4
+    $blueDark  = [System.Drawing.Color]::FromArgb(255, 0, 103, 192)   # #0067C0
 
     if ($s -le 24) {
-        # At very small sizes, render a unified Cinema Gold gradient triangle for maximum clarity
+        # At very small sizes, render a unified Fluent Blue gradient triangle for maximum clarity
         $triPath = New-Object System.Drawing.Drawing2D.GraphicsPath
         $triPath.AddLine($pTop, $pRight)
         $triPath.AddLine($pRight, $pBottom)
         $triPath.CloseFigure()
         $triRect = New-Object System.Drawing.RectangleF($prismLeft, $prismTop, $prismW, $prismH)
-        $triBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush($triRect, $goldLight, $goldDark, 45.0)
+        $triBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush($triRect, $blueLight, $blueDark, 45.0)
         $g.FillPath($triBrush, $triPath)
         $triBrush.Dispose()
         $triPath.Dispose()
@@ -85,7 +85,7 @@ function New-Frame([int]$s) {
         $fTop.AddLine($pTop, $pRight)
         $fTop.AddLine($pRight, $pCenter)
         $fTop.CloseFigure()
-        $bTop = New-Object System.Drawing.SolidBrush($goldLight)
+        $bTop = New-Object System.Drawing.SolidBrush($blueLight)
         $g.FillPath($bTop, $fTop)
         $bTop.Dispose(); $fTop.Dispose()
 
@@ -94,7 +94,7 @@ function New-Frame([int]$s) {
         $fBot.AddLine($pBottom, $pRight)
         $fBot.AddLine($pRight, $pCenter)
         $fBot.CloseFigure()
-        $bBot = New-Object System.Drawing.SolidBrush($goldDark)
+        $bBot = New-Object System.Drawing.SolidBrush($blueDark)
         $g.FillPath($bBot, $fBot)
         $bBot.Dispose(); $fBot.Dispose()
 
@@ -103,7 +103,7 @@ function New-Frame([int]$s) {
         $fLeft.AddLine($pTop, $pBottom)
         $fLeft.AddLine($pBottom, $pCenter)
         $fLeft.CloseFigure()
-        $bLeft = New-Object System.Drawing.SolidBrush($goldMid)
+        $bLeft = New-Object System.Drawing.SolidBrush($blueMid)
         $g.FillPath($bLeft, $fLeft)
         $bLeft.Dispose(); $fLeft.Dispose()
 
@@ -133,7 +133,8 @@ foreach ($s in $sizes) {
 $dir = [System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($OutPath))
 if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
 
-$fs = [System.IO.File]::Create((Resolve-Path -LiteralPath $dir).Path + "\" + [System.IO.Path]::GetFileName($OutPath))
+$targetFile = (Resolve-Path -LiteralPath $dir).Path + "\" + [System.IO.Path]::GetFileName($OutPath)
+$fs = [System.IO.File]::Create($targetFile)
 $bw = New-Object System.IO.BinaryWriter($fs)
 $count = $sizes.Count
 $bw.Write([UInt16]0)      # reserved
@@ -157,3 +158,10 @@ for ($i = 0; $i -lt $count; $i++) {
 foreach ($png in $pngs) { $bw.Write($png) }
 $bw.Flush(); $bw.Close(); $fs.Close()
 Write-Host ("Wrote {0} ({1} frames)" -f $OutPath, $count)
+
+# Also ensure packaging/TBD-Movies.ico is kept in sync
+$pkgIconPath = "$PSScriptRoot/TBD-Movies.ico"
+if ($OutPath -ne $pkgIconPath) {
+    Copy-Item -Path $targetFile -Destination $pkgIconPath -Force
+    Write-Host ("Synced to {0}" -f $pkgIconPath)
+}
