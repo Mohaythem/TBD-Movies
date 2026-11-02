@@ -123,7 +123,8 @@
                         <TextBlock
                             x:Name="WatchLaterCount"
                             VerticalAlignment="Center"
-                            Style="{StaticResource SecondaryCaptionTextStyle}" />
+                            Style="{StaticResource SecondaryCaptionTextStyle}"
+                            Visibility="Collapsed" />
                     </StackPanel>
                 </RadioButton>
                 <RadioButton
@@ -142,7 +143,8 @@
                         <TextBlock
                             x:Name="FavoritesCount"
                             VerticalAlignment="Center"
-                            Style="{StaticResource SecondaryCaptionTextStyle}" />
+                            Style="{StaticResource SecondaryCaptionTextStyle}"
+                            Visibility="Collapsed" />
                     </StackPanel>
                 </RadioButton>
                 <RadioButton x:Name="ContinueWatchingItem" Checked="ListTab_Checked" GroupName="MyListsSelector"
@@ -150,7 +152,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="14" Glyph="&#xE768;" />
                         <TextBlock x:Name="ContinueWatchingLabel" VerticalAlignment="Center" />
-                        <TextBlock x:Name="ContinueWatchingCount" VerticalAlignment="Center" Style="{StaticResource SecondaryCaptionTextStyle}" />
+                        <TextBlock x:Name="ContinueWatchingCount" VerticalAlignment="Center" Style="{StaticResource SecondaryCaptionTextStyle}" Visibility="Collapsed" />
                     </StackPanel>
                 </RadioButton>
                 <RadioButton x:Name="RecentlyWatchedItem" Checked="ListTab_Checked" GroupName="MyListsSelector"
@@ -158,7 +160,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="8">
                         <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="14" Glyph="&#xE81C;" />
                         <TextBlock x:Name="RecentlyWatchedLabel" VerticalAlignment="Center" />
-                        <TextBlock x:Name="RecentlyWatchedCount" VerticalAlignment="Center" Style="{StaticResource SecondaryCaptionTextStyle}" />
+                        <TextBlock x:Name="RecentlyWatchedCount" VerticalAlignment="Center" Style="{StaticResource SecondaryCaptionTextStyle}" Visibility="Collapsed" />
                     </StackPanel>
                 </RadioButton>
                 <RadioButton
@@ -177,7 +179,8 @@
                         <TextBlock
                             x:Name="TraktTabCount"
                             VerticalAlignment="Center"
-                            Style="{StaticResource SecondaryCaptionTextStyle}" />
+                            Style="{StaticResource SecondaryCaptionTextStyle}"
+                            Visibility="Collapsed" />
                     </StackPanel>
                 </RadioButton>
             </StackPanel>
@@ -209,7 +212,7 @@
                         x:Name="ListNameText"
                         Style="{StaticResource SubtitleTextBlockStyle}"
                         TextTrimming="CharacterEllipsis" />
-                    <TextBlock x:Name="ListCountText" Style="{StaticResource SecondaryCaptionTextStyle}" />
+                    <TextBlock x:Name="ListCountText" Style="{StaticResource SecondaryCaptionTextStyle}" Visibility="Collapsed" />
                 </StackPanel>
 
                 <StackPanel

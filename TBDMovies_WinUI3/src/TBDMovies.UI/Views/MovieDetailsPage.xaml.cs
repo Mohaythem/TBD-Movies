@@ -169,7 +169,6 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
     {
         _returnDestination = destination;
         UpdateDetailsIcons();
-        UpdateBackLabel();
     }
 
     /// <summary>
@@ -324,7 +323,6 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
     {
         Root.FlowDirection = LocalizationService.FlowDirection;
 
-        UpdateBackLabel();
         KindText.Text = LocalizationService.Text("DetailsLibraryIdentity");
         MovieTitleCopiedText.Text = LocalizationService.Text("TitleCopied");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(MovieTitleText, LocalizationService.Text("CustomTitleAccessibleHelp"));
@@ -376,8 +374,6 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         RelabelHistory();
         UpdateMatchButtonVisuals();
     }
-
-    private void BackButton_Click(object sender, RoutedEventArgs e) => BackRequested?.Invoke(this, EventArgs.Empty);
 
     /// <summary>
     /// Hands the file to whatever the user has registered for it. ShellExecute is the only way to
@@ -593,16 +589,6 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
     private void ReportMissingFile() => _ = ShowMessageAsync(
         LocalizationService.Text("NoLocalFile"),
         LocalizationService.Text("NoLocalFileHelp"));
-
-    private void UpdateBackLabel()
-    {
-        BackText.Text = LocalizationService.Text(_returnDestination switch
-        {
-            "home" => "BackToHome",
-            "lists" => "BackToMyLists",
-            _ => "BackToLibrary",
-        });
-    }
 
     private void FavoriteButton_Click(object sender, RoutedEventArgs e) =>
         WritePreference(_preference == "liked" ? null : "liked");

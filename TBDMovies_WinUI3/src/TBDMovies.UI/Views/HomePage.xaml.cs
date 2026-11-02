@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using TBDMovies.Application.Dto;
 using TBDMovies.Domain.Library.Availability;
 using TBDMovies.Domain.Library.Personal;
@@ -293,12 +293,16 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     {
         if (sender is Button { Tag: HomeActivityCard card })
         {
-            if (card.MovieId is int movieId && _movies.FirstOrDefault(movie => movie.Id == movieId) is MovieRecord movie)
+            if (card.MovieId is int movieId)
             {
+                var movie = _movies.FirstOrDefault(movie => movie.Id == movieId)
+                    ?? new MovieRecord(movieId, card.Title, 0, string.Empty, 0, [], string.Empty);
                 MovieSelected?.Invoke(this, movie);
             }
-            else if (card.ShowId is int showId && _shows.FirstOrDefault(show => show.Id == showId) is TVShowRecord show)
+            else if (card.ShowId is int showId)
             {
+                var show = _shows.FirstOrDefault(show => show.Id == showId)
+                    ?? new TVShowRecord(showId, card.Title, 0, [], string.Empty, []);
                 ShowSelected?.Invoke(this, show);
             }
         }
@@ -339,7 +343,18 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
             }
             else if (result.Status == AvailabilityInspectionStatus.Missing)
             {
-                await ShowPlayMessageAsync(LocalizationService.Text("Missing"), LocalizationService.Text("DetailsMissingHelp"));
+                if (card.MovieId is int movieId)
+                {
+                    var movie = _movies.FirstOrDefault(movie => movie.Id == movieId)
+                        ?? new MovieRecord(movieId, card.Title, 0, string.Empty, 0, [], string.Empty);
+                    MovieSelected?.Invoke(this, movie);
+                }
+                else if (card.ShowId is int showId)
+                {
+                    var show = _shows.FirstOrDefault(show => show.Id == showId)
+                        ?? new TVShowRecord(showId, card.Title, 0, [], string.Empty, []);
+                    ShowSelected?.Invoke(this, show);
+                }
             }
             else
             {
@@ -376,38 +391,23 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         await ContentDialogCoordinator.ShowAsync(dialog);
     }
 
-    private async void HistoryCard_Click(object sender, RoutedEventArgs e)
+    private void HistoryCard_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: WatchHistoryCardRecord card })
         {
             return;
         }
 
-        if (!card.IsAvailable)
+        if (card.MediaKind == WatchEventMediaKind.Movie && card.MovieId is int movieId)
         {
-            var dialog = new ContentDialog
-            {
-                XamlRoot = XamlRoot,
-                RequestedTheme = ThemeService.ElementTheme,
-                FlowDirection = LocalizationService.FlowDirection,
-                Title = LocalizationService.Text("Unavailable"),
-                Content = LocalizationService.Text("HistoryUnavailableHelp"),
-                CloseButtonText = LocalizationService.Text("Close"),
-            };
-            await ContentDialogCoordinator.ShowAsync(dialog);
-            return;
-        }
-
-        if (card.MediaKind == WatchEventMediaKind.Movie &&
-            card.MovieId is int movieId &&
-            _movies.FirstOrDefault(movie => movie.Id == movieId) is MovieRecord movie)
-        {
+            var movie = _movies.FirstOrDefault(movie => movie.Id == movieId)
+                ?? new MovieRecord(movieId, card.Title, 0, string.Empty, 0, [], string.Empty);
             MovieSelected?.Invoke(this, movie);
         }
-        else if (card.MediaKind == WatchEventMediaKind.Episode &&
-                 card.ShowId is int showId &&
-                 _shows.FirstOrDefault(show => show.Id == showId) is TVShowRecord show)
+        else if (card.MediaKind == WatchEventMediaKind.Episode && card.ShowId is int showId)
         {
+            var show = _shows.FirstOrDefault(show => show.Id == showId)
+                ?? new TVShowRecord(showId, card.Title, 0, [], string.Empty, []);
             ShowSelected?.Invoke(this, show);
         }
     }

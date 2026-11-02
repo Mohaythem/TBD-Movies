@@ -172,6 +172,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             {
                 VerticalAlignment = VerticalAlignment.Center,
                 Style = (Style)App.Current.Resources["SecondaryCaptionTextStyle"],
+                Visibility = Visibility.Collapsed,
             };
             var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             content.Children.Add(new FontIcon
@@ -239,7 +240,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 ContinueGrid.ItemsSource = filtered;
                 var filteredCount = filtered.Length;
                 ContinueGrid.Visibility = filteredCount == 0 ? Visibility.Collapsed : Visibility.Visible;
-                ListCountText.Text = FormatCount(filteredCount);
+                ListCountText.Text = string.Empty;
                 EmptyState.Visibility = filteredCount == 0 ? Visibility.Visible : Visibility.Collapsed;
                 SetActivityEmptyState(filteredCount);
                 UpdateSystemCounts(definition.Key, filteredCount);
@@ -251,7 +252,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 HistoryGrid.ItemsSource = filtered;
                 var filteredCount = filtered.Length;
                 HistoryGrid.Visibility = filteredCount == 0 ? Visibility.Collapsed : Visibility.Visible;
-                ListCountText.Text = FormatCount(filteredCount);
+                ListCountText.Text = string.Empty;
                 EmptyState.Visibility = filteredCount == 0 ? Visibility.Visible : Visibility.Collapsed;
                 SetActivityEmptyState(filteredCount);
                 UpdateSystemCounts(definition.Key, filteredCount);
@@ -263,19 +264,16 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         HistoryGrid.Visibility = Visibility.Collapsed;
         var items = BuildItems(definition);
         ListGrid.ItemsSource = items;
-        ListCountText.Text = items.Count == 1
-            ? $"{LocalizationService.Number(items.Count)} {LocalizationService.Text("ItemSingular")}"
-            : $"{LocalizationService.Number(items.Count)} {LocalizationService.Text("Items")}";
+        ListCountText.Text = string.Empty;
 
-        // The design shows the item count on the active tab only.
         foreach (var (_, _, count, key) in SystemTabs)
         {
-            count.Text = key == definition.Key ? LocalizationService.Number(items.Count) : string.Empty;
+            count.Text = string.Empty;
         }
 
         foreach (var (_, _, count, id) in _dynamicTabs)
         {
-            count.Text = CustomKey(id) == definition.Key ? LocalizationService.Number(items.Count) : string.Empty;
+            count.Text = string.Empty;
         }
 
         var isEmpty = items.Count == 0;
@@ -351,7 +349,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
     private void UpdateSystemCounts(string activeKey, int activeCount)
     {
         foreach (var (_, _, count, key) in SystemTabs)
-            count.Text = key == activeKey ? LocalizationService.Number(activeCount) : string.Empty;
+            count.Text = string.Empty;
         foreach (var (_, _, count, id) in _dynamicTabs) count.Text = string.Empty;
     }
 
@@ -422,7 +420,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         item.IsAvailable ? string.Empty : LocalizationService.Text("Unavailable"),
         [item.BackdropReference, item.ArtworkReference, item.PosterReference]);
 
-    private async void ActivityGrid_ItemClick(object sender, ItemClickEventArgs e)
+    private void ActivityGrid_ItemClick(object sender, ItemClickEventArgs e)
     {
         try
         {
@@ -430,28 +428,33 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             (int? MovieId, int? ShowId) identity = e.ClickedItem switch
             {
                 HomeActivityCard activity => (activity.MovieId, activity.ShowId),
-                WatchHistoryCardRecord { IsAvailable: true } history => (
+                WatchHistoryCardRecord history => (
                     history.MediaKind == WatchEventMediaKind.Movie ? history.MovieId : null,
                     history.MediaKind == WatchEventMediaKind.Episode ? history.ShowId : null),
                 _ => (null, null),
             };
-            if (identity.MovieId is int movieId &&
-                AppServices.Library.ListMovies().FirstOrDefault(movie => movie.Id == movieId) is { } movie)
+            if (identity.MovieId is int movieId)
             {
-                MovieSelected?.Invoke(this, LibraryProjection.ToCard(movie));
+                var movie = AppServices.Library.ListMovies().FirstOrDefault(movie => movie.Id == movieId);
+                var card = movie is not null
+                    ? LibraryProjection.ToCard(movie)
+                    : new MovieRecord(movieId, string.Empty, 0, string.Empty, 0, [], string.Empty);
+                MovieSelected?.Invoke(this, card);
                 return;
             }
-            if (identity.ShowId is int showId &&
-                AppServices.Tv.ListShows().FirstOrDefault(show => show.Id == showId) is { } show)
+            if (identity.ShowId is int showId)
             {
-                ShowSelected?.Invoke(this, TvProjection.ToCard(show));
+                var show = AppServices.Tv.ListShows().FirstOrDefault(show => show.Id == showId);
+                var card = show is not null
+                    ? TvProjection.ToCard(show)
+                    : new TVShowRecord(showId, string.Empty, 0, [], string.Empty, []);
+                ShowSelected?.Invoke(this, card);
                 return;
             }
-            await ShowMessageAsync(LocalizationService.Text("Unavailable"), LocalizationService.Text("HistoryUnavailableHelp"));
         }
         catch (Exception error)
         {
-            await ReportAsync(error);
+            _ = ReportAsync(error);
         }
     }
 

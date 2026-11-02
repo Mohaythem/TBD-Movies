@@ -99,7 +99,7 @@ public sealed partial class MyListsPage
         foreach (var def in defs)
         {
             var label = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Text = def.Name };
-            var count = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Text = LocalizationService.Number(def.Count), Style = (Style)App.Current.Resources["SecondaryCaptionTextStyle"] };
+            var count = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Text = string.Empty, Style = (Style)App.Current.Resources["SecondaryCaptionTextStyle"], Visibility = Visibility.Collapsed };
             var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             content.Children.Add(new FontIcon { FontSize = 14, Glyph = def.Glyph, FontFamily = (FontFamily)App.Current.Resources["SymbolThemeFontFamily"] });
             content.Children.Add(label); content.Children.Add(count);
@@ -245,7 +245,7 @@ public sealed partial class MyListsPage
 
             HistoryGrid.ItemsSource = filtered;
             ListGrid.ItemsSource = null;
-            ListCountText.Text = FormatCount(filtered.Count);
+            ListCountText.Text = string.Empty;
             HistoryGrid.Visibility = filtered.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
             ListGrid.Visibility = Visibility.Collapsed;
             EmptyState.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -254,9 +254,9 @@ public sealed partial class MyListsPage
             EmptyState.Message = LocalizationService.Text(_query.Length == 0 ? "TraktListOfflineHelp" : "NoResultsHelp");
             EmptyState.IsActionVisible = false;
 
-            TraktTabCount.Text = filtered.Count > 0 ? LocalizationService.Number(filtered.Count) : string.Empty;
+            TraktTabCount.Text = string.Empty;
             foreach (var (_, _, count, key) in _traktPlaylistsTabs)
-                count.Text = key == _selectedKey ? LocalizationService.Number(filtered.Count) : count.Text;
+                count.Text = string.Empty;
         }
         else
         {
@@ -266,7 +266,7 @@ public sealed partial class MyListsPage
 
             ListGrid.ItemsSource = filtered;
             HistoryGrid.ItemsSource = null;
-            ListCountText.Text = FormatCount(filtered.Count);
+            ListCountText.Text = string.Empty;
             ListGrid.Visibility = filtered.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
             HistoryGrid.Visibility = Visibility.Collapsed;
             EmptyState.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -275,9 +275,9 @@ public sealed partial class MyListsPage
             EmptyState.Message = LocalizationService.Text(_query.Length == 0 ? "TraktListOfflineHelp" : "NoResultsHelp");
             EmptyState.IsActionVisible = false;
 
-            TraktTabCount.Text = filtered.Count > 0 ? LocalizationService.Number(filtered.Count) : string.Empty;
+            TraktTabCount.Text = string.Empty;
             foreach (var (_, _, count, key) in _traktPlaylistsTabs)
-                count.Text = key == _selectedKey ? LocalizationService.Number(filtered.Count) : count.Text;
+                count.Text = string.Empty;
         }
     }
 
