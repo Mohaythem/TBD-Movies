@@ -1,3 +1,6 @@
+using System.Linq;
+using System.Threading.Tasks;
+using TBDMovies.Application.Trakt;
 using TBDMovies.Domain.Library.Personal;
 using TBDMovies.UI.Models;
 using Microsoft.UI.Xaml;
@@ -166,26 +169,153 @@ public static class MediaCardContextMenu
     private static void AddMovieLists(MenuFlyout menu, FrameworkElement owner, int id, Action? changed)
     {
         var sub = new MenuFlyoutSubItem { Text = LocalizationService.Text("AddToList") };
-        foreach (var list in AppServices.Personal.ListCustomLists())
+        try
         {
-            var entry = new ToggleMenuFlyoutItem { Text = list.Name, IsChecked = AppServices.Personal.GetCustomListIdsForMovie(id).Contains(list.Id) };
-            entry.Click += (_, _) => RunSafe(owner, () => { if (AppServices.Personal.GetCustomListIdsForMovie(id).Contains(list.Id)) AppServices.Personal.RemoveMovieFromCustomList(list.Id, id); else AppServices.Personal.AddMovieToCustomList(list.Id, id); changed?.Invoke(); });
-            sub.Items.Add(entry);
+            var customLists = AppServices.Personal.ListCustomLists();
+            var memberIds = AppServices.Personal.GetCustomListIdsForMovie(id);
+            if (customLists.Count == 0)
+            {
+                sub.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("NoCustomLists"), IsEnabled = false });
+            }
+            else
+            {
+                foreach (var list in customLists)
+                {
+                    var entry = new ToggleMenuFlyoutItem { Text = list.Name, IsChecked = memberIds.Contains(list.Id) };
+                    entry.Click += (_, _) => RunSafe(owner, () =>
+                    {
+                        if (AppServices.Personal.GetCustomListIdsForMovie(id).Contains(list.Id))
+                            AppServices.Personal.RemoveMovieFromCustomList(list.Id, id);
+                        else
+                            AppServices.Personal.AddMovieToCustomList(list.Id, id);
+                        changed?.Invoke();
+                    });
+                    sub.Items.Add(entry);
+                }
+            }
         }
-        if (sub.Items.Count == 0) sub.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("NoCustomLists"), IsEnabled = false });
+        catch (Exception)
+        {
+            sub.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("NoCustomLists"), IsEnabled = false });
+        }
+
+        var trakt = AppServices.Trakt;
+        var traktState = trakt?.GetSyncState();
+        var tmdbId = AppServices.GetMovieTmdbId(id);
+        if (trakt is not null && traktState?.AuthState.IsConnected == true && !string.IsNullOrWhiteSpace(traktState.CurrentAccountId) && tmdbId is > 0)
+        {
+            sub.Items.Add(new MenuFlyoutSeparator());
+            sub.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("Trakt") ?? "Trakt", IsEnabled = false });
+
+            var accountId = traktState.CurrentAccountId;
+            var inTraktWatchlist = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == tmdbId.Value);
+            var watchlistItem = new ToggleMenuFlyoutItem
+            {
+                Text = LocalizationService.Text("TraktWatchlist") ?? "Watchlist",
+                IsChecked = inTraktWatchlist
+            };
+            watchlistItem.Click += (_, _) => RunSafe(owner, async () =>
+            {
+                var currentlyIn = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == tmdbId.Value);
+                await trakt.PushMovieWatchlistAsync(tmdbId.Value, !currentlyIn).ConfigureAwait(false);
+                if (changed is not null)
+                {
+                    owner.DispatcherQueue.TryEnqueue(() => changed());
+                }
+            });
+            sub.Items.Add(watchlistItem);
+
+            foreach (var tList in trakt.GetLists(accountId))
+            {
+                var listItems = trakt.GetListItems(tList.TraktId, accountId);
+                var inCustomList = listItems.Any(item => item.GetTmdbId() == tmdbId.Value);
+                var listItem = new ToggleMenuFlyoutItem
+                {
+                    Text = tList.Name,
+                    IsChecked = inCustomList
+                };
+                listItem.Click += (_, _) => RunSafe(owner, async () =>
+                {
+                    if (trakt is ITraktListActions writer)
+                    {
+                        var res = await writer.AddMovieToListAsync(tList.TraktId, tmdbId.Value, accountId).ConfigureAwait(false);
+                        if (res.IsConfirmed)
+                        {
+                            _ = writer.RefreshListAsync(tList.TraktId, accountId);
+                        }
+                        if (changed is not null)
+                        {
+                            owner.DispatcherQueue.TryEnqueue(() => changed());
+                        }
+                    }
+                });
+                sub.Items.Add(listItem);
+            }
+        }
+
         menu.Items.Add(sub);
     }
 
     private static void AddShowLists(MenuFlyout menu, FrameworkElement owner, int id, Action? changed)
     {
         var sub = new MenuFlyoutSubItem { Text = LocalizationService.Text("AddToList") };
-        foreach (var list in AppServices.Personal.ListCustomLists())
+        try
         {
-            var entry = new ToggleMenuFlyoutItem { Text = list.Name, IsChecked = AppServices.Personal.GetCustomListIdsForShow(id).Contains(list.Id) };
-            entry.Click += (_, _) => RunSafe(owner, () => { if (AppServices.Personal.GetCustomListIdsForShow(id).Contains(list.Id)) AppServices.Personal.RemoveShowFromCustomList(list.Id, id); else AppServices.Personal.AddShowToCustomList(list.Id, id); changed?.Invoke(); });
-            sub.Items.Add(entry);
+            var customLists = AppServices.Personal.ListCustomLists();
+            var memberIds = AppServices.Personal.GetCustomListIdsForShow(id);
+            if (customLists.Count == 0)
+            {
+                sub.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("NoCustomLists"), IsEnabled = false });
+            }
+            else
+            {
+                foreach (var list in customLists)
+                {
+                    var entry = new ToggleMenuFlyoutItem { Text = list.Name, IsChecked = memberIds.Contains(list.Id) };
+                    entry.Click += (_, _) => RunSafe(owner, () =>
+                    {
+                        if (AppServices.Personal.GetCustomListIdsForShow(id).Contains(list.Id))
+                            AppServices.Personal.RemoveShowFromCustomList(list.Id, id);
+                        else
+                            AppServices.Personal.AddShowToCustomList(list.Id, id);
+                        changed?.Invoke();
+                    });
+                    sub.Items.Add(entry);
+                }
+            }
         }
-        if (sub.Items.Count == 0) sub.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("NoCustomLists"), IsEnabled = false });
+        catch (Exception)
+        {
+            sub.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("NoCustomLists"), IsEnabled = false });
+        }
+
+        var trakt = AppServices.Trakt;
+        var traktState = trakt?.GetSyncState();
+        var showTmdbId = AppServices.GetShowTmdbId(id);
+        if (trakt is not null && traktState?.AuthState.IsConnected == true && !string.IsNullOrWhiteSpace(traktState.CurrentAccountId) && showTmdbId is > 0)
+        {
+            sub.Items.Add(new MenuFlyoutSeparator());
+            sub.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("Trakt") ?? "Trakt", IsEnabled = false });
+
+            var accountId = traktState.CurrentAccountId;
+            var inTraktWatchlist = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == showTmdbId.Value);
+            var watchlistItem = new ToggleMenuFlyoutItem
+            {
+                Text = LocalizationService.Text("TraktWatchlist") ?? "Watchlist",
+                IsChecked = inTraktWatchlist
+            };
+            watchlistItem.Click += (_, _) => RunSafe(owner, async () =>
+            {
+                var currentlyIn = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == showTmdbId.Value);
+                await trakt.PushShowWatchlistAsync(showTmdbId.Value, !currentlyIn).ConfigureAwait(false);
+                if (changed is not null)
+                {
+                    owner.DispatcherQueue.TryEnqueue(() => changed());
+                }
+            });
+            sub.Items.Add(watchlistItem);
+        }
+
         menu.Items.Add(sub);
     }
 
@@ -193,6 +323,25 @@ public static class MediaCardContextMenu
     {
         try { action(); }
         catch (Exception error) { _ = ShowErrorAsync(owner, error); }
+    }
+
+    private static async void RunSafe(FrameworkElement owner, Func<Task> asyncAction)
+    {
+        try
+        {
+            await asyncAction().ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            if (owner.DispatcherQueue.HasThreadAccess)
+            {
+                _ = ShowErrorAsync(owner, error);
+            }
+            else
+            {
+                owner.DispatcherQueue.TryEnqueue(() => _ = ShowErrorAsync(owner, error));
+            }
+        }
     }
 
     private static async Task ShowErrorAsync(FrameworkElement owner, Exception error)
@@ -269,3 +418,65 @@ internal static class ArtworkViewer
     private static Style? FindStyle<T>(FrameworkElement owner, string key) where T : FrameworkElement
         => owner.Resources.TryGetValue(key, out var local) && local is Style style ? style : Microsoft.UI.Xaml.Application.Current.Resources[key] as Style;
 }
+
+internal static class TraktItemExtensions
+{
+    public static int? GetTmdbId(this TraktWatchlistItem item) => GetTmdbIdFromRaw(item.RawElement, item.Type);
+
+    public static int? GetTmdbId(this TraktListItem item) => GetTmdbIdFromRaw(item.RawElement, item.Type);
+
+    private static int? GetTmdbIdFromRaw(System.Text.Json.JsonElement rawElement, string? type)
+    {
+        if (rawElement.ValueKind != System.Text.Json.JsonValueKind.Object) return null;
+
+        if (!string.IsNullOrEmpty(type) &&
+            rawElement.TryGetProperty(type, out var mediaObj) &&
+            mediaObj.ValueKind == System.Text.Json.JsonValueKind.Object &&
+            mediaObj.TryGetProperty("ids", out var idsObj) &&
+            idsObj.ValueKind == System.Text.Json.JsonValueKind.Object &&
+            idsObj.TryGetProperty("tmdb", out var tmdbProp) &&
+            tmdbProp.ValueKind == System.Text.Json.JsonValueKind.Number &&
+            tmdbProp.TryGetInt32(out var tmdbVal) &&
+            tmdbVal > 0)
+        {
+            return tmdbVal;
+        }
+
+        if (rawElement.TryGetProperty("movie", out var mObj) &&
+            mObj.ValueKind == System.Text.Json.JsonValueKind.Object &&
+            mObj.TryGetProperty("ids", out var mIds) &&
+            mIds.ValueKind == System.Text.Json.JsonValueKind.Object &&
+            mIds.TryGetProperty("tmdb", out var mTmdb) &&
+            mTmdb.ValueKind == System.Text.Json.JsonValueKind.Number &&
+            mTmdb.TryGetInt32(out var mVal) &&
+            mVal > 0)
+        {
+            return mVal;
+        }
+
+        if (rawElement.TryGetProperty("show", out var sObj) &&
+            sObj.ValueKind == System.Text.Json.JsonValueKind.Object &&
+            sObj.TryGetProperty("ids", out var sIds) &&
+            sIds.ValueKind == System.Text.Json.JsonValueKind.Object &&
+            sIds.TryGetProperty("tmdb", out var sTmdb) &&
+            sTmdb.ValueKind == System.Text.Json.JsonValueKind.Number &&
+            sTmdb.TryGetInt32(out var sVal) &&
+            sVal > 0)
+        {
+            return sVal;
+        }
+
+        if (rawElement.TryGetProperty("ids", out var directIds) &&
+            directIds.ValueKind == System.Text.Json.JsonValueKind.Object &&
+            directIds.TryGetProperty("tmdb", out var directTmdb) &&
+            directTmdb.ValueKind == System.Text.Json.JsonValueKind.Number &&
+            directTmdb.TryGetInt32(out var directVal) &&
+            directVal > 0)
+        {
+            return directVal;
+        }
+
+        return null;
+    }
+}
+

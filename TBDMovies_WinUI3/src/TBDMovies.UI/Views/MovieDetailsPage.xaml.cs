@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using TBDMovies.Application.Contracts;
 using TBDMovies.Application.Services;
+using TBDMovies.Application.Trakt;
 using TBDMovies.Domain.Library.Personal;
 using TBDMovies.UI.Models;
 using TBDMovies.UI.Controls;
@@ -707,30 +708,77 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         AddToListFlyout.Items.Clear();
         if (_movie.Id <= 0) return;
 
-        IReadOnlyList<Application.Dto.CustomList> lists;
-        IReadOnlySet<int> memberIds;
         try
         {
-            lists = AppServices.Personal.ListCustomLists();
-            memberIds = AppServices.Personal.GetCustomListIdsForMovie(_movie.Id);
+            var lists = AppServices.Personal.ListCustomLists();
+            var memberIds = AppServices.Personal.GetCustomListIdsForMovie(_movie.Id);
+            if (lists.Count == 0)
+            {
+                AddToListFlyout.Items.Add(DisabledItem(LocalizationService.Text("NoCustomLists")));
+            }
+            else
+            {
+                foreach (var list in lists)
+                {
+                    var item = BuildListItem(list.Name, memberIds.Contains(list.Id), ToggleCustomListFromMenu);
+                    item.Tag = list.Id;
+                    AddToListFlyout.Items.Add(item);
+                }
+            }
         }
         catch (Exception)
         {
             AddToListFlyout.Items.Add(DisabledItem(LocalizationService.Text("NoCustomLists")));
-            return;
         }
 
-        if (lists.Count == 0)
+        var trakt = AppServices.Trakt;
+        var traktState = trakt?.GetSyncState();
+        var tmdbId = AppServices.GetMovieTmdbId(_movie.Id);
+        if (trakt is not null && traktState?.AuthState.IsConnected == true && !string.IsNullOrWhiteSpace(traktState.CurrentAccountId) && tmdbId is > 0)
         {
-            AddToListFlyout.Items.Add(DisabledItem(LocalizationService.Text("NoCustomLists")));
-            return;
-        }
+            AddToListFlyout.Items.Add(new MenuFlyoutSeparator());
+            AddToListFlyout.Items.Add(DisabledItem(LocalizationService.Text("Trakt") ?? "Trakt"));
 
-        foreach (var list in lists)
-        {
-            var item = BuildListItem(list.Name, memberIds.Contains(list.Id), ToggleCustomListFromMenu);
-            item.Tag = list.Id;
-            AddToListFlyout.Items.Add(item);
+            var accountId = traktState.CurrentAccountId;
+            var inTraktWatchlist = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == tmdbId.Value);
+            var watchlistItem = BuildListItem(LocalizationService.Text("TraktWatchlist") ?? "Watchlist", inTraktWatchlist, async (_, _) =>
+            {
+                try
+                {
+                    var currentlyIn = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == tmdbId.Value);
+                    await trakt.PushMovieWatchlistAsync(tmdbId.Value, !currentlyIn).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[MovieDetailsPage] Trakt watchlist toggle failed: {ex.Message}");
+                }
+            });
+            AddToListFlyout.Items.Add(watchlistItem);
+
+            foreach (var tList in trakt.GetLists(accountId))
+            {
+                var listItems = trakt.GetListItems(tList.TraktId, accountId);
+                var inCustomList = listItems.Any(item => item.GetTmdbId() == tmdbId.Value);
+                var listItem = BuildListItem(tList.Name, inCustomList, async (_, _) =>
+                {
+                    try
+                    {
+                        if (trakt is ITraktListActions writer)
+                        {
+                            var res = await writer.AddMovieToListAsync(tList.TraktId, tmdbId.Value, accountId).ConfigureAwait(false);
+                            if (res.IsConfirmed)
+                            {
+                                _ = writer.RefreshListAsync(tList.TraktId, accountId);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[MovieDetailsPage] AddMovieToListAsync failed: {ex.Message}");
+                    }
+                });
+                AddToListFlyout.Items.Add(listItem);
+            }
         }
     }
 

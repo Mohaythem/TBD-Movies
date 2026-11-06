@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.IO;
-using TBDMovies.UI.Models;
+using System.Linq;
 using TBDMovies.Application.Services;
+using TBDMovies.Application.Trakt;
+using TBDMovies.UI.Models;
 using TBDMovies.UI.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
@@ -458,30 +460,53 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         AddToListFlyout.Items.Clear();
         if (_show.Id <= 0) return;
 
-        IReadOnlyList<TBDMovies.Application.Dto.CustomList> lists;
-        IReadOnlySet<int> memberIds;
         try
         {
-            lists = AppServices.Personal.ListCustomLists();
-            memberIds = AppServices.Personal.GetCustomListIdsForShow(_show.Id);
+            var lists = AppServices.Personal.ListCustomLists();
+            var memberIds = AppServices.Personal.GetCustomListIdsForShow(_show.Id);
+            if (lists.Count == 0)
+            {
+                AddToListFlyout.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("NoCustomLists"), IsEnabled = false });
+            }
+            else
+            {
+                foreach (var list in lists)
+                {
+                    var item = new ToggleMenuFlyoutItem { Text = list.Name, IsChecked = memberIds.Contains(list.Id), Tag = list.Id };
+                    item.Click += ToggleCustomListFromMenu;
+                    AddToListFlyout.Items.Add(item);
+                }
+            }
         }
         catch (Exception)
         {
             AddToListFlyout.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("NoCustomLists"), IsEnabled = false });
-            return;
         }
 
-        if (lists.Count == 0)
+        var trakt = AppServices.Trakt;
+        var traktState = trakt?.GetSyncState();
+        int? showTmdbId = (int.TryParse(_show.ExternalId, out var parsedId) && parsedId > 0 ? (int?)parsedId : null) ?? AppServices.GetShowTmdbId(_show.Id);
+        if (trakt is not null && traktState?.AuthState.IsConnected == true && !string.IsNullOrWhiteSpace(traktState.CurrentAccountId) && showTmdbId is > 0)
         {
-            AddToListFlyout.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("NoCustomLists"), IsEnabled = false });
-            return;
-        }
+            AddToListFlyout.Items.Add(new MenuFlyoutSeparator());
+            AddToListFlyout.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("Trakt") ?? "Trakt", IsEnabled = false });
 
-        foreach (var list in lists)
-        {
-            var item = new ToggleMenuFlyoutItem { Text = list.Name, IsChecked = memberIds.Contains(list.Id), Tag = list.Id };
-            item.Click += ToggleCustomListFromMenu;
-            AddToListFlyout.Items.Add(item);
+            var accountId = traktState.CurrentAccountId;
+            var inTraktWatchlist = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == showTmdbId.Value);
+            var watchlistItem = new ToggleMenuFlyoutItem { Text = LocalizationService.Text("TraktWatchlist") ?? "Watchlist", IsChecked = inTraktWatchlist };
+            watchlistItem.Click += async (_, _) =>
+            {
+                try
+                {
+                    var currentlyIn = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == showTmdbId.Value);
+                    await trakt.PushShowWatchlistAsync(showTmdbId.Value, !currentlyIn).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[TVShowDetailsPage] Trakt watchlist toggle failed: {ex.Message}");
+                }
+            };
+            AddToListFlyout.Items.Add(watchlistItem);
         }
     }
 
