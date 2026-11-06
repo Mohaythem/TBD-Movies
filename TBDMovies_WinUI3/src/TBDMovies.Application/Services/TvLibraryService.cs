@@ -42,12 +42,14 @@ public sealed class TvLibraryService(
     }
     public IReadOnlyList<TvShowListItem> ListShows()
     {
+        var watchedShowIds = history?.GetWatchedShowIds() ?? (IReadOnlySet<int>)ImmutableHashSet<int>.Empty;
         if (shows is ITvShowSummaryReader summaries)
             return summaries.ListSummaries().Select(summary => new TvShowListItem(
                 summary.Show.Id, summary.Show.DisplayTitle, summary.Show.Year, summary.Show.PosterReference,
                 summary.Seasons, summary.Episodes, summary.LocalEpisodes, summary.MissingEpisodes,
                 summary.Show.DateAdded, summary.Show.LastOpenedAt, summary.Show.MetadataStatus,
-                summary.Show.BackdropReference, summary.Show.CustomDisplayTitle, summary.Show.Title)).ToArray();
+                summary.Show.BackdropReference, summary.Show.CustomDisplayTitle, summary.Show.Title,
+                WatchedEpisodeCount: watchedShowIds.Contains(summary.Show.Id) ? 1 : 0)).ToArray();
 
         var result = new List<TvShowListItem>();
 
@@ -87,7 +89,8 @@ public sealed class TvLibraryService(
                 show.MetadataStatus,
                 show.BackdropReference,
                 show.CustomDisplayTitle,
-                show.Title));
+                show.Title,
+                WatchedEpisodeCount: watchedShowIds.Contains(show.Id) ? 1 : 0));
         }
 
         return result;

@@ -1,16 +1,26 @@
-﻿using TBDMovies.Application.External;
+using TBDMovies.Application.External;
 
 namespace TBDMovies.UI.Services;
 
 /// <summary>Maps safe application categories to presentation resources, never exception text.</summary>
 public static class MetadataErrorKey
 {
-    public static string For(Exception error) => error switch
+    public static string For(Exception error)
     {
-        OperationCanceledException => "MetadataCancelled",
-        MetadataServiceException metadata => For(metadata.Kind),
-        _ => "MetadataUnexpectedError",
-    };
+        if (error is AggregateException agg && agg.Flatten().InnerExceptions.Count > 0)
+        {
+            error = agg.Flatten().InnerExceptions[0];
+        }
+
+        return error switch
+        {
+            OperationCanceledException => "MetadataCancelled",
+            MetadataServiceException metadata => For(metadata.Kind),
+            System.Net.Http.HttpRequestException => For(MetadataFailureKind.Network),
+            TimeoutException => For(MetadataFailureKind.Timeout),
+            _ => "MetadataUnexpectedError",
+        };
+    }
 
     public static string For(ConnectionTestResult result) => result.Success
         ? "TmdbConnectionSuccess"

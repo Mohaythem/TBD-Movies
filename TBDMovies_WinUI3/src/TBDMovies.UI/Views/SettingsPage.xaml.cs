@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.IO;
+using System.Text;
 using TBDMovies.UI.Models;
 using TBDMovies.Application.External;
 using TBDMovies.Application.Trakt;
@@ -19,6 +22,7 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
     private int _traktGeneration;
     private bool _traktBusy;
     private bool _editingTraktConfig;
+    private string? _lastExportedFilePath;
 
     public void Deactivate()
     {
@@ -37,13 +41,14 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         _traktBusy = false;
         TraktDeviceAuthPanel.Visibility = Visibility.Collapsed;
         TraktFeedback.IsOpen = false;
+        ExportFeedbackInfoBar.IsOpen = false;
     }
 
     /// <summary>
     /// True until the page has pushed the stored theme and language into the two selectors.
     /// <para>
     /// A ComboBox raises SelectionChanged for its initial selection while the XAML is still being
-    /// parsed - before the constructor body runs - and the first item is Slate / English. Without this
+    /// parsed - before the constructor body runs - and the first item is Dark / English. Without this
     /// starting true, that initial event would look like a user choice and overwrite the preference
     /// the shell had just restored.
     /// </para>
@@ -87,7 +92,6 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         AppearanceHeadingText.Text = LocalizationService.Text("Appearance");
         ThemeLabelText.Text = LocalizationService.Text("Theme");
         RefreshThemeHelp();
-        ThemeSlateItem.Content = LocalizationService.Text("Slate");
         ThemeDarkItem.Content = LocalizationService.Text("Dark");
         ThemeLightItem.Content = LocalizationService.Text("Light");
         LanguageLabelText.Text = LocalizationService.Text("Language");
@@ -99,6 +103,10 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         MediaFoldersLabelText.Text = LocalizationService.Text("MediaFolders");
         MediaFoldersHelpText.Text = LocalizationService.Text("MediaFoldersHelp");
         AddMediaFolderButton.Content = LocalizationService.Text("AddFolder");
+        ExportMoviesLabelText.Text = LocalizationService.Text("ExportMoviesList");
+        ExportMoviesHelpText.Text = LocalizationService.Text("ExportMoviesListHelp");
+        ExportMoviesButtonText.Text = LocalizationService.Text("ExportMovies");
+        OpenExportedFolderButton.Content = LocalizationService.Text("OpenFolder");
         StorageAdvancedHeadingText.Text = LocalizationService.Text("StorageAdvanced");
         DataFolderLabelText.Text = LocalizationService.Text("LibraryDataFolder");
         DataFolderHelpText.Text = LocalizationService.Text("LibraryDataFolderHelp");
@@ -160,8 +168,7 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         _isSyncing = true;
         ThemeSelector.SelectedIndex = ThemeService.CurrentTheme switch
         {
-            AppTheme.Dark => 1,
-            AppTheme.Light => 2,
+            AppTheme.Light => 1,
             _ => 0,
         };
         LanguageSelector.SelectedIndex = LocalizationService.CurrentLanguage == UiLanguage.Arabic ? 1 : 0;
@@ -216,9 +223,8 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
 
         ThemeService.SetTheme(ThemeSelector.SelectedIndex switch
         {
-            1 => AppTheme.Dark,
-            2 => AppTheme.Light,
-            _ => AppTheme.Slate,
+            1 => AppTheme.Light,
+            _ => AppTheme.Dark,
         });
         RefreshThemeHelp();
     }
@@ -227,9 +233,8 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
     {
         ThemeHelpText.Text = LocalizationService.Text(ThemeService.CurrentTheme switch
         {
-            AppTheme.Dark => "ThemeHelpDark",
             AppTheme.Light => "ThemeHelpLight",
-            _ => "ThemeHelpSlate",
+            _ => "ThemeHelpDark",
         });
     }
 
@@ -337,6 +342,120 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         MediaFoldersRepeater.ItemsSource = folders.Select(path => new MediaFolderRow(path)).ToList();
         MediaFoldersEmptyText.Text = LocalizationService.Text("MediaFoldersNone");
         MediaFoldersEmptyText.Visibility = folders.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async void ExportMoviesButton_Click(object sender, RoutedEventArgs e)
+    {
+        var movies = AppServices.Library.ListMovies();
+        var shows = AppServices.Tv.ListShows();
+        if (movies.Count == 0 && shows.Count == 0)
+        {
+            ExportFeedbackInfoBar.Severity = InfoBarSeverity.Informational;
+            ExportFeedbackInfoBar.Message = LocalizationService.Text("ExportMoviesEmpty");
+            OpenExportedFolderButton.Visibility = Visibility.Collapsed;
+            ExportFeedbackInfoBar.IsOpen = true;
+            return;
+        }
+
+        var savePicker = new Windows.Storage.Pickers.FileSavePicker();
+        WinRT.Interop.InitializeWithWindow.Initialize(savePicker, MainWindow.WindowHandle);
+        savePicker.SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary;
+        savePicker.SuggestedFileName = "library_export.txt";
+        savePicker.FileTypeChoices.Add("Text Document", new List<string> { ".txt" });
+
+        var file = await savePicker.PickSaveFileAsync();
+        if (file is null) return;
+
+        var orderedMovies = movies
+            .OrderBy(m => m.Title, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        var orderedShows = shows
+            .OrderBy(s => s.Title, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        var sb = new StringBuilder();
+        sb.AppendLine("================================================================================");
+        sb.AppendLine("TBD Movies - Library Export");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"Total Movies: {orderedMovies.Count} | Total TV Shows: {orderedShows.Count}");
+        sb.AppendLine("================================================================================");
+        sb.AppendLine();
+
+        sb.AppendLine("--- SECTION 1: MOVIES ---");
+        sb.AppendLine();
+        if (orderedMovies.Count == 0)
+        {
+            sb.AppendLine("(No movies in library)");
+        }
+        else
+        {
+            for (int i = 0; i < orderedMovies.Count; i++)
+            {
+                var movie = orderedMovies[i];
+                var yearStr = movie.Year is > 0 ? movie.Year.ToString() : "N/A";
+                var tmdbId = string.IsNullOrWhiteSpace(movie.ExternalId) ? "N/A" : movie.ExternalId;
+                var watched = movie.Watched ? "Yes" : "No";
+                sb.AppendLine(CultureInfo.InvariantCulture, $"{i + 1}. {movie.Title} ({yearStr}) | TMDB ID: {tmdbId} | Watched: {watched}");
+            }
+        }
+        sb.AppendLine();
+
+        sb.AppendLine("--- SECTION 2: TV SHOWS ---");
+        sb.AppendLine();
+        if (orderedShows.Count == 0)
+        {
+            sb.AppendLine("(No TV shows in library)");
+        }
+        else
+        {
+            for (int i = 0; i < orderedShows.Count; i++)
+            {
+                var show = orderedShows[i];
+                var yearStr = show.Year is > 0 ? show.Year.ToString() : "N/A";
+                string tmdbId = "N/A";
+                try
+                {
+                    var details = AppServices.Tv.GetShowDetails(show.Id);
+                    if (!string.IsNullOrWhiteSpace(details?.ExternalId))
+                    {
+                        tmdbId = details.ExternalId;
+                    }
+                }
+                catch
+                {
+                    // Fallback if details lookup fails
+                }
+                var seasonText = $"{show.SeasonCount} {(show.SeasonCount == 1 ? "Season" : "Seasons")}";
+                var episodeText = $"{show.EpisodeCount} {(show.EpisodeCount == 1 ? "Episode" : "Episodes")}";
+                var watchedProgress = $"{show.WatchedEpisodeCount}/{show.EpisodeCount} watched";
+                sb.AppendLine(CultureInfo.InvariantCulture, $"{i + 1}. {show.Title} ({yearStr}) | TMDB ID: {tmdbId} | {seasonText}, {episodeText} | Watched: {watchedProgress}");
+            }
+        }
+
+        await File.WriteAllTextAsync(file.Path, sb.ToString(), Encoding.UTF8);
+
+        _lastExportedFilePath = file.Path;
+        var totalCount = orderedMovies.Count + orderedShows.Count;
+        ExportFeedbackInfoBar.Severity = InfoBarSeverity.Success;
+        ExportFeedbackInfoBar.Message = string.Format(
+            LocalizationService.Culture,
+            LocalizationService.Text("ExportMoviesSuccessFormat"),
+            LocalizationService.Digits(totalCount.ToString(LocalizationService.Culture)),
+            file.Name);
+        OpenExportedFolderButton.Visibility = Visibility.Visible;
+        ExportFeedbackInfoBar.IsOpen = true;
+    }
+
+    private async void OpenExportedFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrWhiteSpace(_lastExportedFilePath))
+        {
+            var dir = Path.GetDirectoryName(_lastExportedFilePath);
+            if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+            {
+                await Launcher.LaunchFolderPathAsync(dir);
+            }
+        }
     }
 
     /// <summary>Opening the data folder is fully implemented through the shell launcher.</summary>

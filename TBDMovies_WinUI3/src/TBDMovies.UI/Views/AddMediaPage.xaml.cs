@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using TBDMovies.Application.Dto;
 using TBDMovies.Application.Services;
 using TBDMovies.Domain.Media.Discovery;
@@ -250,6 +250,10 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
         {
             analyses.TryGetValue(item.Path, out var analysis);
             var row = new DetectedMediaDisplayRecord(analysis.Candidate?.CurrentItem ?? item, analysis.Candidate, analysis.Provenance);
+            if (row.CanAdd)
+            {
+                row.IsSelected = true;
+            }
             row.PropertyChanged += SelectionChanged;
             _rows.Add(row);
         }
@@ -1219,7 +1223,10 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
                 {
                     var preview = new ImportMetadataPreview(ImportItemStatus.Matched, MatchStatus.Matched, TvCandidate: show, IsManual: true);
                     foreach (var member in _rows.Where(r => r.IsTv && r.TvGroupKey == row.TvGroupKey && r.CanAdd))
+                    {
                         member.SetMetadataPreview(preview);
+                        member.IsSelected = true;
+                    }
                 }
             }
             Refresh();

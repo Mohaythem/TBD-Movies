@@ -75,8 +75,7 @@
     -->
     <ResourceDictionary.ThemeDictionaries>
         <ResourceDictionary x:Key="Default">
-            <!-- Dark uses a pure OLED neutral black surface. Slate applies its navy tinted palette locally
-                 from MainWindow, so these values must not be shared with the Slate surface. -->
+            <!-- Dark uses the unified Slate navy #18222D palette. -->
             <SolidColorBrush x:Key="LandscapeCardTextBrush" Color="#FFF8F9FB" />
             <SolidColorBrush x:Key="LandscapeCardSecondaryTextBrush" Color="#FFE1E6EB" />
             <!-- Artwork badges sit over poster imagery. Neutral black scrim so text remains legible. -->
@@ -90,9 +89,9 @@
             </LinearGradientBrush>
             <LinearGradientBrush x:Key="HeroBackdropScrimBrush" StartPoint="0.5,0" EndPoint="0.5,1">
                 <GradientStop Offset="0.0" Color="#00000000" />
-                <GradientStop Offset="0.45" Color="#66000000" />
-                <GradientStop Offset="0.80" Color="#D9000000" />
-                <GradientStop Offset="1.0" Color="#FF000000" />
+                <GradientStop Offset="0.45" Color="#6618222D" />
+                <GradientStop Offset="0.80" Color="#D918222D" />
+                <GradientStop Offset="1.0" Color="#FF18222D" />
             </LinearGradientBrush>
 
             <SolidColorBrush x:Key="ShellPaneBackgroundBrush" Color="#3D000000" />
@@ -111,12 +110,12 @@
             <SolidColorBrush x:Key="NavigationViewItemForegroundSelectedPressed" Color="#FFFFFFFF" />
 
             <LinearGradientBrush x:Key="PosterMoviePlaceholderBrush" StartPoint="0,0" EndPoint="0.85,1">
-                <GradientStop Offset="0" Color="#FF262626" />
-                <GradientStop Offset="1" Color="#FF141414" />
+                <GradientStop Offset="0" Color="#FF243242" />
+                <GradientStop Offset="1" Color="#FF18222D" />
             </LinearGradientBrush>
             <LinearGradientBrush x:Key="PosterShowPlaceholderBrush" StartPoint="0,0" EndPoint="0.85,1">
-                <GradientStop Offset="0" Color="#FF262626" />
-                <GradientStop Offset="1" Color="#FF141414" />
+                <GradientStop Offset="0" Color="#FF243242" />
+                <GradientStop Offset="1" Color="#FF18222D" />
             </LinearGradientBrush>
             <SolidColorBrush x:Key="PosterGlyphForegroundBrush" Color="#61FFFFFF" />
             <SolidColorBrush x:Key="SlateBackgroundBrush" Color="#FF18222D" />
@@ -124,18 +123,16 @@
             <SolidColorBrush x:Key="DangerControlBorderBrush" Color="#61FF99A4" />
             <SolidColorBrush x:Key="DangerCardStrokeBrush" Color="#61FF99A4" />
 
-            <!-- Pure OLED Black & Neutral Dark Charcoal Surfaces -->
-            <Color x:Key="SolidBackgroundFillColorBase">#FF000000</Color>
-            <SolidColorBrush x:Key="SolidBackgroundFillColorBaseBrush" Color="#FF000000" />
-            <SolidColorBrush x:Key="ApplicationPageBackgroundThemeBrush" Color="#FF000000" />
-            <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#FF161616" />
-            <SolidColorBrush x:Key="CardBackgroundFillColorSecondaryBrush" Color="#FF181818" />
-            <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#FF2E2E2E" />
-            <SolidColorBrush x:Key="ControlFillColorDefaultBrush" Color="#FF181818" />
-            <SolidColorBrush x:Key="ControlFillColorSecondaryBrush" Color="#FF222222" />
-            <SolidColorBrush x:Key="ControlFillColorTertiaryBrush" Color="#FF2A2A2A" />
-            <SolidColorBrush x:Key="ControlStrokeColorDefaultBrush" Color="#FF2E2E2E" />
-            <SolidColorBrush x:Key="ControlStrongStrokeColorDefaultBrush" Color="#FF383838" />
+            <!-- Dark / Slate Navy Harmonious Surfaces (#18222D) -->
+            <SolidColorBrush x:Key="ApplicationPageBackgroundThemeBrush" Color="#FF18222D" />
+            <SolidColorBrush x:Key="CardBackgroundFillColorDefaultBrush" Color="#FF202B35" />
+            <SolidColorBrush x:Key="CardBackgroundFillColorSecondaryBrush" Color="#FF232E3A" />
+            <SolidColorBrush x:Key="CardStrokeColorDefaultBrush" Color="#558392A6" />
+            <SolidColorBrush x:Key="ControlFillColorDefaultBrush" Color="#FF243242" />
+            <SolidColorBrush x:Key="ControlFillColorSecondaryBrush" Color="#FF2B3A4B" />
+            <SolidColorBrush x:Key="ControlFillColorTertiaryBrush" Color="#FF324355" />
+            <SolidColorBrush x:Key="ControlStrokeColorDefaultBrush" Color="#558392A6" />
+            <SolidColorBrush x:Key="ControlStrongStrokeColorDefaultBrush" Color="#D08BA8C7" />
 
             <!-- Windows 11 Fluent Blue Unified Accent Palette: Dark -->
             <SolidColorBrush x:Key="AccentFillColorDefaultBrush" Color="#FF0078D4" />
@@ -186,6 +183,24 @@
             <SolidColorBrush x:Key="BadgeAccentBackgroundBrush" Color="#1F0078D4" />
             <SolidColorBrush x:Key="BadgeAccentForegroundBrush" Color="#FF60CDFF" />
             <SolidColorBrush x:Key="BadgeAccentBorderBrush" Color="#4D60CDFF" />
+
+            <!-- Elegant Fluent InfoBar Success Palette: Dark Slate instead of muddy olive -->
+            <SolidColorBrush x:Key="InfoBarSuccessSeverityBackground" Color="#FF202B35" />
+            <SolidColorBrush x:Key="InfoBarSuccessSeverityBackgroundBrush" Color="#FF202B35" />
+            <SolidColorBrush x:Key="SystemFillColorSuccessBackgroundBrush" Color="#FF202B35" />
+            <SolidColorBrush x:Key="InfoBarSuccessSeverityIconBackground" Color="#FF34D399" />
+            <SolidColorBrush x:Key="InfoBarSuccessSeverityIconForeground" Color="#FF34D399" />
+            <SolidColorBrush x:Key="InfoBarSuccessSeverityBorderBrush" Color="#4D34D399" />
+
+            <!-- Tab Pill Capsules (My Lists, Library Media Type) -->
+            <SolidColorBrush x:Key="TabPillBackground" Color="#FF1F2937" />
+            <SolidColorBrush x:Key="TabPillBackgroundPointerOver" Color="#FF283548" />
+            <SolidColorBrush x:Key="TabPillBackgroundPressed" Color="#FF16202A" />
+            <SolidColorBrush x:Key="TabPillBackgroundChecked" Color="#FF1A324A" />
+            <SolidColorBrush x:Key="TabPillBorderBrush" Color="#338392A6" />
+            <SolidColorBrush x:Key="TabPillBorderBrushChecked" Color="#7A0078D4" />
+            <SolidColorBrush x:Key="TabPillForeground" Color="#FFCBD5E1" />
+            <SolidColorBrush x:Key="TabPillForegroundChecked" Color="#FFFFFFFF" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Light">
@@ -287,6 +302,24 @@
             <SolidColorBrush x:Key="BadgeAccentBackgroundBrush" Color="#14005FB8" />
             <SolidColorBrush x:Key="BadgeAccentForegroundBrush" Color="#FF005FB8" />
             <SolidColorBrush x:Key="BadgeAccentBorderBrush" Color="#4D005FB8" />
+
+            <!-- Elegant Fluent InfoBar Success Palette: Light -->
+            <SolidColorBrush x:Key="InfoBarSuccessSeverityBackground" Color="#FFE8F5E9" />
+            <SolidColorBrush x:Key="InfoBarSuccessSeverityBackgroundBrush" Color="#FFE8F5E9" />
+            <SolidColorBrush x:Key="SystemFillColorSuccessBackgroundBrush" Color="#FFE8F5E9" />
+            <SolidColorBrush x:Key="InfoBarSuccessSeverityIconBackground" Color="#FF059669" />
+            <SolidColorBrush x:Key="InfoBarSuccessSeverityIconForeground" Color="#FF059669" />
+            <SolidColorBrush x:Key="InfoBarSuccessSeverityBorderBrush" Color="#4D059669" />
+
+            <!-- Tab Pill Capsules (My Lists, Library Media Type) -->
+            <SolidColorBrush x:Key="TabPillBackground" Color="#FFF0F2F5" />
+            <SolidColorBrush x:Key="TabPillBackgroundPointerOver" Color="#FFE8ECF0" />
+            <SolidColorBrush x:Key="TabPillBackgroundPressed" Color="#FFDCE2E8" />
+            <SolidColorBrush x:Key="TabPillBackgroundChecked" Color="#FFE0EDFB" />
+            <SolidColorBrush x:Key="TabPillBorderBrush" Color="#FFD0D7DE" />
+            <SolidColorBrush x:Key="TabPillBorderBrushChecked" Color="#FF005FB8" />
+            <SolidColorBrush x:Key="TabPillForeground" Color="#FF4A5568" />
+            <SolidColorBrush x:Key="TabPillForegroundChecked" Color="#FF005FB8" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="HighContrast">
@@ -350,6 +383,20 @@
             <SolidColorBrush x:Key="BadgeAccentBackgroundBrush" Color="{ThemeResource SystemColorHighlightColor}" />
             <SolidColorBrush x:Key="BadgeAccentForegroundBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
             <SolidColorBrush x:Key="BadgeAccentBorderBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+
+            <SolidColorBrush x:Key="InfoBarSuccessSeverityBackgroundBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="SystemFillColorSuccessBackgroundBrush" Color="{ThemeResource SystemColorWindowColor}" />
+            <SolidColorBrush x:Key="InfoBarSuccessSeverityIconBackground" Color="{ThemeResource SystemColorHighlightTextColor}" />
+            <SolidColorBrush x:Key="InfoBarSuccessSeverityBorderBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+
+            <SolidColorBrush x:Key="TabPillBackground" Color="{ThemeResource SystemColorButtonFaceColor}" />
+            <SolidColorBrush x:Key="TabPillBackgroundPointerOver" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="TabPillBackgroundPressed" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="TabPillBackgroundChecked" Color="{ThemeResource SystemColorHighlightColor}" />
+            <SolidColorBrush x:Key="TabPillBorderBrush" Color="{ThemeResource SystemColorButtonTextColor}" />
+            <SolidColorBrush x:Key="TabPillBorderBrushChecked" Color="{ThemeResource SystemColorHighlightTextColor}" />
+            <SolidColorBrush x:Key="TabPillForeground" Color="{ThemeResource SystemColorButtonTextColor}" />
+            <SolidColorBrush x:Key="TabPillForegroundChecked" Color="{ThemeResource SystemColorHighlightTextColor}" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 </ResourceDictionary>

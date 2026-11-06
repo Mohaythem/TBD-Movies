@@ -60,7 +60,7 @@
             </Style>
         </ResourceDictionary>
     </Page.Resources>
-    <ScrollViewer x:Name="Root" Style="{StaticResource PageScrollViewerStyle}" Padding="32,16,32,48" Background="Transparent">
+    <ScrollViewer x:Name="Root" Style="{StaticResource PageScrollViewerStyle}" Padding="32,32,32,48" Background="Transparent">
         <VisualStateManager.VisualStateGroups>
             <VisualStateGroup x:Name="DetailsWidthStates">
                 <VisualState x:Name="DetailsWideState">
@@ -130,13 +130,13 @@
                         <Setter Target="PosterSurface.Height" Value="330" />
                         <Setter Target="PreferenceActionsPanel.Orientation" Value="Vertical" />
                         <Setter Target="WatchedDateControlsPanel.Orientation" Value="Vertical" />
-                        <Setter Target="Root.Padding" Value="24,24,24,48" />
+                        <Setter Target="Root.Padding" Value="24,32,24,48" />
                     </VisualState.Setters>
                 </VisualState>
             </VisualStateGroup>
         </VisualStateManager.VisualStateGroups>
-        <StackPanel Spacing="24" x:Name="PageContent">
-            <Grid ColumnSpacing="40" RowSpacing="32" x:Name="HeroGrid">
+        <StackPanel Spacing="32" x:Name="PageContent">
+            <Grid ColumnSpacing="40" RowSpacing="48" x:Name="HeroGrid">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="420" x:Name="HeroPosterColumn" />
                     <ColumnDefinition Width="*" x:Name="HeroCopyColumn" />
@@ -191,6 +191,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock x:Name="MovieMetaText" Style="{StaticResource DetailsBodyStyle}" TextWrapping="Wrap" />
                             <Border x:Name="RatingPanel"
@@ -204,6 +205,20 @@
                                 <StackPanel Spacing="6" Orientation="Horizontal" VerticalAlignment="Center">
                                 <FontIcon Glyph="&#xE735;" FontSize="14" Foreground="{ThemeResource FigmaStatusStorageGoldBrush}" VerticalAlignment="Center" />
                                 <TextBlock Style="{StaticResource DetailsBodyStyle}" x:Name="RatingText" />
+                                </StackPanel>
+                            </Border>
+                            <Border x:Name="MissingBadge"
+                                    Grid.Column="2"
+                                    Style="{StaticResource StatusPillStyle}"
+                                    Background="{ThemeResource LayerFillColorAltBrush}"
+                                    BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    Padding="8,2"
+                                    VerticalAlignment="Center"
+                                    Visibility="Collapsed">
+                                <StackPanel Spacing="6" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <FontIcon Glyph="&#xE7BA;" FontSize="12" Foreground="{ThemeResource SystemFillColorCautionBrush}" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="MissingBadgeText" Style="{StaticResource DetailsBodyStyle}" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
                                 </StackPanel>
                             </Border>
                         </Grid>
@@ -296,7 +311,7 @@
                         </StackPanel>
                     </StackPanel>
                     <Border BorderBrush="{ThemeResource FigmaBorderDefaultBrush}" BorderThickness="0,1,0,0" Padding="0" />
-                    <Grid ColumnSpacing="40" RowSpacing="32" x:Name="RecordsGrid">
+                    <Grid ColumnSpacing="40" RowSpacing="48" x:Name="RecordsGrid">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="3*" x:Name="WatchColumn" />
                             <ColumnDefinition Width="2*" x:Name="FilesColumn" />
@@ -305,7 +320,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <StackPanel Spacing="12" x:Name="WatchPane" Grid.ColumnSpan="2">
+                        <StackPanel Spacing="16" x:Name="WatchPane" Grid.ColumnSpan="2">
                             <Grid ColumnSpacing="8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
@@ -341,7 +356,7 @@
                                     </StackPanel>
                                 </StackPanel>
                             </Grid>
-                            <Border BorderBrush="{ThemeResource FigmaBorderDefaultBrush}" BorderThickness="0,1,0,0" Padding="0,12,0,0">
+                            <Border BorderBrush="{ThemeResource FigmaBorderDefaultBrush}" BorderThickness="0,1,0,0" Padding="0,16,0,0">
                                 <StackPanel Spacing="8">
                                     <TextBlock x:Name="HistoryTitleText" Style="{StaticResource BodyStrongTextBlockStyle}" Foreground="{ThemeResource FigmaTextSecondaryBrush}" />
                                     <TextBlock x:Name="NoHistoryText" Style="{StaticResource SecondaryCaptionTextStyle}" TextWrapping="Wrap" Foreground="{ThemeResource FigmaTextSecondaryBrush}" />
@@ -370,7 +385,7 @@
                                 </StackPanel>
                             </Border>
                         </StackPanel>
-                        <StackPanel Spacing="12" x:Name="FilesPane" Grid.Row="1" Grid.ColumnSpan="2">
+                        <StackPanel Spacing="16" x:Name="FilesPane" Grid.Row="1" Grid.ColumnSpan="2">
                             <Grid ColumnSpacing="8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
@@ -457,7 +472,7 @@
                             </StackPanel>
                         </StackPanel>
                     </Grid>
-                    <Border BorderBrush="{ThemeResource FigmaBorderDefaultBrush}" BorderThickness="0,1,0,0" Padding="0,12,0,0" x:Name="MetadataFooter">
+                    <Border BorderBrush="{ThemeResource FigmaBorderDefaultBrush}" BorderThickness="0,1,0,0" Padding="0,16,0,0" x:Name="MetadataFooter">
                         <StackPanel Orientation="Horizontal" Spacing="12">
                             <TextBlock x:Name="MetadataStatusText" Style="{StaticResource DetailsStatusStyle}" TextWrapping="Wrap" />
                             <TextBlock x:Name="MatchedIdentityText" Style="{StaticResource DetailsSmallStyle}" TextWrapping="Wrap" />

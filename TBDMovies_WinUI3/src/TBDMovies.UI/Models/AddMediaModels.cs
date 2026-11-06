@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using TBDMovies.Application.Dto;
 using TBDMovies.Domain.Media.Discovery;
 using TBDMovies.Domain.Media.Parser;
@@ -50,7 +50,7 @@ public sealed class DetectedMediaDisplayRecord : INotifyPropertyChanged
 
     public void CorrectTv(TvBatchFileCandidate candidate, int? existingShowId)
     {
-        var selectAfterCorrection = candidate.CanImport && (_isSelected || !CanSelect);
+        var selectAfterCorrection = candidate.CanImport;
         TvAnalysis = candidate;
         Item = candidate.CurrentItem;
         ExistingShowId = existingShowId;
@@ -63,8 +63,15 @@ public sealed class DetectedMediaDisplayRecord : INotifyPropertyChanged
         RaiseMetadataProperties();
     }
 
-    public bool CanSelect => TvAnalysis?.CanImport ?? (Item.Classification is
-        DiscoveryClassification.MovieCandidate or DiscoveryClassification.TvEpisodeCandidate);
+    public bool CanSelect => TvAnalysis is not null
+        ? (TvAnalysis.CanImport || (TvAnalysis.IsResolved && !TvAnalysis.Warnings.Any(w => w.Code is
+            TvBatchWarningCode.AmbiguousPathProvenance or
+            TvBatchWarningCode.DuplicateEpisodePosition or
+            TvBatchWarningCode.UnsupportedMultiEpisode or
+            TvBatchWarningCode.DiscoveryError or
+            TvBatchWarningCode.UnresolvedSeasonOrEpisode or
+            TvBatchWarningCode.MissingTitle)))
+        : (Item.Classification is DiscoveryClassification.MovieCandidate or DiscoveryClassification.TvEpisodeCandidate);
 
     /// <summary>
     /// Whether this row is eligible for a new registration. A path already present in the catalog

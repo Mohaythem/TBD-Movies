@@ -22,7 +22,7 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
         string cacheDirectory,
         HttpClient? httpClient = null,
         string imageBaseUrl = "https://image.tmdb.org/t/p/",
-        string defaultPosterSize = "w342")
+        string defaultPosterSize = "w500")
     {
         if (string.IsNullOrWhiteSpace(cacheDirectory))
         {
@@ -31,7 +31,7 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
 
         _cacheDirectory = cacheDirectory;
         _imageBaseUrl = imageBaseUrl ?? "https://image.tmdb.org/t/p/";
-        _defaultPosterSize = defaultPosterSize ?? "w342";
+        _defaultPosterSize = defaultPosterSize ?? "w500";
 
         if (httpClient == null)
         {

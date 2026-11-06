@@ -20,7 +20,8 @@ public record TvShowListItem(
     MetadataStatus MetadataStatus = MetadataStatus.Pending,
     string? BackdropReference = null,
     string? CustomDisplayTitle = null,
-    string? CanonicalTitle = null);
+    string? CanonicalTitle = null,
+    int WatchedEpisodeCount = 0);
 
 public record TvContinueWatchingItem(
     int ShowId,

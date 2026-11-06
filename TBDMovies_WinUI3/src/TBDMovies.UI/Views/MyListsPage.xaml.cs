@@ -41,6 +41,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
 
     /// <summary>The system tabs raise Checked during XAML parse; the constructor applies the first list.</summary>
     private readonly bool _isReady;
+    private bool _isActivated;
 
     /// <summary>Guards so rebuilding tabs and syncing the selection do not re-enter the Checked handler.</summary>
     private bool _rebuilding;
@@ -62,6 +63,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
     /// <summary>Every arrival re-reads the custom lists and the selected section from the catalog.</summary>
     public void Activate()
     {
+        _isActivated = true;
         _traktActive = true;
         AppServices.TraktSyncCompleted -= OnTraktSyncCompleted;
         AppServices.TraktSyncCompleted += OnTraktSyncCompleted;
@@ -73,7 +75,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
     /// <summary>Drops the per-visit caches: the custom lists and the loaded section.</summary>
     private void Invalidate()
     {
-        _customLists = LoadCustomLists();
+        _customLists = _isActivated ? LoadCustomLists() : [];
         _sectionItems = null;
         _sectionKey = null;
         _continueItems = null;
@@ -96,8 +98,9 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         SyncTraktButtonText.Text = LocalizationService.Text("TraktSyncNow");
         UpdateTraktSyncVisibility();
         AddMoviesButtonText.Text = LocalizationService.Text("AddMedia");
-        RenameListButton.Content = LocalizationService.Text("Rename");
-        DeleteListButton.Content = LocalizationService.Text("Delete");
+        RenameListMenuItem.Text = LocalizationService.Text("Rename") ?? "Rename";
+        DeleteListMenuItem.Text = LocalizationService.Text("Delete") ?? "Delete";
+        NewTraktListButtonText.Text = LocalizationService.Text("NewList") ?? "New Trakt List";
         SearchBox.PlaceholderText = LocalizationService.Text("SearchLists");
         ListsCountText.Text = LocalizationService.Format("ListsCountFormat", Definitions.Count);
         LocalizeSystemTabs();
@@ -164,6 +167,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         }
 
         _dynamicTabs.Clear();
+        ListSelector.Children.Remove(NewListButton);
 
         foreach (var list in _customLists)
         {
@@ -188,7 +192,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             var tab = new RadioButton
             {
                 GroupName = "MyListsSelector",
-                Style = (Style)App.Current.Resources["TabStripItemStyle"],
+                Style = (Style)App.Current.Resources["TabPillItemStyle"],
                 Tag = CustomKey(list.Id),
                 Content = content,
             };
@@ -197,7 +201,10 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             _dynamicTabs.Add((tab, label, count, list.Id));
         }
 
+        ListSelector.Children.Add(NewListButton);
+
         _rebuilding = false;
+        ListsCountText.Text = LocalizationService.Format("ListsCountFormat", Definitions.Count);
         RebuildTraktTabs();
     }
 
@@ -210,7 +217,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             return;
         }
         CancelTraktDisplay();
-        TraktPlaylistsScroll.Visibility = Visibility.Collapsed;
+        TraktRow.Visibility = Visibility.Collapsed;
         TraktTabCount.Text = string.Empty;
         UpdateTraktSyncVisibility();
         AddMoviesButtonText.Text = LocalizationService.Text("AddMedia");
@@ -225,8 +232,17 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         var isCustom = !definition.IsSystem;
         ListNameText.Text = isCustom ? definition.LabelKey : LocalizationService.Text(definition.LabelKey);
         AddMoviesButton.Visibility = isActivity ? Visibility.Collapsed : Visibility.Visible;
-        RenameListButton.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
-        DeleteListButton.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
+        ListMoreOptionsButton.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!_isActivated)
+        {
+            ListGrid.Visibility = Visibility.Collapsed;
+            ContinueGrid.Visibility = Visibility.Collapsed;
+            HistoryGrid.Visibility = Visibility.Collapsed;
+            EmptyState.Visibility = Visibility.Collapsed;
+            ListCountText.Visibility = Visibility.Collapsed;
+            return;
+        }
 
         if (isActivity)
         {
@@ -240,7 +256,8 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 ContinueGrid.ItemsSource = filtered;
                 var filteredCount = filtered.Length;
                 ContinueGrid.Visibility = filteredCount == 0 ? Visibility.Collapsed : Visibility.Visible;
-                ListCountText.Text = string.Empty;
+                ListCountText.Text = FormatCount(filteredCount);
+                ListCountText.Visibility = filteredCount == 0 ? Visibility.Collapsed : Visibility.Visible;
                 EmptyState.Visibility = filteredCount == 0 ? Visibility.Visible : Visibility.Collapsed;
                 SetActivityEmptyState(filteredCount);
                 UpdateSystemCounts(definition.Key, filteredCount);
@@ -252,7 +269,8 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 HistoryGrid.ItemsSource = filtered;
                 var filteredCount = filtered.Length;
                 HistoryGrid.Visibility = filteredCount == 0 ? Visibility.Collapsed : Visibility.Visible;
-                ListCountText.Text = string.Empty;
+                ListCountText.Text = FormatCount(filteredCount);
+                ListCountText.Visibility = filteredCount == 0 ? Visibility.Collapsed : Visibility.Visible;
                 EmptyState.Visibility = filteredCount == 0 ? Visibility.Visible : Visibility.Collapsed;
                 SetActivityEmptyState(filteredCount);
                 UpdateSystemCounts(definition.Key, filteredCount);
@@ -264,7 +282,8 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         HistoryGrid.Visibility = Visibility.Collapsed;
         var items = BuildItems(definition);
         ListGrid.ItemsSource = items;
-        ListCountText.Text = string.Empty;
+        ListCountText.Text = FormatCount(items.Count);
+        ListCountText.Visibility = items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
 
         foreach (var (_, _, count, key) in SystemTabs)
         {

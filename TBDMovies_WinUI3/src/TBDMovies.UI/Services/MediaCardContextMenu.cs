@@ -1,4 +1,4 @@
-﻿using TBDMovies.Domain.Library.Personal;
+using TBDMovies.Domain.Library.Personal;
 using TBDMovies.UI.Models;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -26,6 +26,11 @@ public static class MediaCardContextMenu
             {
                 case MovieRecord movie: BuildMovieMenu(menu, owner, movie, horizontalMovies, onChanged, removeFromList); break;
                 case ShowCardItem show: BuildShowMenu(menu, owner, show, horizontalMovies, onChanged, removeFromList); break;
+                case LibraryCardItem card when card.Movie is { } movie: BuildMovieMenu(menu, owner, movie, horizontalMovies, onChanged, removeFromList); break;
+                case LibraryCardItem card when card.Show is { } show:
+                    AddImageItem(menu, owner, card.PosterSource, card.Title);
+                    BuildShowActions(menu, owner, show, onChanged);
+                    AddRemove(menu, removeFromList); break;
                 case ListMediaItem list when list.Movie is { } movie: BuildMovieMenu(menu, owner, movie, horizontalMovies, onChanged, removeFromList); break;
                 case ListMediaItem list when list.Show is { } show:
                     AddImageItem(menu, owner, list.PosterSource, list.Title);
@@ -50,10 +55,11 @@ public static class MediaCardContextMenu
         {
             if (element is FrameworkElement current)
             {
-                if (current.DataContext is MovieRecord or ShowCardItem or ListMediaItem or HomeActivityCard or WatchHistoryCardRecord)
+                if (current.DataContext is MovieRecord or ShowCardItem or ListMediaItem or HomeActivityCard or WatchHistoryCardRecord or LibraryCardItem)
                     return current.DataContext;
                 if (current.Tag is MovieRecord taggedMovie) return taggedMovie;
                 if (current.Tag is ShowCardItem taggedShow) return taggedShow;
+                if (current.Tag is LibraryCardItem taggedCard) return taggedCard;
                 if (current.Tag is ListMediaItem taggedList) return taggedList;
                 if (current.Tag is HomeActivityCard taggedActivity) return taggedActivity;
                 if (current.Tag is WatchHistoryCardRecord taggedHistory) return taggedHistory;

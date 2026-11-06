@@ -46,7 +46,9 @@ public sealed record MovieRecord(
     DateTimeOffset? LastOpenedAt = null,
     string? BackdropReference = null,
     string? CustomDisplayTitle = null,
-    string? CanonicalTitle = null) : INotifyPropertyChanged
+    string? CanonicalTitle = null,
+    bool Watched = false,
+    string? ExternalId = null) : INotifyPropertyChanged
 {
     public DateTimeOffset? LastOpenedAt { get; private set; } = LastOpenedAt;
 

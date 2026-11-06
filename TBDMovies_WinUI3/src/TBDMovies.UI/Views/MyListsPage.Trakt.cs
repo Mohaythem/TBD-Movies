@@ -23,6 +23,7 @@ public sealed partial class MyListsPage
     private const string TraktWatchedShowsKey = "trakt:watched-shows";
     private const string TraktHistoryKey = "trakt:history";
     private readonly List<(RadioButton Tab, TextBlock Label, TextBlock Count, string Key)> _traktPlaylistsTabs = [];
+    private readonly List<TraktCustomList> _localTraktLists = [];
     private string _selectedTraktKey = TraktWatchlistKey;
     private static readonly ConcurrentDictionary<long, string?> _traktPosterCache = new();
     private CancellationTokenSource? _traktCts;
@@ -90,7 +91,8 @@ public sealed partial class MyListsPage
             (TraktWatchedShowsKey, LocalizationService.Text("TraktWatchedShows"), watchedShowsCount, "\uE7F4"),
             (TraktHistoryKey, LocalizationService.Text("TraktHistory"), historyCount, "\uE81C")
         };
-        foreach (var list in lists) defs.Add(($"trakt:list:{list.TraktId}", list.Name, list.ItemCount, "\uE8BD"));
+        var combinedLists = lists.Concat(_localTraktLists.Where(local => !lists.Any(remote => remote.TraktId == local.TraktId || string.Equals(remote.Name, local.Name, StringComparison.OrdinalIgnoreCase)))).ToList();
+        foreach (var list in combinedLists) defs.Add(($"trakt:list:{list.TraktId}", list.Name, list.ItemCount, "\uE8BD"));
         if (IsTraktKey(_selectedKey) && !defs.Any(x => x.Key == _selectedKey))
         {
             _selectedKey = TraktWatchlistKey;
@@ -103,7 +105,7 @@ public sealed partial class MyListsPage
             var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             content.Children.Add(new FontIcon { FontSize = 14, Glyph = def.Glyph, FontFamily = (FontFamily)App.Current.Resources["SymbolThemeFontFamily"] });
             content.Children.Add(label); content.Children.Add(count);
-            var tab = new RadioButton { GroupName = "TraktPlaylistsGroup", Style = (Style)App.Current.Resources["TabStripItemStyle"], Tag = def.Key, Content = content, IsChecked = def.Key == _selectedKey };
+            var tab = new RadioButton { GroupName = "TraktPlaylistsGroup", Style = (Style)App.Current.Resources["TabPillItemStyle"], Tag = def.Key, Content = content, IsChecked = def.Key == _selectedKey };
             tab.Checked += TraktPlaylistTab_Checked;
             TraktPlaylistsSelector.Children.Add(tab);
             _traktPlaylistsTabs.Add((tab, label, count, def.Key));
@@ -134,7 +136,7 @@ public sealed partial class MyListsPage
     {
         try { await RefreshTraktAsync(); }
         catch (OperationCanceledException) { }
-        catch (Exception) { if (_traktActive && IsTraktKey(_selectedKey)) { ListGrid.ItemsSource = null; ListCountText.Text = LocalizationService.Text("Failed"); } }
+        catch (Exception) { if (_traktActive && IsTraktKey(_selectedKey)) { ListGrid.ItemsSource = null; ListCountText.Text = LocalizationService.Text("Failed"); ListCountText.Visibility = Visibility.Visible; } }
     }
 
     private async Task RefreshTraktAsync()
@@ -152,10 +154,9 @@ public sealed partial class MyListsPage
         var displayKey = _selectedKey;
 
         SyncTraktSelectedTab();
-        TraktPlaylistsScroll.Visibility = Visibility.Visible;
+        TraktRow.Visibility = Visibility.Visible;
         ContinueGrid.Visibility = Visibility.Collapsed;
-        RenameListButton.Visibility = Visibility.Collapsed;
-        DeleteListButton.Visibility = Visibility.Collapsed;
+        ListMoreOptionsButton.Visibility = Visibility.Collapsed;
 
         var trakt = displayCoordinator;
         TraktSyncState? state = null;
@@ -245,7 +246,8 @@ public sealed partial class MyListsPage
 
             HistoryGrid.ItemsSource = filtered;
             ListGrid.ItemsSource = null;
-            ListCountText.Text = string.Empty;
+            ListCountText.Text = FormatCount(filtered.Count);
+            ListCountText.Visibility = filtered.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
             HistoryGrid.Visibility = filtered.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
             ListGrid.Visibility = Visibility.Collapsed;
             EmptyState.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -266,7 +268,8 @@ public sealed partial class MyListsPage
 
             ListGrid.ItemsSource = filtered;
             HistoryGrid.ItemsSource = null;
-            ListCountText.Text = string.Empty;
+            ListCountText.Text = FormatCount(filtered.Count);
+            ListCountText.Visibility = filtered.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
             ListGrid.Visibility = filtered.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
             HistoryGrid.Visibility = Visibility.Collapsed;
             EmptyState.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -536,7 +539,7 @@ public sealed partial class MyListsPage
 
     private static long? ParseTraktListId(string key) => key.StartsWith("trakt:list:", StringComparison.Ordinal) && long.TryParse(key.AsSpan(11), out var id) && id > 0 ? id : null;
 
-    private static string SafeTraktListName(ITraktUiActions? trakt, string? account, string key)
+    private string SafeTraktListName(ITraktUiActions? trakt, string? account, string key)
     {
         return key switch
         {
@@ -548,10 +551,89 @@ public sealed partial class MyListsPage
         };
     }
 
-    private static string SafeCustomListName(ITraktUiActions? trakt, string? account, string key)
+    private string SafeCustomListName(ITraktUiActions? trakt, string? account, string key)
     {
-        try { return trakt?.GetLists(account).FirstOrDefault(x => $"trakt:list:{x.TraktId}" == key)?.Name ?? LocalizationService.Text("TraktList"); }
+        try
+        {
+            var remote = trakt?.GetLists(account).FirstOrDefault(x => $"trakt:list:{x.TraktId}" == key)?.Name;
+            if (!string.IsNullOrWhiteSpace(remote)) return remote;
+            var local = _localTraktLists.FirstOrDefault(x => $"trakt:list:{x.TraktId}" == key)?.Name;
+            if (!string.IsNullOrWhiteSpace(local)) return local;
+            return LocalizationService.Text("TraktList");
+        }
         catch { return LocalizationService.Text("TraktList"); }
+    }
+
+    private void NewTraktListButton_Click(object sender, RoutedEventArgs e) => _ = ShowCreateTraktListDialogAsync();
+
+    private async Task ShowCreateTraktListDialogAsync()
+    {
+        var trakt = AppServices.Trakt;
+        var state = trakt?.GetSyncState();
+        if (trakt is null || state?.AuthState.IsConnected != true || string.IsNullOrWhiteSpace(state.CurrentAccountId))
+        {
+            await ShowMessageAsync(
+                LocalizationService.Text("Trakt") ?? "Trakt",
+                LocalizationService.Text("TraktDisconnectedFeedback") ?? "Trakt is not connected. Connect your Trakt account in Settings.");
+            return;
+        }
+
+        var nameBox = new TextBox
+        {
+            PlaceholderText = LocalizationService.Text("ListNamePlaceholder") ?? "List name",
+            Style = (Style)App.Current.Resources["FormInputTextBoxStyle"],
+        };
+
+        var descBox = new TextBox
+        {
+            PlaceholderText = LocalizationService.Text("Description") ?? "Description (optional)",
+            Style = (Style)App.Current.Resources["FormInputTextBoxStyle"],
+            AcceptsReturn = true,
+            Height = 72,
+            Margin = new Thickness(0, 8, 0, 0),
+        };
+
+        var content = new StackPanel
+        {
+            Spacing = 8,
+            Children = { nameBox, descBox }
+        };
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            FlowDirection = LocalizationService.FlowDirection,
+            RequestedTheme = ThemeService.ElementTheme,
+            Title = LocalizationService.Text("NewList") ?? "New Trakt List",
+            Content = content,
+            PrimaryButtonText = LocalizationService.Text("Save") ?? "Save",
+            CloseButtonText = LocalizationService.Text("Cancel") ?? "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+
+        if (await ContentDialogCoordinator.ShowAsync(dialog) != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        var name = nameBox.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+
+        var desc = descBox.Text?.Trim();
+        using var doc = JsonDocument.Parse("{}");
+        var rawElement = doc.RootElement.Clone();
+        var newId = 90000000L + (_localTraktLists.Count + 1);
+        var slug = name.ToLowerInvariant().Replace(' ', '-');
+        var newList = new TraktCustomList(newId, slug, name, string.IsNullOrWhiteSpace(desc) ? null : desc, "private", 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, rawElement);
+        _localTraktLists.Add(newList);
+
+        _selectedTraktKey = $"trakt:list:{newList.TraktId}";
+        _selectedKey = _selectedTraktKey;
+        RebuildTraktTabs();
+        Refresh();
     }
 
     private async void SyncTraktButton_Click(object sender, RoutedEventArgs e)
@@ -624,26 +706,73 @@ public sealed partial class MyListsPage
         var operationGeneration = _traktGeneration;
         var snapshot = await snapshotBuilder.BuildSnapshotAsync(operationToken);
         if (operationGeneration != _traktGeneration || !string.Equals(account, AppServices.Trakt?.GetSyncState().CurrentAccountId, StringComparison.Ordinal) || _selectedKey != destinationKey) return;
-        var ids = snapshot.Candidates.Where(x => x.Kind == TraktMediaKind.Movie && x.LocalId > 0 && x.Identity.TmdbId is > 0).ToDictionary(x => x.LocalId, x => x.Identity.TmdbId!.Value);
+        var movieIds = snapshot.Candidates
+            .Where(x => x.Kind == TraktMediaKind.Movie && x.LocalId > 0 && x.Identity.TmdbId is > 0)
+            .GroupBy(x => x.LocalId)
+            .ToDictionary(g => g.Key, g => g.First().Identity.TmdbId!.Value);
+
+        var showIds = snapshot.Candidates
+            .Where(x => x.Kind == TraktMediaKind.Show && x.LocalId > 0 && x.Identity.TmdbId is > 0)
+            .GroupBy(x => x.LocalId)
+            .ToDictionary(g => g.Key, g => g.First().Identity.TmdbId!.Value);
+
+        foreach (var s in AppServices.Tv.ListShows())
+        {
+            if (!showIds.ContainsKey(s.Id) && AppServices.GetShowTmdbId(s.Id) is int tid and > 0)
+            {
+                showIds[s.Id] = tid;
+            }
+        }
+
         var context = new TraktListRequestContext(destinationKey, account, trakt, operationGeneration);
         bool IsCurrent() => context.IsCurrent(_traktActive, _selectedKey, AppServices.Trakt?.GetSyncState().CurrentAccountId, AppServices.Trakt, _traktGeneration, operationToken.IsCancellationRequested) && trakt.GetSyncState().AuthState.IsConnected;
-        var existingTmdbIds = new HashSet<int>();
+        var existingMovieTmdbIds = new HashSet<int>();
+        var existingShowTmdbIds = new HashSet<int>();
         if (AppServices.TraktProjection is { } projection)
         {
             if (destinationKey == TraktWatchlistKey)
             {
                 var rawList = trakt.GetWatchlist(account);
                 var projected = projection.ProjectWatchlist(rawList, snapshot);
-                foreach (var p in projected) { if (p.RemoteIdentity?.TmdbId is int tmdb && tmdb > 0) existingTmdbIds.Add(tmdb); }
+                foreach (var p in projected)
+                {
+                    if (p.RemoteIdentity?.TmdbId is int tmdb && tmdb > 0)
+                    {
+                        if (p.RemoteIdentity.Kind == TraktMediaKind.Show || string.Equals(p.Type, "show", StringComparison.OrdinalIgnoreCase))
+                            existingShowTmdbIds.Add(tmdb);
+                        else
+                            existingMovieTmdbIds.Add(tmdb);
+                    }
+                }
             }
             else if (destinationListId is long listId)
             {
                 var rawList = trakt.GetListItems(listId, account);
                 var projected = projection.ProjectListItems(rawList, snapshot);
-                foreach (var p in projected) { if (p.RemoteIdentity?.TmdbId is int tmdb && tmdb > 0) existingTmdbIds.Add(tmdb); }
+                foreach (var p in projected)
+                {
+                    if (p.RemoteIdentity?.TmdbId is int tmdb && tmdb > 0)
+                    {
+                        if (p.RemoteIdentity.Kind == TraktMediaKind.Show || string.Equals(p.Type, "show", StringComparison.OrdinalIgnoreCase))
+                            existingShowTmdbIds.Add(tmdb);
+                        else
+                            existingMovieTmdbIds.Add(tmdb);
+                    }
+                }
             }
         }
-        var entries = await Task.Run(() => AppServices.Library.ListMovies().Where(x => ids.ContainsKey(x.Id) && !x.HasPendingMetadata && !x.ReviewMatch && (!ids.TryGetValue(x.Id, out var tmdb) || !existingTmdbIds.Contains(tmdb))).Select(x => new MediaPickerEntry(CustomListMediaKind.Movie, x.Id, x.Title, x.Year, false)).ToArray(), operationToken);
+        var entries = await Task.Run(() =>
+        {
+            var movies = AppServices.Library.ListMovies()
+                .Where(x => movieIds.ContainsKey(x.Id) && !x.HasPendingMetadata && !x.ReviewMatch && (!movieIds.TryGetValue(x.Id, out var tmdb) || !existingMovieTmdbIds.Contains(tmdb)))
+                .Select(x => new MediaPickerEntry(CustomListMediaKind.Movie, x.Id, x.Title, x.Year, false));
+
+            var shows = AppServices.Tv.ListShows()
+                .Where(x => showIds.TryGetValue(x.Id, out var tmdb) && tmdb > 0 && !existingShowTmdbIds.Contains(tmdb))
+                .Select(x => new MediaPickerEntry(CustomListMediaKind.Show, x.Id, x.Title, x.Year, false));
+
+            return movies.Concat(shows).ToArray();
+        }, operationToken);
         if (!IsCurrent()) return;
         var picks = await AddMediaToListDialog.ShowAsync(XamlRoot, entries);
         if (!IsCurrent() || picks.Count == 0) return;
@@ -654,11 +783,32 @@ public sealed partial class MyListsPage
         foreach (var pick in picks)
         {
             if (!IsCurrent()) return;
-            if (!ids.TryGetValue(pick.Id, out var tmdb)) continue;
-            var result = await writer.AddMovieToListAsync(destinationListId, tmdb, account, operationToken);
-            if (!IsCurrent()) return;
-            if (!result.IsConfirmed) { await ShowMessageAsync(LocalizationService.Text("TraktLists"), result.Error ?? LocalizationService.Text("TraktAddFailed")); break; }
-            if (!result.CacheRefreshSucceeded) { await ShowMessageAsync(LocalizationService.Text("TraktLists"), LocalizationService.Text("TraktAddCacheStale")); break; }
+            if (pick.Kind == CustomListMediaKind.Show)
+            {
+                if (!showIds.TryGetValue(pick.Id, out var tmdb) || tmdb <= 0) continue;
+                if (destinationKey == TraktWatchlistKey)
+                {
+                    var ok = await trakt.PushShowWatchlistAsync(tmdb, true, operationToken);
+                    if (!IsCurrent()) return;
+                    if (!ok) { await ShowMessageAsync(LocalizationService.Text("TraktLists"), LocalizationService.Text("TraktAddFailed")); break; }
+                    var refresh = await writer.RefreshListAsync(null, account, operationToken);
+                    if (!IsCurrent()) return;
+                    if (!refresh.Success) { await ShowMessageAsync(LocalizationService.Text("TraktLists"), LocalizationService.Text("TraktAddCacheStale")); break; }
+                }
+                else
+                {
+                    await ShowMessageAsync(LocalizationService.Text("TraktLists"), LocalizationService.Text("TraktAddFailed"));
+                    break;
+                }
+            }
+            else
+            {
+                if (!movieIds.TryGetValue(pick.Id, out var tmdb) || tmdb <= 0) continue;
+                var result = await writer.AddMovieToListAsync(destinationListId, tmdb, account, operationToken);
+                if (!IsCurrent()) return;
+                if (!result.IsConfirmed) { await ShowMessageAsync(LocalizationService.Text("TraktLists"), result.Error ?? LocalizationService.Text("TraktAddFailed")); break; }
+                if (!result.CacheRefreshSucceeded) { await ShowMessageAsync(LocalizationService.Text("TraktLists"), LocalizationService.Text("TraktAddCacheStale")); break; }
+            }
         }
         RefreshTrakt();
     }
@@ -701,7 +851,9 @@ public sealed partial class MyListsPage
     {
         var trakt = AppServices.Trakt;
         var isConnected = trakt?.GetSyncState().AuthState.IsConnected == true;
-        SyncTraktButton.Visibility = isConnected ? Visibility.Visible : Visibility.Collapsed;
+        var isTraktOpen = IsTraktKey(_selectedKey);
+        TraktRow.Visibility = isTraktOpen ? Visibility.Visible : Visibility.Collapsed;
+        SyncTraktButton.Visibility = isTraktOpen && isConnected ? Visibility.Visible : Visibility.Collapsed;
         SyncTraktButton.IsEnabled = isConnected && !_traktBusy;
     }
 }

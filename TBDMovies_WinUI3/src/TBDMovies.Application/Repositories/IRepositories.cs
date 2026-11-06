@@ -112,6 +112,9 @@ public interface IPersonalLibraryRepository
 
     /// <summary>The members of a custom list (movies and TV shows), newest membership first.</summary>
     IReadOnlyList<CustomListMember> ListCustomListItems(int listId, int limit = 1000, int offset = 0);
+
+    /// <summary>The ids of all movies with at least one recorded watch event.</summary>
+    IReadOnlySet<int> ListWatchedMovieIds() => new HashSet<int>();
 }
 
 public interface IWatchHistoryRepository
@@ -130,6 +133,9 @@ public interface IWatchHistoryRepository
     /// </summary>
     IReadOnlyList<WatchHistoryEntry> ListRecentlyWatchedMedia(int limit = 50, int offset = 0);
     IReadOnlySet<int> GetWatchedEpisodeIds(int showId);
+
+    /// <summary>The ids of all TV shows with at least one watched episode.</summary>
+    IReadOnlySet<int> GetWatchedShowIds() => new HashSet<int>();
 
     /// <summary>
     /// Removes every watch event - movie, episode and events orphaned by deleted media - and reports

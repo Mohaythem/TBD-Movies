@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using TBDMovies.Application.Contracts;
 using TBDMovies.Application.Dto;
@@ -19,12 +20,12 @@ public class LibraryService : ILibraryUiActions, IPersonalLibraryUiActions
     public LibraryService(
         IMovieRepository movies,
         IMediaFileRepository mediaFiles,
-        IPersonalLibraryRepository personal,
+        IPersonalLibraryRepository? personal = null,
         Func<DateTimeOffset>? clock = null)
     {
         _movies = movies;
         _mediaFiles = mediaFiles;
-        _personal = personal;
+        _personal = personal!;
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
 
@@ -34,8 +35,9 @@ public class LibraryService : ILibraryUiActions, IPersonalLibraryUiActions
         // that blocked the UI thread for ~38s at 10K). One file-count query serves the multi-file badge.
         var moviesWithFile = _mediaFiles.ListMovieIdsWithPresentFile();
         var fileCounts = _mediaFiles.CountFilesByMovie();
+        var watchedMovieIds = _personal?.ListWatchedMovieIds() ?? (IReadOnlySet<int>)ImmutableHashSet<int>.Empty;
         return _movies.ListAll()
-            .Select(movie => ToListItem(movie, moviesWithFile.Contains(movie.Id), fileCounts.GetValueOrDefault(movie.Id, 0)))
+            .Select(movie => ToListItem(movie, moviesWithFile.Contains(movie.Id), fileCounts.GetValueOrDefault(movie.Id, 0), watchedMovieIds.Contains(movie.Id)))
             .ToList();
     }
 
@@ -72,15 +74,16 @@ public class LibraryService : ILibraryUiActions, IPersonalLibraryUiActions
     private MovieListItem MapToListItem(Movie movie)
     {
         var files = _mediaFiles.GetByMovieId(movie.Id);
-        return ToListItem(movie, files.Any(f => f.Status == MediaFileStatus.Present), files.Count);
+        var watched = _personal?.ListWatchedMovieIds().Contains(movie.Id) ?? false;
+        return ToListItem(movie, files.Any(f => f.Status == MediaFileStatus.Present), files.Count, watched);
     }
 
-    private static MovieListItem ToListItem(Movie movie, bool hasPresentFile, int fileCount)
+    private static MovieListItem ToListItem(Movie movie, bool hasPresentFile, int fileCount, bool watched = false)
     {
         bool pending = movie.MetadataStatus is MetadataStatus.Pending
             or MetadataStatus.NeedsMatch
             or MetadataStatus.Failed;
-        return new MovieListItem(movie.Id, movie.DisplayTitle, movie.Year, movie.PosterReference, !hasPresentFile, pending, fileCount, movie.ReviewMatch, movie.DateAdded, movie.LastOpenedAt, movie.BackdropReference, movie.CustomDisplayTitle, movie.Title);
+        return new MovieListItem(movie.Id, movie.DisplayTitle, movie.Year, movie.PosterReference, !hasPresentFile, pending, fileCount, movie.ReviewMatch, movie.DateAdded, movie.LastOpenedAt, movie.BackdropReference, movie.CustomDisplayTitle, movie.Title, watched, movie.ExternalId);
     }
 
     public PersonalMovieSnapshot GetPersonalSnapshot(int movieId)

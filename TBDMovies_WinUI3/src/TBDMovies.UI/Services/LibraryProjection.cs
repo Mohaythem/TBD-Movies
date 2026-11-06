@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using TBDMovies.Application.Dto;
 using TBDMovies.Domain.Library.Movies;
 using TBDMovies.Domain.Library.Personal;
@@ -35,7 +35,11 @@ internal static class LibraryProjection
         DateAdded: item.DateAdded,
         LastOpenedAt: item.LastOpenedAt,
         CustomDisplayTitle: item.CustomDisplayTitle,
-        CanonicalTitle: item.CanonicalTitle);
+        CanonicalTitle: item.CanonicalTitle,
+        Watched: item.Watched,
+        ExternalId: item.ExternalId);
+
+    public static MovieRecord ToRecord(MovieListItem item) => ToCard(item);
 
     /// <summary>
     /// The details hero, file block, personal state and watch history for one movie. The watch

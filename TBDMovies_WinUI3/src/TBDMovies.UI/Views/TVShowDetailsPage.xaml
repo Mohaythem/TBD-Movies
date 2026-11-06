@@ -2,14 +2,15 @@
     TV show details.
 
     TV hero band (2:3 poster and bounded copy column, progress
-    line, Play Next Episode / Add to List / more), then the seasons stack. Each season is a native
-    Expander whose header is the designed season card and whose content is the episode thread.
+    line, Play Next Episode / Add to List / more), then horizontal season selector tabs
+    and the episode cards list for the active season.
 -->
 <Page
     x:Class="TBDMovies.UI.Views.TVShowDetailsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:models="using:TBDMovies.UI.Models"
+    KeyDown="Page_KeyDown"
     Background="Transparent">
 
     <Page.Resources>
@@ -51,7 +52,7 @@
         </Style>
     </Page.Resources>
 
-    <ScrollViewer x:Name="Root" Style="{StaticResource PageScrollViewerStyle}" Padding="32,16,32,48" Background="Transparent">
+    <ScrollViewer x:Name="Root" Style="{StaticResource PageScrollViewerStyle}" Padding="32,32,32,48" Background="Transparent">
         <VisualStateManager.VisualStateGroups>
             <VisualStateGroup x:Name="ShowWidthStates">
                 <VisualState x:Name="ShowWideState">
@@ -149,6 +150,7 @@
                         <AdaptiveTrigger MinWindowWidth="0" />
                     </VisualState.StateTriggers>
                     <VisualState.Setters>
+                        <Setter Target="Root.Padding" Value="24,32,24,48" />
                         <Setter Target="HeroPosterRow.Height" Value="Auto" />
                         <Setter Target="HeroCopyRow.Height" Value="Auto" />
                         <Setter Target="HeroPosterColumn.Width" Value="Auto" />
@@ -182,9 +184,19 @@
             </VisualStateGroup>
         </VisualStateManager.VisualStateGroups>
         <Grid x:Name="PageContent">
+            <InfoBar
+                x:Name="PathCopiedInfoBar"
+                IsOpen="False"
+                Severity="Success"
+                IsClosable="True"
+                VerticalAlignment="Top"
+                HorizontalAlignment="Center"
+                MaxWidth="650"
+                Canvas.ZIndex="100"
+                Margin="0,8,0,0" />
             <StackPanel>
                 <Border BorderBrush="{ThemeResource ControlStrokeColorSecondaryBrush}" BorderThickness="0,0,0,1" Padding="0,0,0,32">
-                    <Grid x:Name="HeroGrid" ColumnSpacing="32">
+                    <Grid x:Name="HeroGrid" ColumnSpacing="32" RowSpacing="32">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition x:Name="HeroPosterColumn" Width="420" />
                             <ColumnDefinition x:Name="HeroCopyColumn" Width="*" />
@@ -346,7 +358,7 @@
                         </StackPanel>
                     </Grid>
                 </Border>
-                <StackPanel Margin="0,32,0,0" Spacing="16">
+                <StackPanel Margin="0,32,0,0" Spacing="24">
                     <Grid>
                         <StackPanel Spacing="4">
                             <TextBlock x:Name="SeasonsTitleText" Style="{StaticResource SubtitleTextBlockStyle}" FontSize="20" FontWeight="SemiBold" />
@@ -360,7 +372,8 @@
                                   HorizontalScrollMode="Enabled"
                                   VerticalScrollMode="Disabled"
                                   VerticalScrollBarVisibility="Disabled"
-                                  Padding="0,4,0,8">
+                                  Padding="0,4,0,8"
+                                  KeyDown="SeasonTabs_KeyDown">
                         <ItemsRepeater x:Name="SeasonTabsRepeater">
                             <ItemsRepeater.Layout>
                                 <StackLayout Orientation="Horizontal" Spacing="8" />
@@ -370,6 +383,7 @@
                                     <Grid Margin="0,0,8,0">
                                         <Button
                                             Click="SeasonTab_Click"
+                                            KeyDown="SeasonTabs_KeyDown"
                                             Tag="{x:Bind}"
                                             AutomationProperties.Name="{x:Bind Title}"
                                             Style="{StaticResource TvDetailsSelectedButtonStyle}"
@@ -378,6 +392,7 @@
                                         </Button>
                                         <Button
                                             Click="SeasonTab_Click"
+                                            KeyDown="SeasonTabs_KeyDown"
                                             Tag="{x:Bind}"
                                             AutomationProperties.Name="{x:Bind Title}"
                                             Style="{StaticResource TvDetailsButtonStyle}"
@@ -391,9 +406,9 @@
                     </ScrollViewer>
 
                     <!-- Episode Cards List -->
-                    <ItemsRepeater x:Name="EpisodesRepeater" Margin="0,8,0,0">
+                    <ItemsRepeater x:Name="EpisodesRepeater" Margin="0,16,0,0">
                         <ItemsRepeater.Layout>
-                            <StackLayout Spacing="12" />
+                            <StackLayout Spacing="16" />
                         </ItemsRepeater.Layout>
                         <ItemsRepeater.ItemTemplate>
                             <DataTemplate x:DataType="models:EpisodeDisplayRecord">
@@ -404,7 +419,7 @@
                                     BorderThickness="1"
                                     CornerRadius="8"
                                     Opacity="{x:Bind RowOpacity}"
-                                    Padding="16,12">
+                                    Padding="16,16">
                                     <Grid ColumnSpacing="16">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="192" />
@@ -545,7 +560,7 @@
                                             <Button
                                                 AutomationProperties.Name="{x:Bind MarkWatchedLabel, Mode=OneWay}"
                                                 Click="EpisodeMarkWatched_Click"
-                                                IsEnabled="{x:Bind CanMarkWatched}"
+                                                IsEnabled="{x:Bind CanMarkWatched, Mode=OneWay}"
                                                 Style="{StaticResource SubtleIconActionButtonStyle}"
                                                 Tag="{x:Bind}"
                                                 ToolTipService.ToolTip="{x:Bind MarkWatchedLabel, Mode=OneWay}">

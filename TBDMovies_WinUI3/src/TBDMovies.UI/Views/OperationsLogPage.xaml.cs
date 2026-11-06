@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using TBDMovies.Application.Dto;
 using TBDMovies.Domain.Core.Operations;
 using TBDMovies.UI.Models;
@@ -24,6 +24,7 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
     /// exists; the constructor applies the initial filter instead.
     /// </summary>
     private readonly bool _isReady;
+    private bool _isActivated;
 
     public OperationsLogPage()
     {
@@ -36,6 +37,7 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
 
     public void Activate()
     {
+        _isActivated = true;
         CopiedInfoBar.IsOpen = false;
         Refresh();
     }
@@ -59,6 +61,16 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
 
     private void Refresh()
     {
+        if (!_isActivated)
+        {
+            EntriesCountText.Text = LocalizationService.Format("EntriesFormat", 0);
+            LogSurface.Visibility = Visibility.Collapsed;
+            EmptyState.Visibility = Visibility.Collapsed;
+            CopyLogButton.IsEnabled = false;
+            SaveLogButton.IsEnabled = false;
+            return;
+        }
+
         var entries = BuildEntries();
         OperationsRepeater.ItemsSource = entries;
         EntriesCountText.Text = LocalizationService.Format(
@@ -98,6 +110,12 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
     /// </summary>
     private IReadOnlyList<OperationLogRecord> BuildEntries()
     {
+        if (!_isActivated)
+        {
+            _visible = [];
+            return [];
+        }
+
         IReadOnlyList<OperationHistoryItem> items;
 
         try

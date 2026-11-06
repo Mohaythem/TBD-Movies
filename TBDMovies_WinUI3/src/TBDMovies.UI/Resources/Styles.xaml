@@ -1,4 +1,4 @@
-﻿<!--
+<!--
     TBDMovies control styles.
 
     Every style derives from a native WinUI 3 style (DefaultButtonStyle, AccentButtonStyle,
@@ -326,6 +326,95 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!--
+        Pill capsule tab/list selector (My Lists, Library Media Type).
+        Distinct rounded capsule shape with highlighted active state and clean hover feedback.
+    -->
+    <Style x:Key="TabPillItemStyle" TargetType="RadioButton">
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="Padding" Value="14,5,14,5" />
+        <Setter Property="Background" Value="{ThemeResource TabPillBackground}" />
+        <Setter Property="BorderBrush" Value="{ThemeResource TabPillBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Foreground" Value="{ThemeResource TabPillForeground}" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="UseSystemFocusVisuals" Value="True" />
+        <Setter Property="FocusVisualMargin" Value="-2" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RadioButton">
+                    <Grid
+                        x:Name="PillRoot"
+                        Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="12">
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal" />
+                                <VisualState x:Name="PointerOver">
+                                    <VisualState.Setters>
+                                        <Setter Target="HoverOverlay.Opacity" Value="1" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Pressed">
+                                    <VisualState.Setters>
+                                        <Setter Target="HoverOverlay.Opacity" Value="0.6" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                                <VisualState x:Name="Disabled">
+                                    <VisualState.Setters>
+                                        <Setter Target="PillContent.Foreground" Value="{ThemeResource TextFillColorDisabledBrush}" />
+                                        <Setter Target="PillRoot.Opacity" Value="0.5" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                            <VisualStateGroup x:Name="CheckStates">
+                                <VisualState x:Name="Unchecked" />
+                                <VisualState x:Name="Indeterminate" />
+                                <VisualState x:Name="Checked">
+                                    <VisualState.Setters>
+                                        <Setter Target="CheckedPlate.Opacity" Value="1" />
+                                        <Setter Target="PillContent.Foreground" Value="{ThemeResource TabPillForegroundChecked}" />
+                                    </VisualState.Setters>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+
+                        <!-- Unchecked hover overlay -->
+                        <Border
+                            x:Name="HoverOverlay"
+                            Background="{ThemeResource TabPillBackgroundPointerOver}"
+                            CornerRadius="11"
+                            Opacity="0" />
+
+                        <!-- Active / Checked highlighted capsule -->
+                        <Border
+                            x:Name="CheckedPlate"
+                            Background="{ThemeResource TabPillBackgroundChecked}"
+                            BorderBrush="{ThemeResource TabPillBorderBrushChecked}"
+                            BorderThickness="1"
+                            CornerRadius="11"
+                            Opacity="0" />
+
+                        <ContentPresenter
+                            x:Name="PillContent"
+                            Margin="{TemplateBinding Padding}"
+                            HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                            VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                            Content="{TemplateBinding Content}"
+                            ContentTemplate="{TemplateBinding ContentTemplate}"
+                            Foreground="{TemplateBinding Foreground}"
+                            TextWrapping="NoWrap" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
 
     <!--  Page scaffolding  -->
     <Style x:Key="PageScrollViewerStyle" TargetType="ScrollViewer">

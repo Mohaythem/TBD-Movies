@@ -1,4 +1,4 @@
-﻿<Page
+<Page
     x:Class="TBDMovies.UI.Views.LibraryPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -18,13 +18,29 @@
         </ItemsPanelTemplate>
 
         <!-- Library-only adaptive posters. Shared templates retain their fixed geometry. -->
-        <DataTemplate x:Key="LibraryMovieCardTemplate" x:DataType="models:MovieRecord">
+        <DataTemplate x:Key="LibraryMovieCardTemplate" x:DataType="models:LibraryCardItem">
             <StackPanel Spacing="8">
                 <Border
                     Height="{StaticResource MediaCardPosterHeight}"
                     HorizontalAlignment="Stretch" SizeChanged="PosterSurface_SizeChanged" Style="{StaticResource PosterSurfaceStyle}">
                     <Grid>
                         <Image Source="{x:Bind PosterSource, Mode=OneWay}" Stretch="UniformToFill" />
+                        <!-- Floating Media Badge -->
+                        <Border
+                            Margin="8"
+                            Padding="6,2"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Top"
+                            Background="{ThemeResource ArtworkBadgeBackgroundBrush}"
+                            BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="{ThemeResource ControlCornerRadius}"
+                            Canvas.ZIndex="2">
+                            <TextBlock
+                                Foreground="{ThemeResource ArtworkBadgeForegroundBrush}"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind MediaTypeBadge, Mode=OneWay}" />
+                        </Border>
                         <!--
                             Graceful fallback when there is no poster/metadata: an inset, bordered panel that
                             shows the title clearly inside the poster area. The margin keeps the border off the
@@ -89,13 +105,20 @@
                         </Border>
                     </Grid>
                 </Border>
-            <TextBlock
-                Height="{StaticResource MediaCardTitleHeight}"
-                MaxLines="2"
-                Style="{StaticResource BodyStrongTextBlockStyle}"
-                Text="{x:Bind Title}"
-                TextTrimming="CharacterEllipsis"
-                TextWrapping="Wrap" />
+                <StackPanel Spacing="2">
+                    <TextBlock
+                        Height="{StaticResource MediaCardTitleHeight}"
+                        MaxLines="2"
+                        Style="{StaticResource BodyStrongTextBlockStyle}"
+                        Text="{x:Bind Title}"
+                        TextTrimming="CharacterEllipsis"
+                        TextWrapping="Wrap" />
+                    <TextBlock
+                        Style="{StaticResource SecondaryCaptionTextStyle}"
+                        Text="{x:Bind SecondaryLine}"
+                        TextTrimming="CharacterEllipsis"
+                        TextWrapping="NoWrap" />
+                </StackPanel>
             </StackPanel>
         </DataTemplate>
 
@@ -129,6 +152,52 @@
                         TextWrapping="NoWrap" />
                 </StackPanel>
             </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate x:Key="LibraryHorizontalCardTemplate" x:DataType="models:LibraryCardItem">
+            <Border CornerRadius="8">
+                <Grid Background="{ThemeResource PosterMoviePlaceholderBrush}">
+                    <FontIcon Margin="0,0,0,60" FontSize="36" Glyph="&#xE8B2;"
+                              Foreground="{ThemeResource PosterGlyphForegroundBrush}" />
+                    <Image Source="{x:Bind HorizontalArtworkSource, Mode=OneWay}" Stretch="UniformToFill" FlowDirection="LeftToRight" />
+                    <Image Width="88" Height="132" Margin="12,8,12,0"
+                           HorizontalAlignment="Right" VerticalAlignment="Top"
+                           Source="{x:Bind PosterSource, Mode=OneWay}" Stretch="Uniform"
+                           Visibility="{x:Bind HorizontalPosterVisibility, Mode=OneWay}" FlowDirection="LeftToRight" />
+                    <Border Background="{ThemeResource LandscapeCardScrimBrush}" />
+                    <!-- Floating Media Badge -->
+                    <Border Margin="12" Padding="6,2" HorizontalAlignment="Left" VerticalAlignment="Top"
+                            Background="{ThemeResource ArtworkBadgeBackgroundBrush}"
+                            BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="{ThemeResource ControlCornerRadius}"
+                            Canvas.ZIndex="2">
+                        <TextBlock Foreground="{ThemeResource ArtworkBadgeForegroundBrush}"
+                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                   Text="{x:Bind MediaTypeBadge, Mode=OneWay}" />
+                    </Border>
+                    <Border Margin="80,12,12,12" Padding="6,2" HorizontalAlignment="Left" VerticalAlignment="Top"
+                            Background="{ThemeResource LayerFillColorAltBrush}"
+                            CornerRadius="{ThemeResource ControlCornerRadius}"
+                            Visibility="{x:Bind ReviewMatchBadgeVisibility, Mode=OneWay}">
+                        <TextBlock Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                   Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind ReviewMatchLabel}"
+                                   TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind ReviewMatchLabel}" />
+                    </Border>
+                    <StackPanel Margin="14" VerticalAlignment="Bottom" Spacing="2">
+                        <TextBlock Foreground="{ThemeResource LandscapeCardTextBrush}"
+                                   Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Title}"
+                                   MaxLines="2" TextTrimming="CharacterEllipsis" TextWrapping="Wrap"
+                                   ToolTipService.ToolTip="{x:Bind Title}" />
+                        <TextBlock Foreground="{ThemeResource LandscapeCardSecondaryTextBrush}"
+                                   Style="{StaticResource SecondaryCaptionTextStyle}" Text="{x:Bind YearText}"
+                                   TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" Visibility="{x:Bind YearVisibility}" />
+                        <TextBlock Foreground="{ThemeResource LandscapeCardSecondaryTextBrush}"
+                                   Style="{StaticResource SecondaryCaptionTextStyle}" Text="{x:Bind HorizontalSummaryLine}"
+                                   TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                    </StackPanel>
+                </Grid>
+            </Border>
         </DataTemplate>
     </Page.Resources>
 
@@ -187,53 +256,53 @@
                         Style="{StaticResource PageSearchBoxStyle}"
                         TextChanged="SearchBox_TextChanged" />
                     <!--
-                        Sort reads as one control: a split button whose face shows the active criterion
-                        and its direction (e.g. "Date added ↓"). Pressing the face reverses the direction;
-                        the dropdown chevron opens the criteria list. This keeps the Search + Sort + Filter
-                        group aligned without a separate direction button.
+                        Sort reads as one control: a DropDownButton single rectangle with flyout options.
                     -->
-                    <SplitButton x:Name="SortButton" Click="SortSplit_Click">
+                    <DropDownButton x:Name="SortButton">
                         <StackPanel Orientation="Horizontal" Spacing="6">
-                            <TextBlock x:Name="SortButtonText" VerticalAlignment="Center" />
                             <FontIcon
-                                x:Name="SortDirectionGlyph"
-                                VerticalAlignment="Center"
                                 FontFamily="{StaticResource SymbolThemeFontFamily}"
-                                FontSize="12"
-                                Glyph="&#xE70D;" />
+                                FontSize="14"
+                                Glyph="&#xE8CB;" />
+                            <TextBlock x:Name="SortButtonText" VerticalAlignment="Center" />
                         </StackPanel>
-                        <SplitButton.Flyout>
+                        <DropDownButton.Flyout>
                             <MenuFlyout Placement="BottomEdgeAlignedRight">
-                                <RadioMenuFlyoutItem
-                                    x:Name="SortAddedItem"
-                                    Click="SortItem_Click"
-                                    GroupName="LibrarySort"
-                                    IsChecked="False"
-                                    Tag="added" />
-                                <RadioMenuFlyoutItem
+                                <ToggleMenuFlyoutItem
                                     x:Name="SortRecentItem"
                                     Click="SortItem_Click"
-                                    GroupName="LibrarySort"
                                     IsChecked="True"
                                     Tag="recent" />
-                                <RadioMenuFlyoutItem
+                                <ToggleMenuFlyoutItem
                                     x:Name="SortTitleItem"
                                     Click="SortItem_Click"
-                                    GroupName="LibrarySort"
                                     Tag="title" />
-                                <RadioMenuFlyoutItem
+                                <ToggleMenuFlyoutItem
+                                    x:Name="SortAddedItem"
+                                    Click="SortItem_Click"
+                                    IsChecked="False"
+                                    Tag="added" />
+                                <ToggleMenuFlyoutItem
                                     x:Name="SortYearItem"
                                     Click="SortItem_Click"
-                                    GroupName="LibrarySort"
                                     Tag="year" />
-                                <RadioMenuFlyoutItem
-                                    x:Name="SortMetadataItem"
+                                <ToggleMenuFlyoutItem
+                                    x:Name="SortRatingItem"
                                     Click="SortItem_Click"
-                                    GroupName="LibrarySort"
-                                    Tag="metadata" />
+                                    Tag="rating" />
+                                <MenuFlyoutSeparator />
+                                <ToggleMenuFlyoutItem
+                                    x:Name="SortAscendingItem"
+                                    Click="SortDirectionItem_Click"
+                                    Tag="asc" />
+                                <ToggleMenuFlyoutItem
+                                    x:Name="SortDescendingItem"
+                                    Click="SortDirectionItem_Click"
+                                    IsChecked="True"
+                                    Tag="desc" />
                             </MenuFlyout>
-                        </SplitButton.Flyout>
-                    </SplitButton>
+                        </DropDownButton.Flyout>
+                    </DropDownButton>
                     <Button
                         x:Name="FilterButton"
                         Style="{StaticResource SubtleControlButtonStyle}">
@@ -245,55 +314,57 @@
                             <TextBlock x:Name="FilterButtonText" />
                         </StackPanel>
                         <Button.Flyout>
-                            <MenuFlyout Placement="BottomEdgeAlignedRight">
-                                <RadioMenuFlyoutItem
-                                    x:Name="FilterAllItem"
-                                    Click="FilterItem_Click"
-                                    GroupName="LibraryAvailability"
-                                    IsChecked="True"
-                                    Tag="all" />
-                                <RadioMenuFlyoutItem
-                                    x:Name="FilterLocalItem"
-                                    Click="FilterItem_Click"
-                                    GroupName="LibraryAvailability"
-                                    Tag="local" />
-                                <RadioMenuFlyoutItem
-                                    x:Name="FilterRemoteItem"
-                                    Click="FilterItem_Click"
-                                    GroupName="LibraryAvailability"
-                                    Tag="remote" />
-                            </MenuFlyout>
+                            <Flyout Placement="BottomEdgeAlignedRight">
+                                <StackPanel Spacing="12" Padding="4" MinWidth="180">
+                                    <CheckBox
+                                        x:Name="FilterLocalCheckBox"
+                                        Click="FilterCheckBox_Click"
+                                        Content="Local" />
+                                    <CheckBox
+                                        x:Name="FilterWatchedCheckBox"
+                                        Click="FilterCheckBox_Click"
+                                        Content="Watched" />
+                                </StackPanel>
+                            </Flyout>
                         </Button.Flyout>
                     </Button>
                 </StackPanel>
             </Grid>
 
-            <!--  Media-type tabs, below the header command bar and aligned with the content.  -->
-            <Grid ColumnSpacing="12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <StackPanel x:Name="MediaTypeSelector" Style="{StaticResource TabStripStyle}">
+            <!-- Command row: Media type filter tabs on the leading edge, ViewModeSelector on the trailing edge -->
+            <Grid VerticalAlignment="Center">
+                <StackPanel
+                    x:Name="MediaTypeSelector"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal"
+                    Spacing="6">
                     <RadioButton
-                        x:Name="MoviesTypeItem"
+                        x:Name="MediaTypeAllItem"
                         Checked="MediaTypeItem_Checked"
                         GroupName="LibraryMediaType"
                         IsChecked="True"
-                        Style="{StaticResource TabStripItemStyle}"
-                        Tag="movies" />
+                        Style="{StaticResource TabPillItemStyle}"
+                        Tag="all" />
                     <RadioButton
-                        x:Name="ShowsTypeItem"
+                        x:Name="MediaTypeMoviesItem"
                         Checked="MediaTypeItem_Checked"
                         GroupName="LibraryMediaType"
-                        Style="{StaticResource TabStripItemStyle}"
+                        Style="{StaticResource TabPillItemStyle}"
+                        Tag="movies" />
+                    <RadioButton
+                        x:Name="MediaTypeShowsItem"
+                        Checked="MediaTypeItem_Checked"
+                        GroupName="LibraryMediaType"
+                        Style="{StaticResource TabPillItemStyle}"
                         Tag="shows" />
                 </StackPanel>
+
                 <SelectorBar
                     x:Name="ViewModeSelector"
-                    Grid.Column="1"
                     AutomationProperties.AutomationId="LibraryViewMode"
                     HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
                     SelectionChanged="ViewModeSelector_SelectionChanged">
                     <SelectorBarItem
                         x:Name="GridViewModeItem"
@@ -356,7 +427,7 @@
                 ScrollViewer.VerticalScrollMode="Enabled"
                 ItemClick="MoviesGrid_ItemClick"
                 ContextRequested="LibraryGrid_ContextRequested"
-                ItemTemplate="{StaticResource MovieCardTemplate}"
+                ItemTemplate="{StaticResource LibraryMovieCardTemplate}"
                 Style="{StaticResource MediaGridViewStyle}"
                 ItemsPanel="{StaticResource LibraryMoviePosterItemsPanel}"
                 Loaded="LibraryGrid_Loaded"

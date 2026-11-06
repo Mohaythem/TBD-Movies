@@ -34,7 +34,7 @@ public sealed record SeasonRecord(int Id, int Number, IReadOnlyList<EpisodeRecor
 {
     public int WatchedCount => Episodes.Count(episode => episode.Watched);
 
-    public int LocalCount => Episodes.Count(episode => episode.HasLocalFile);
+    public int LocalCount => Episodes.Count(episode => episode.HasLocalFile && !episode.IsFileMissing);
 
     public int MissingCount => Episodes.Count(episode => episode.IsFileMissing);
 }
@@ -54,7 +54,7 @@ public sealed record EpisodeSelectionRecord(
 /// episodes themselves, so the catalog answers with these instead of the grid having to read - or invent -
 /// a season list to count.
 /// </summary>
-public sealed record ShowCounts(int Seasons, int Episodes, int Local, int Missing);
+public sealed record ShowCounts(int Seasons, int Episodes, int Local, int Missing, int Watched = 0);
 
 public sealed record TVShowRecord(
     int Id,
@@ -82,7 +82,9 @@ public sealed record TVShowRecord(
 
     public int EpisodeCount => Counts?.Episodes ?? Seasons.Sum(season => season.Episodes.Count);
 
-    public int WatchedEpisodeCount => Seasons.Sum(season => season.WatchedCount);
+    public int WatchedEpisodeCount => Counts is not null ? Counts.Watched : Seasons.Sum(season => season.WatchedCount);
+
+    public bool Watched => WatchedEpisodeCount > 0;
 
     public int LocalEpisodeCount => Counts?.Local ?? Seasons.Sum(season => season.LocalCount);
 
@@ -123,7 +125,7 @@ public sealed record TVShowRecord(
             season.Number,
             episode.Number,
             episode)))
-        .FirstOrDefault(selection => selection.Episode.HasLocalFile && !selection.Episode.Watched);
+        .FirstOrDefault(selection => selection.Episode.HasLocalFile && !selection.Episode.IsFileMissing && !selection.Episode.Watched);
 }
 
 /// <summary>A TV show as it appears inside a media grid: poster, title and one progress line.</summary>
@@ -327,7 +329,8 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
         string? stillReference = null,
         string? overview = null,
         string? airDate = null,
-        IEnumerable<string?>? fallbackArtReferences = null)
+        IEnumerable<string?>? fallbackArtReferences = null,
+        string? filePath = null)
     {
         ShowId = showId;
         SeasonNumber = seasonNumber;
@@ -344,6 +347,7 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
         StillReference = stillReference;
         Overview = overview ?? string.Empty;
         AirDate = airDate ?? string.Empty;
+        FilePath = filePath;
 
         var artCandidates = new List<string?>();
         if (!string.IsNullOrWhiteSpace(stillReference))
@@ -379,6 +383,7 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
     public string Overview { get; }
     public Visibility OverviewVisibility => !string.IsNullOrWhiteSpace(Overview) ? Visibility.Visible : Visibility.Collapsed;
     public string AirDate { get; }
+    public string? FilePath { get; }
 
     public ImageSource? ArtworkSource => _artwork?.Source;
     public Visibility ArtworkVisibility => ArtworkSource is not null ? Visibility.Visible : Visibility.Collapsed;
@@ -456,6 +461,10 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
                 _isFileMissing = value;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsFileMissing)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsMissing)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasActions)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanOpenFile)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanMarkWatched)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RowOpacity)));
             }
         }
     }
@@ -481,10 +490,10 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
         : Labels.MarkWatched;
 
     public bool IsMissing => _isFileMissing;
-    public bool CanMarkWatched => _hasLocalFile;
-    public bool CanOpenFile => _hasLocalFile && !_storageUnavailable;
-    public bool HasActions => HasLocalFile;
-    public double RowOpacity => HasLocalFile ? 1.0 : 0.8;
+    public bool CanMarkWatched => _hasLocalFile || _isFileMissing;
+    public bool CanOpenFile => _hasLocalFile && !_storageUnavailable && !_isFileMissing;
+    public bool HasActions => _hasLocalFile || _isFileMissing;
+    public double RowOpacity => (_hasLocalFile || _isFileMissing) ? 1.0 : 0.8;
 }
 
 /// <summary>Localized labels shared by every episode row, so templates never call the service.</summary>

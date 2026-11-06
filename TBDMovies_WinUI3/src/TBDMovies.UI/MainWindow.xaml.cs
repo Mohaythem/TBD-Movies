@@ -17,15 +17,15 @@ namespace TBDMovies.UI;
 public sealed partial class MainWindow : Window
 {
     private readonly HomePage _homePage = new();
-    private readonly LibraryPage _libraryPage = new();
-    private readonly MyListsPage _myListsPage = new();
-    private readonly AddMediaPage _addMediaPage = new();
-    private readonly CheckLibraryPage _checkLibraryPage = new();
-    private readonly TraktPage _traktPage = new();
-    private readonly SettingsPage _settingsPage = new();
-    private readonly OperationsLogPage _operationsLogPage = new();
-    private readonly MovieDetailsPage _movieDetailsPage = new();
-    private readonly TVShowDetailsPage _showDetailsPage = new();
+    private LibraryPage? _libraryPage;
+    private MyListsPage? _myListsPage;
+    private AddMediaPage? _addMediaPage;
+    private CheckLibraryPage? _checkLibraryPage;
+    private TraktPage? _traktPage;
+    private SettingsPage? _settingsPage;
+    private OperationsLogPage? _operationsLogPage;
+    private MovieDetailsPage? _movieDetailsPage;
+    private TVShowDetailsPage? _showDetailsPage;
     private string _detailsReturnDestination = "library";
     private AppWindow? _appWindow;
     private MinimumWindowSize? _minimumWindowSize;
@@ -96,30 +96,152 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// All pages are parented once and stay parented; navigation only flips Visibility, so every
-    /// page keeps its scroll offset, selected tab and typed search text across navigation.
+    /// Only the home page is parented at startup. Other pages are demand-instantiated, parented, and
+    /// localized when first navigated to, and stay parented thereafter. Navigation only flips Visibility,
+    /// so every page keeps its scroll offset, selected tab and typed search text across navigation.
     /// </summary>
     private void HostPages()
     {
-        Page[] pages =
-        [
-            _homePage,
-            _libraryPage,
-            _myListsPage,
-            _addMediaPage,
-            _traktPage,
-            _checkLibraryPage,
-            _settingsPage,
-            _operationsLogPage,
-            _movieDetailsPage,
-            _showDetailsPage,
-        ];
+        _homePage.Visibility = Visibility.Collapsed;
+        ContentHost.Children.Add(_homePage);
+    }
 
-        foreach (var page in pages)
+    private TPage HostLazyPage<TPage>(TPage page) where TPage : Page, ILocalizableView
+    {
+        page.Visibility = Visibility.Collapsed;
+        ContentHost.Children.Add(page);
+        page.ApplyLocalization();
+        return page;
+    }
+
+    private LibraryPage GetLibraryPage()
+    {
+        if (_libraryPage is null)
         {
-            page.Visibility = Visibility.Collapsed;
-            ContentHost.Children.Add(page);
+            _libraryPage = new LibraryPage();
+            _libraryPage.MovieSelected += OpenMovie;
+            _libraryPage.ShowSelected += OpenShow;
+            HostLazyPage(_libraryPage);
         }
+        return _libraryPage;
+    }
+
+    private MyListsPage GetMyListsPage()
+    {
+        if (_myListsPage is null)
+        {
+            _myListsPage = new MyListsPage();
+            _myListsPage.MovieSelected += OpenMovie;
+            _myListsPage.ShowSelected += OpenShow;
+            HostLazyPage(_myListsPage);
+        }
+        return _myListsPage;
+    }
+
+    private AddMediaPage GetAddMediaPage()
+    {
+        if (_addMediaPage is null)
+        {
+            _addMediaPage = new AddMediaPage();
+            _addMediaPage.MediaRegistered += (_, _) =>
+            {
+                _libraryPage?.InvalidateCatalog();
+                if (ReferenceEquals(_currentPage, _libraryPage))
+                {
+                    _libraryPage?.Activate();
+                }
+                _homePage.Activate();
+            };
+            HostLazyPage(_addMediaPage);
+        }
+        return _addMediaPage;
+    }
+
+    private CheckLibraryPage GetCheckLibraryPage()
+    {
+        if (_checkLibraryPage is null)
+        {
+            _checkLibraryPage = new CheckLibraryPage();
+            _checkLibraryPage.MovieReviewRequested += OpenMovieForReview;
+            HostLazyPage(_checkLibraryPage);
+        }
+        return _checkLibraryPage;
+    }
+
+    private TraktPage GetTraktPage()
+    {
+        if (_traktPage is null)
+        {
+            _traktPage = new TraktPage();
+            _traktPage.MovieSelected += (_, movieId) => OpenMovieById("trakt", movieId);
+            _traktPage.ShowSelected += (_, showId) => OpenShowById("trakt", showId);
+            _traktPage.SettingsRequested += (_, _) => Navigate("settings");
+            HostLazyPage(_traktPage);
+        }
+        return _traktPage;
+    }
+
+    private SettingsPage GetSettingsPage()
+    {
+        if (_settingsPage is null)
+        {
+            _settingsPage = new SettingsPage();
+            _settingsPage.OperationsLogRequested += (_, _) => Navigate("operations");
+            _settingsPage.LibraryDataChanged += (_, _) =>
+            {
+                _libraryPage?.InvalidateCatalog();
+                if (ReferenceEquals(_currentPage, _libraryPage))
+                {
+                    _libraryPage?.Activate();
+                }
+                _homePage.Activate();
+                if (ReferenceEquals(_currentPage, _myListsPage))
+                {
+                    _myListsPage?.Activate();
+                }
+                if (ReferenceEquals(_currentPage, _traktPage))
+                {
+                    _traktPage?.Activate();
+                }
+            };
+            HostLazyPage(_settingsPage);
+        }
+        return _settingsPage;
+    }
+
+    private OperationsLogPage GetOperationsLogPage()
+    {
+        if (_operationsLogPage is null)
+        {
+            _operationsLogPage = new OperationsLogPage();
+            _operationsLogPage.BackRequested += (_, _) => Navigate("settings");
+            HostLazyPage(_operationsLogPage);
+        }
+        return _operationsLogPage;
+    }
+
+    private MovieDetailsPage GetMovieDetailsPage()
+    {
+        if (_movieDetailsPage is null)
+        {
+            _movieDetailsPage = new MovieDetailsPage();
+            _movieDetailsPage.BackRequested += (_, _) => Navigate(_detailsReturnDestination);
+            _movieDetailsPage.MediaPathChanged += (_, _) => _libraryPage?.InvalidateCatalog();
+            _movieDetailsPage.ShowRequested += OpenShowById;
+            HostLazyPage(_movieDetailsPage);
+        }
+        return _movieDetailsPage;
+    }
+
+    private TVShowDetailsPage GetShowDetailsPage()
+    {
+        if (_showDetailsPage is null)
+        {
+            _showDetailsPage = new TVShowDetailsPage();
+            _showDetailsPage.BackRequested += (_, _) => Navigate(_detailsReturnDestination);
+            HostLazyPage(_showDetailsPage);
+        }
+        return _showDetailsPage;
     }
 
     private void ConfigureNativeWindow()
@@ -159,40 +281,7 @@ public sealed partial class MainWindow : Window
         _homePage.ActivityListRequested += (_, key) =>
         {
             Navigate("lists");
-            _myListsPage.SelectSystemList(key);
-        };
-        _libraryPage.MovieSelected += OpenMovie;
-        _libraryPage.ShowSelected += OpenShow;
-        _myListsPage.MovieSelected += OpenMovie;
-        _myListsPage.ShowSelected += OpenShow;
-        _movieDetailsPage.BackRequested += (_, _) => Navigate(_detailsReturnDestination);
-        _movieDetailsPage.MediaPathChanged += (_, _) => _libraryPage.InvalidateCatalog();
-        _movieDetailsPage.ShowRequested += OpenShowById;
-        _showDetailsPage.BackRequested += (_, _) => Navigate(_detailsReturnDestination);
-        _checkLibraryPage.MovieReviewRequested += OpenMovieForReview;
-        _traktPage.MovieSelected += (_, movieId) => OpenMovieById("trakt", movieId);
-        _traktPage.ShowSelected += (_, showId) => OpenShowById("trakt", showId);
-        _traktPage.SettingsRequested += (_, _) => Navigate("settings");
-        _settingsPage.OperationsLogRequested += (_, _) => Navigate("operations");
-        _settingsPage.LibraryDataChanged += (_, _) =>
-        {
-            _libraryPage.InvalidateCatalog();
-            _libraryPage.Activate();
-            _homePage.Activate();
-            _myListsPage.Activate();
-            if (ReferenceEquals(_currentPage, _traktPage))
-            {
-                _traktPage.Activate();
-            }
-        };
-        _operationsLogPage.BackRequested += (_, _) => Navigate("settings");
-
-        // Registering media changes the catalog every other page reads, so the cached pages are
-        // refreshed straight away instead of waiting for the next navigation.
-        _addMediaPage.MediaRegistered += (_, _) =>
-        {
-            _libraryPage.Activate();
-            _homePage.Activate();
+            GetMyListsPage().SelectSystemList(key);
         };
     }
 
@@ -203,21 +292,23 @@ public sealed partial class MainWindow : Window
     private void OpenMovie(object? sender, MovieRecord movie)
     {
         _detailsReturnDestination = ReturnDestinationFor(sender);
-        _movieDetailsPage.SetReturnDestination(_detailsReturnDestination);
-        _movieDetailsPage.LoadMovie(movie.Id);
+        var detailsPage = GetMovieDetailsPage();
+        detailsPage.SetReturnDestination(_detailsReturnDestination);
+        detailsPage.LoadMovie(movie.Id);
         Navigate("details");
-        if (ReferenceEquals(sender, _libraryPage) && _movieDetailsPage.IsLoadedSuccessfully)
-            RecordLibraryActivity(() => _libraryPage.RecordMovieOpened(movie.Id));
+        if (ReferenceEquals(sender, _libraryPage) && detailsPage.IsLoadedSuccessfully)
+            RecordLibraryActivity(() => _libraryPage?.RecordMovieOpened(movie.Id));
     }
 
     private void OpenShow(object? sender, TVShowRecord show)
     {
         _detailsReturnDestination = ReturnDestinationFor(sender);
-        _showDetailsPage.SetReturnDestination(_detailsReturnDestination);
-        _showDetailsPage.LoadShow(show.Id);
+        var detailsPage = GetShowDetailsPage();
+        detailsPage.SetReturnDestination(_detailsReturnDestination);
+        detailsPage.LoadShow(show.Id);
         Navigate("show");
-        if (ReferenceEquals(sender, _libraryPage) && _showDetailsPage.IsLoadedSuccessfully)
-            RecordLibraryActivity(() => _libraryPage.RecordShowOpened(show.Id));
+        if (ReferenceEquals(sender, _libraryPage) && detailsPage.IsLoadedSuccessfully)
+            RecordLibraryActivity(() => _libraryPage?.RecordShowOpened(show.Id));
     }
 
     private void RecordLibraryActivity(Action record)
@@ -225,7 +316,7 @@ public sealed partial class MainWindow : Window
         try { record(); }
         catch (Exception)
         {
-            _libraryPage.InvalidateCatalog();
+            _libraryPage?.InvalidateCatalog();
             _ = ShowActivityWarningAsync();
         }
     }
@@ -257,16 +348,18 @@ public sealed partial class MainWindow : Window
         {
             _detailsReturnDestination = origin;
         }
-        _showDetailsPage.SetReturnDestination(_detailsReturnDestination);
-        _showDetailsPage.LoadShow(showId);
+        var detailsPage = GetShowDetailsPage();
+        detailsPage.SetReturnDestination(_detailsReturnDestination);
+        detailsPage.LoadShow(showId);
         Navigate("show");
     }
 
     private void OpenMovieById(string origin, int movieId)
     {
         _detailsReturnDestination = origin;
-        _movieDetailsPage.SetReturnDestination(origin);
-        _movieDetailsPage.LoadMovie(movieId);
+        var detailsPage = GetMovieDetailsPage();
+        detailsPage.SetReturnDestination(origin);
+        detailsPage.LoadMovie(movieId);
         Navigate("details");
     }
 
@@ -277,8 +370,9 @@ public sealed partial class MainWindow : Window
     private void OpenMovieForReview(object? sender, int movieId)
     {
         _detailsReturnDestination = "check";
-        _movieDetailsPage.SetReturnDestination("check");
-        _movieDetailsPage.LoadMovie(movieId);
+        var detailsPage = GetMovieDetailsPage();
+        detailsPage.SetReturnDestination("check");
+        detailsPage.LoadMovie(movieId);
         Navigate("details");
     }
 
@@ -383,15 +477,15 @@ public sealed partial class MainWindow : Window
     {
         Page page = destination switch
         {
-            "library" => _libraryPage,
-            "trakt" => _traktPage,
-            "lists" => _myListsPage,
-            "add" => _addMediaPage,
-            "check" => _checkLibraryPage,
-            "settings" => _settingsPage,
-            "operations" => _operationsLogPage,
-            "details" => _movieDetailsPage,
-            "show" => _showDetailsPage,
+            "library" => GetLibraryPage(),
+            "trakt" => GetTraktPage(),
+            "lists" => GetMyListsPage(),
+            "add" => GetAddMediaPage(),
+            "check" => GetCheckLibraryPage(),
+            "settings" => GetSettingsPage(),
+            "operations" => GetOperationsLogPage(),
+            "details" => GetMovieDetailsPage(),
+            "show" => GetShowDetailsPage(),
             _ => _homePage,
         };
 
@@ -482,8 +576,8 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private void ApplyTheme()
     {
-        // Slate is a window-local overlay palette. Keeping it local means Light, Dark and
-        // High Contrast continue to resolve the framework resources from the app dictionaries.
+        // Dark theme uses the Slate navy palette (#18222D). Keeping it window-local means
+        // Light and High Contrast continue to resolve the framework resources cleanly.
         // Each brush is a new instance, so no shared WinUI brush is mutated during a switch.
         RootGrid.Resources = ThemeService.UsesSlateSurface
             && !_accessibilitySettings.HighContrast
@@ -492,9 +586,6 @@ public sealed partial class MainWindow : Window
 
         var targetTheme = ThemeService.ElementTheme;
 
-        // Slate and Dark share ElementTheme.Dark. When switching between Slate and Dark,
-        // RootGrid.RequestedTheme was already ElementTheme.Dark, so WinUI 3 does not trigger
-        // a property change event on RootGrid.RequestedTheme.
         // Temporarily toggling RequestedTheme to Default and then back to targetTheme forces
         // WinUI 3 to re-evaluate all theme resources throughout the visual tree (ShellNavigation,
         // ContentHost, and cached pages) without flashing white (Default inherits the window's dark base).
@@ -503,18 +594,6 @@ public sealed partial class MainWindow : Window
             RootGrid.RequestedTheme = ElementTheme.Default;
         }
         RootGrid.RequestedTheme = targetTheme;
-
-        ShellNavigation.RequestedTheme = ElementTheme.Default;
-        ShellNavigation.RequestedTheme = targetTheme;
-
-        ContentHost.RequestedTheme = ElementTheme.Default;
-        ContentHost.RequestedTheme = targetTheme;
-
-        foreach (var page in ContentHost.Children.OfType<FrameworkElement>())
-        {
-            page.RequestedTheme = ElementTheme.Default;
-            page.RequestedTheme = targetTheme;
-        }
 
         SlateSurface.Visibility = ThemeService.UsesSlateSurface ? Visibility.Visible : Visibility.Collapsed;
         UpdateNavigationPaneBackgrounds();
@@ -526,7 +605,7 @@ public sealed partial class MainWindow : Window
 
     private void UpdateNavigationPaneBackgrounds()
     {
-        // Slate and Dark share ElementTheme.Dark. Bind the pane brushes explicitly on each app
+        // Dark theme uses the Slate navy palette (#18222D). Bind the pane brushes explicitly on each app
         // theme change, using element-resolved colors so native theme/contrast updates stay live.
         var resources = (ResourceDictionary)ShellNavigation.Resources.ThemeDictionaries["Default"];
         var overlay = (SolidColorBrush)resources["NavigationViewDefaultPaneBackground"];
@@ -666,23 +745,15 @@ public sealed partial class MainWindow : Window
 
     private void LocalizeViews()
     {
-        ILocalizableView[] views =
-        [
-            _homePage,
-            _libraryPage,
-            _myListsPage,
-            _addMediaPage,
-            _traktPage,
-            _checkLibraryPage,
-            _settingsPage,
-            _operationsLogPage,
-            _movieDetailsPage,
-            _showDetailsPage,
-        ];
-
-        foreach (var view in views)
-        {
-            view.ApplyLocalization();
-        }
+        _homePage.ApplyLocalization();
+        _libraryPage?.ApplyLocalization();
+        _myListsPage?.ApplyLocalization();
+        _addMediaPage?.ApplyLocalization();
+        _traktPage?.ApplyLocalization();
+        _checkLibraryPage?.ApplyLocalization();
+        _settingsPage?.ApplyLocalization();
+        _operationsLogPage?.ApplyLocalization();
+        _movieDetailsPage?.ApplyLocalization();
+        _showDetailsPage?.ApplyLocalization();
     }
 }

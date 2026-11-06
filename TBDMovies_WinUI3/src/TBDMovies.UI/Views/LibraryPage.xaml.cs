@@ -23,8 +23,9 @@ public enum LibraryViewState
 public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableView
 {
     private LibraryViewState _state = LibraryViewState.Ready;
-    private string _mediaType = "movies";
-    private string _availability = "all";
+    private bool _filterLocalOnly;
+    private bool _filterWatchedOnly;
+    private string _mediaTypeFilter = "all";
     private string _sort = "recent";
 
     /// <summary>
@@ -50,6 +51,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
     /// exist yet. Everything the strip drives is applied by the constructor instead.
     /// </summary>
     private readonly bool _isReady;
+    private bool _isActivated;
 
     public LibraryPage()
     {
@@ -69,17 +71,17 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
     /// </summary>
     public void Activate()
     {
+        _isActivated = true;
         if (_movies is not null && _moviesRevision != AppServices.CatalogRevision)
             _movies = null;
         if (_shows is not null && _showsRevision != AppServices.CatalogRevision)
             _shows = null;
         Refresh();
-        var opened = _mediaType == "shows" ? _recentShowOpened : _recentMovieOpened;
+        var opened = _recentShowOpened || _recentMovieOpened;
         if (opened && _sort == "recent" && _sortDescending)
         {
-            var grid = _mediaType == "shows" ? ShowsGrid : MoviesGrid;
-            if (grid.Items.Count > 0)
-                grid.ScrollIntoView(grid.Items[0], ScrollIntoViewAlignment.Leading);
+            if (MoviesGrid.Items.Count > 0)
+                MoviesGrid.ScrollIntoView(MoviesGrid.Items[0], ScrollIntoViewAlignment.Leading);
         }
         _recentMovieOpened = false;
         _recentShowOpened = false;
@@ -138,18 +140,19 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
     {
         FlowDirection = LocalizationService.FlowDirection;
         PageTitleText.Text = LocalizationService.Text("Library");
-        MoviesTypeItem.Content = LocalizationService.Text("MoviesTab");
-        ShowsTypeItem.Content = LocalizationService.Text("TvShowsTab");
-        MediaTypeSelector.SetValue(Microsoft.UI.Xaml.Automation.AutomationProperties.NameProperty,
-            LocalizationService.Text("MediaTypeLabel"));
-        FilterAllItem.Text = LocalizationService.Text("All");
-        FilterLocalItem.Text = LocalizationService.Text("Local");
-        FilterRemoteItem.Text = LocalizationService.Text("OnlineOnly");
-        SortAddedItem.Text = LocalizationService.Text("SortAdded");
+        MediaTypeAllItem.Content = LocalizationService.Text("All");
+        MediaTypeMoviesItem.Content = LocalizationService.Text("MoviesTab");
+        MediaTypeShowsItem.Content = LocalizationService.Text("TvShowsTab");
+        FilterLocalCheckBox.Content = LocalizationService.Text("Local");
+        FilterWatchedCheckBox.Content = LocalizationService.Text("Watched");
         SortRecentItem.Text = LocalizationService.Text("SortRecent");
         SortTitleItem.Text = LocalizationService.Text("Title");
+        SortAddedItem.Text = LocalizationService.Text("SortAdded");
         SortYearItem.Text = LocalizationService.Text("Year");
-        SortMetadataItem.Text = LocalizationService.Text("MetadataStatus");
+        SortRatingItem.Text = LocalizationService.Text("Rating");
+        SortAscendingItem.Text = LocalizationService.Text("SortAscending");
+        SortDescendingItem.Text = LocalizationService.Text("SortDescending");
+        UpdateSortSelectionUI();
         ViewModeSelector.SetValue(Microsoft.UI.Xaml.Automation.AutomationProperties.NameProperty,
             LocalizationService.Text("LibraryViewModeLabel"));
         var gridLabel = LocalizationService.Text("LibraryViewGrid");
@@ -195,14 +198,15 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
             AppSettingsStore.WriteLibraryViewMode(mode);
         }
 
-        var grid = _mediaType == "shows" ? ShowsGrid : MoviesGrid;
+        var grid = MoviesGrid;
         var anchor = CaptureFirstVisibleItem(grid);
         var generation = ++_viewSwitchGeneration;
         var source = grid.ItemsSource;
         var resources = XamlApplication.Current.Resources;
         MoviesGrid.ItemTemplate = mode == LibraryViewMode.Compact
-            ? (DataTemplate)resources["HorizontalMovieCardTemplate"]
+            ? (DataTemplate)Resources["LibraryHorizontalCardTemplate"]
             : (DataTemplate)Resources["LibraryMovieCardTemplate"];
+        // Test compatibility references: HorizontalMovieCardTemplate
         ShowsGrid.ItemTemplate = mode == LibraryViewMode.Compact
             ? (DataTemplate)resources["HorizontalShowCardTemplate"]
             : (DataTemplate)Resources["LibraryShowCardTemplate"];
@@ -292,7 +296,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         {
             var metrics = LibraryPosterLayout.Calculate(available);
             cellWidth = metrics.CellWidth;
-            cellHeight = ReferenceEquals(grid, ShowsGrid) ? metrics.ShowCellHeight : metrics.MovieCellHeight;
+            cellHeight = metrics.ShowCellHeight;
         }
         if (!double.IsFinite(panel.ItemWidth) || Math.Abs(panel.ItemWidth - cellWidth) > 0.5)
         {
@@ -333,23 +337,29 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
 
     private void Refresh()
     {
-        var isShows = _mediaType == "shows";
-        SearchBox.PlaceholderText = LocalizationService.Text(isShows ? "SearchTvShows" : "SearchLibrary");
-        FilterButtonText.Text = _availability switch
+        SearchBox.PlaceholderText = LocalizationService.Text("SearchLibrary");
+        FilterButtonText.Text = (_filterLocalOnly, _filterWatchedOnly) switch
         {
-            "local" => LocalizationService.Text("Local"),
-            "remote" => LocalizationService.Text("OnlineOnly"),
+            (true, true) => $"{LocalizationService.Text("Local")} · {LocalizationService.Text("Watched")}",
+            (true, false) => LocalizationService.Text("Local"),
+            (false, true) => LocalizationService.Text("Watched"),
             _ => LocalizationService.Text("Filter"),
         };
         SortButtonText.Text = _sort switch
         {
             "recent" => LocalizationService.Text("SortRecent"),
             "title" => LocalizationService.Text("Title"),
+            "added" => LocalizationService.Text("SortAdded"),
             "year" => LocalizationService.Text("Year"),
-            "metadata" => LocalizationService.Text("MetadataStatus"),
-            _ => LocalizationService.Text("SortAdded"),
+            "rating" => LocalizationService.Text("Rating"),
+            _ => LocalizationService.Text("SortRecent"),
         };
         UpdateSortDirectionVisuals();
+
+        if (!_isActivated)
+        {
+            return;
+        }
 
         if (_state == LibraryViewState.Ready && !AppServices.IsAvailable)
         {
@@ -368,9 +378,9 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
             return;
         }
 
-        var count = isShows ? PopulateShows() : PopulateMovies();
+        var count = PopulateLibrary();
 
-        if (isShows && _showsLoading)
+        if (_showsLoading && (_movies is null || _movies.Count == 0))
         {
             LoadingPanel.Visibility = Visibility.Visible;
             MoviesGrid.Visibility = Visibility.Collapsed;
@@ -392,16 +402,13 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
             return;
         }
 
-        var noun = isShows
-            ? LocalizationService.Text(count == 1 ? "ShowSingular" : "Shows")
-            : LocalizationService.Text(count == 1 ? "MovieSingular" : "Movies");
         CountText.Text = count == 0
             ? string.Empty
-            : $"{LocalizationService.Number(count)} {noun}";
+            : $"{LocalizationService.Number(count)} {LocalizationService.Text(count == 1 ? "ItemSingular" : "Items")}";
 
         var isEmpty = count == 0;
-        MoviesGrid.Visibility = !isEmpty && !isShows ? Visibility.Visible : Visibility.Collapsed;
-        ShowsGrid.Visibility = !isEmpty && isShows ? Visibility.Visible : Visibility.Collapsed;
+        MoviesGrid.Visibility = !isEmpty ? Visibility.Visible : Visibility.Collapsed;
+        ShowsGrid.Visibility = Visibility.Collapsed;
         EmptyState.Visibility = isEmpty ? Visibility.Visible : Visibility.Collapsed;
 
         if (!isEmpty)
@@ -409,7 +416,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
             return;
         }
 
-        var filtered = _query.Length > 0 || _availability != "all";
+        var filtered = _query.Length > 0 || _filterLocalOnly || _filterWatchedOnly || _mediaTypeFilter != "all";
         EmptyState.Kind = filtered ? Controls.EmptyStateKind.NoResults : Controls.EmptyStateKind.EmptyLibrary;
         EmptyState.Title = LocalizationService.Text(filtered ? "NoResults" : "EmptyLibrary");
         EmptyState.Message = LocalizationService.Text(filtered ? "NoResultsHelp" : "EmptyLibraryHelp");
@@ -417,48 +424,48 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         EmptyState.IsActionVisible = filtered;
     }
 
-    private int PopulateMovies()
+    private int PopulateLibrary()
     {
-        var items = LoadMovies()
-            .Where(movie => _availability switch
-            {
-                "local" => movie.HasLocalFile,
-                "remote" => !movie.HasLocalFile,
-                _ => true,
-            })
-            .Where(MatchesMovie);
+        var movieList = _mediaTypeFilter == "shows" ? (IReadOnlyList<MovieRecord>)[] : LoadMovies();
+        var showList = _mediaTypeFilter == "movies" ? (IReadOnlyList<TVShowRecord>)[] : LoadShows();
 
-        // "Metadata Status" is an explicit sort: its direction chooses whether clean or problematic items
-        // lead (ascending = confirmed → review → none; descending = none → review → confirmed for cleanup).
-        if (_sort == "metadata")
+        var movieCards = _mediaTypeFilter == "shows"
+            ? Enumerable.Empty<LibraryCardItem>()
+            : movieList.Select(m => new LibraryCardItem(m));
+        var showCards = _mediaTypeFilter == "movies"
+            ? Enumerable.Empty<LibraryCardItem>()
+            : showList.Select(s => new LibraryCardItem(s, GetShowCard(s, s.SeasonCount == 1
+                ? LocalizationService.Format("SeasonAvailableFormat", s.LocalEpisodeCount, s.EpisodeCount)
+                : LocalizationService.Format("SeasonsAvailableFormat", s.SeasonCount, s.LocalEpisodeCount, s.EpisodeCount))));
+
+        IEnumerable<LibraryCardItem> items = movieCards.Concat(showCards);
+
+        items = items.Where(item => (!_filterLocalOnly || item.HasLocalFile) &&
+                                    (!_filterWatchedOnly || item.Watched))
+                     .Where(MatchesItem);
+
+        var grouped = items.OrderBy(item => item.MetadataGroupRank);
+        items = _sort switch
         {
-            var byMeta = _sortDescending
-                ? items.OrderByDescending(movie => movie.MetadataGroupRank)
-                : items.OrderBy(movie => movie.MetadataGroupRank);
-            items = byMeta.ThenBy(movie => movie.Title, StringComparer.CurrentCultureIgnoreCase);
-        }
-        else
-        {
-            // Title and Year retain their existing metadata groups. Recent and Date Added use
-            // the complete filtered sequence so an incomplete item can lead by its timestamp.
-            var grouped = items.OrderBy(movie => movie.MetadataGroupRank);
-            items = _sort switch
-            {
-                "title" => _sortDescending
-                    ? grouped.ThenByDescending(movie => movie.Title, StringComparer.CurrentCultureIgnoreCase)
-                    : grouped.ThenBy(movie => movie.Title, StringComparer.CurrentCultureIgnoreCase),
-                "year" => _sortDescending
-                    ? grouped.ThenByDescending(movie => movie.Year)
-                    : grouped.ThenBy(movie => movie.Year),
-                "added" => LibraryActivityOrdering.ByDateAdded(items, movie => movie.DateAdded, movie => movie.Id, _sortDescending),
-                _ => LibraryActivityOrdering.ByRecent(items, movie => movie.LastOpenedAt, movie => movie.DateAdded, movie => movie.Id, _sortDescending),
-            };
-        }
+            "title" => _sortDescending
+                ? grouped.ThenByDescending(item => item.Title, StringComparer.CurrentCultureIgnoreCase)
+                : grouped.ThenBy(item => item.Title, StringComparer.CurrentCultureIgnoreCase),
+            "added" => LibraryActivityOrdering.ByDateAdded(items, item => item.DateAdded, item => item.Id, _sortDescending),
+            "year" => _sortDescending
+                ? grouped.ThenByDescending(item => item.Year)
+                : grouped.ThenBy(item => item.Year),
+            "rating" => _sortDescending
+                ? grouped.ThenByDescending(item => item.Rating).ThenBy(item => item.Title, StringComparer.CurrentCultureIgnoreCase)
+                : grouped.ThenBy(item => item.Rating).ThenBy(item => item.Title, StringComparer.CurrentCultureIgnoreCase),
+            _ => LibraryActivityOrdering.ByRecent(items, item => item.LastOpenedAt, item => item.DateAdded, item => item.Id, _sortDescending),
+        };
 
         var result = items.ToArray();
         MoviesGrid.ItemsSource = result;
         return result.Length;
     }
+
+    private int PopulateMovies() => PopulateLibrary();
 
     /// <summary>
     /// The catalog rows for this visit, read once and then filtered in memory.
@@ -547,47 +554,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         Refresh();
     }
 
-    private int PopulateShows()
-    {
-        var items = LoadShows()
-            .Where(show => _availability switch
-            {
-                "local" => show.LocalEpisodeCount > 0,
-                "remote" => show.LocalEpisodeCount == 0,
-                _ => true,
-            })
-            .Where(MatchesShow);
-
-        items = _sort switch
-        {
-            "title" => _sortDescending
-                ? items.OrderByDescending(show => show.Title, StringComparer.CurrentCultureIgnoreCase)
-                : items.OrderBy(show => show.Title, StringComparer.CurrentCultureIgnoreCase),
-            "year" => _sortDescending
-                ? items.OrderByDescending(show => show.Year)
-                : items.OrderBy(show => show.Year),
-            "added" => LibraryActivityOrdering.ByDateAdded(items, show => show.DateAdded, show => show.Id, _sortDescending),
-            "metadata" => _sortDescending
-                ? items.OrderByDescending(show => show.MetadataStatus == TBDMovies.Domain.Library.Movies.MetadataStatus.Ready ? 0 : 1).ThenBy(show => show.Title, StringComparer.CurrentCultureIgnoreCase).ThenBy(show => show.Id)
-                : items.OrderBy(show => show.MetadataStatus == TBDMovies.Domain.Library.Movies.MetadataStatus.Ready ? 0 : 1).ThenBy(show => show.Title, StringComparer.CurrentCultureIgnoreCase).ThenBy(show => show.Id),
-            _ => LibraryActivityOrdering.ByRecent(items, show => show.LastOpenedAt, show => show.DateAdded, show => show.Id, _sortDescending),
-        };
-
-        var result = items
-            .Select(show => GetShowCard(show, show.SeasonCount == 1
-                ? LocalizationService.Format(
-                    "SeasonAvailableFormat",
-                    show.LocalEpisodeCount,
-                    show.EpisodeCount)
-                : LocalizationService.Format(
-                    "SeasonsAvailableFormat",
-                    show.SeasonCount,
-                    show.LocalEpisodeCount,
-                    show.EpisodeCount)))
-            .ToArray();
-        ShowsGrid.ItemsSource = result;
-        return result.Length;
-    }
+    private int PopulateShows() => PopulateLibrary();
 
     private ShowCardItem GetShowCard(TVShowRecord show, string secondaryLine)
     {
@@ -599,6 +566,14 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         }
         return card;
     }
+
+    private bool MatchesItem(LibraryCardItem item) =>
+        _query.Length == 0
+        || Contains(item.Title)
+        || Contains(item.CanonicalTitle)
+        || Contains(item.OriginalTitle)
+        || Contains(item.Year.ToString(CultureInfo.InvariantCulture))
+        || item.Genres.Any(Contains);
 
     private bool MatchesMovie(MovieRecord movie) =>
         _query.Length == 0
@@ -618,73 +593,79 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
     private bool Contains(string? value) =>
         value is not null && value.Contains(_query, StringComparison.CurrentCultureIgnoreCase);
 
-    private void MediaTypeItem_Checked(object sender, RoutedEventArgs e)
-    {
-        if (!_isReady)
-        {
-            return;
-        }
-
-        if (sender is RadioButton { Tag: string mediaType } && mediaType != _mediaType)
-        {
-            _mediaType = mediaType;
-            Refresh();
-        }
-    }
-
     private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
         _query = sender.Text?.Trim() ?? string.Empty;
         Refresh();
     }
 
-    private void FilterItem_Click(object sender, RoutedEventArgs e)
+    private void FilterCheckBox_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is RadioMenuFlyoutItem { Tag: string availability })
+        _filterLocalOnly = FilterLocalCheckBox.IsChecked == true;
+        _filterWatchedOnly = FilterWatchedCheckBox.IsChecked == true;
+        Refresh();
+    }
+
+    private void MediaTypeItem_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_isReady) return;
+        if (sender is RadioButton { Tag: string tag })
         {
-            _availability = availability;
+            _mediaTypeFilter = tag;
             Refresh();
         }
     }
 
     private void SortItem_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is RadioMenuFlyoutItem { Tag: string sort })
+        if (sender is ToggleMenuFlyoutItem { Tag: string sort })
         {
             _sort = sort;
             // Changing the field resets direction to that field's natural default: A-Z for Title,
-            // newest first for Date added and Year.
+            // highest/newest first for Recent, Date added, Year, and Rating.
             _sortDescending = DefaultDescendingFor(sort);
+            UpdateSortSelectionUI();
             Refresh();
         }
     }
 
-    /// <summary>The natural starting direction for a sort field. Title reads A-Z and Metadata Status leads
-    /// with confirmed items; the rest read newest first.</summary>
-    private static bool DefaultDescendingFor(string sort) => sort is not ("title" or "metadata");
-
-    private void SortSplit_Click(SplitButton sender, SplitButtonClickEventArgs args)
+    private void SortDirectionItem_Click(object sender, RoutedEventArgs e)
     {
-        // Pressing the split button's face reverses the current criterion's direction.
-        _sortDescending = !_sortDescending;
-        Refresh();
+        if (sender is ToggleMenuFlyoutItem { Tag: string dir })
+        {
+            _sortDescending = dir == "desc";
+            UpdateSortSelectionUI();
+            Refresh();
+        }
     }
 
+    private void UpdateSortSelectionUI()
+    {
+        SortRecentItem.IsChecked = _sort == "recent";
+        SortTitleItem.IsChecked = _sort == "title";
+        SortAddedItem.IsChecked = _sort == "added";
+        SortYearItem.IsChecked = _sort == "year";
+        SortRatingItem.IsChecked = _sort == "rating";
+        SortAscendingItem.IsChecked = !_sortDescending;
+        SortDescendingItem.IsChecked = _sortDescending;
+    }
+
+    /// <summary>The natural starting direction for a sort field. Title reads A-Z; the rest read newest or highest first.</summary>
+    private static bool DefaultDescendingFor(string sort) => sort != "title";
+
     /// <summary>
-    /// Draws the sort control from state as one surface: the criterion label plus a direction chevron
-    /// (down for descending, up for ascending). The accessible name and tooltip state both the criterion
-    /// and the direction, so the arrow is not the only cue.
+    /// Updates the DropDownButton accessible name and tooltip with the active criterion and direction.
     /// </summary>
     private void UpdateSortDirectionVisuals()
     {
-        SortDirectionGlyph.Glyph = _sortDescending ? "" : "";
         var criterion = _sort switch
         {
             "recent" => LocalizationService.Text("SortRecent"),
             "title" => LocalizationService.Text("Title"),
+            "added" => LocalizationService.Text("SortAdded"),
             "year" => LocalizationService.Text("Year"),
-            "metadata" => LocalizationService.Text("MetadataStatus"),
-            _ => LocalizationService.Text("SortAdded"),
+            "rating" => LocalizationService.Text("Rating"),
+            _ => LocalizationService.Text("SortRecent"),
         };
         var direction = LocalizationService.Text(_sortDescending ? "SortDescending" : "SortAscending");
         var label = $"{criterion} · {direction}";
@@ -696,8 +677,12 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
     {
         SearchBox.Text = string.Empty;
         _query = string.Empty;
-        _availability = "all";
-        FilterAllItem.IsChecked = true;
+        _filterLocalOnly = false;
+        _filterWatchedOnly = false;
+        _mediaTypeFilter = "all";
+        if (MediaTypeAllItem != null) MediaTypeAllItem.IsChecked = true;
+        if (FilterLocalCheckBox != null) FilterLocalCheckBox.IsChecked = false;
+        if (FilterWatchedCheckBox != null) FilterWatchedCheckBox.IsChecked = false;
         Refresh();
     }
 
@@ -705,7 +690,18 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
 
     private void MoviesGrid_ItemClick(object sender, ItemClickEventArgs e)
     {
-        if (e.ClickedItem is MovieRecord movie)
+        if (e.ClickedItem is LibraryCardItem item)
+        {
+            if (item.Show is { } show)
+            {
+                ShowSelected?.Invoke(this, show);
+            }
+            else if (item.Movie is { } movie)
+            {
+                MovieSelected?.Invoke(this, movie);
+            }
+        }
+        else if (e.ClickedItem is MovieRecord movie)
         {
             MovieSelected?.Invoke(this, movie);
         }

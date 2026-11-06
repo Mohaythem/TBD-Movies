@@ -21,7 +21,7 @@
 ; self-contained build output contains the PRI, the XBFs, the .NET runtime and the Windows App Runtime
 ; and launches correctly (verified). PDBs and the nested publish folder are excluded.
 #ifndef PayloadDir
-#define PayloadDir "..\src\TBDMovies.UI\bin\x64\Release\net10.0-windows10.0.22621\win-x64"
+#define PayloadDir "..\src\TBDMovies.UI\bin\Release\net10.0-windows10.0.22621\win-x64"
 #endif
 #define IconFile "..\src\TBDMovies.UI\Assets\TBD-Movies.ico"
 

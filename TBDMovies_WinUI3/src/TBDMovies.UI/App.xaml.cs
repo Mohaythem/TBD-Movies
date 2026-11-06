@@ -23,9 +23,19 @@ public partial class App : Microsoft.UI.Xaml.Application
         // and exit cleanly instead. This never weakens LibraryInstanceGuard - it acts on the same refusal, only earlier.
         if (!AppServices.TryClaimSingleInstance())
         {
-            TryActivateExistingInstance();
-            Environment.Exit(0);
-            return;
+            if (TryActivateExistingInstance())
+            {
+                Environment.Exit(0);
+                return;
+            }
+
+            // If the zombie process was terminated, retry claiming ownership.
+            System.Threading.Thread.Sleep(200);
+            if (!AppServices.TryClaimSingleInstance())
+            {
+                Environment.Exit(0);
+                return;
+            }
         }
 
         // Keep ownership on this UI thread. Complete migrations and journal recovery before any
@@ -36,7 +46,7 @@ public partial class App : Microsoft.UI.Xaml.Application
         _window.Activate();
     }
 
-    private static void TryActivateExistingInstance()
+    private static bool TryActivateExistingInstance()
     {
         try
         {
@@ -45,7 +55,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                 .FirstOrDefault(p => p.Id != current.Id);
 
             if (other is null)
-                return;
+                return false;
 
             var hWnd = other.MainWindowHandle;
             if (hWnd == IntPtr.Zero)
@@ -75,11 +85,25 @@ public partial class App : Microsoft.UI.Xaml.Application
             {
                 ShowWindowAsync(hWnd, SW_RESTORE);
                 SetForegroundWindow(hWnd);
+                return true;
             }
+
+            // Existing process has no visible window (zombie / hanging / crashed).
+            // Terminate it so stale locks are released and startup can proceed.
+            try
+            {
+                other.Kill();
+                other.WaitForExit(1000);
+            }
+            catch
+            {
+            }
+
+            return false;
         }
         catch
         {
-            // Best effort: never prevent a clean exit on secondary launch.
+            return false;
         }
     }
 
@@ -126,4 +150,3 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
     }
 }
-

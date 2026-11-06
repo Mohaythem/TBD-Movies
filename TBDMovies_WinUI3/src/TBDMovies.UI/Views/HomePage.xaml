@@ -256,6 +256,9 @@
                         ItemClick="RecentGrid_ItemClick"
                         ItemTemplate="{StaticResource MovieCardTemplate}"
                         Style="{StaticResource MediaGridViewStyle}">
+                        <GridView.ItemContainerTransitions>
+                            <TransitionCollection />
+                        </GridView.ItemContainerTransitions>
                         <GridView.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <ItemsWrapGrid

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -30,6 +30,9 @@ public sealed class MetadataMatchingService
     private static readonly Regex TechnicalToken = new(
         @"(?i)\b(?:2160p|1440p|1080p|720p|576p|480p|4k|uhd|bluray|blu-ray|bdrip|brrip|web-dl|webrip|hdtv|dvdrip|hdrip|remux|x264|x265|h\.?264|h\.?265|hevc|av1|xvid|divx)\b",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex TrailingYearRegex = new(
+        @"^(.*?)\s*\(?((?:19|20)\d{2})\)?\s*$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private static readonly Regex StandaloneWebRelease = new(
         @"(?i)\bWEB(?=\s*(?:[- ]?(?:DL|Rip)\b|(?:2160p|1440p|1080p|720p|576p|480p|4k|uhd|bluray|blu-ray|bdrip|brrip|hdtv|dvdrip|hdrip|remux|x264|x265|h\.?264|h\.?265|hevc|av1|xvid|divx)\b))",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -53,15 +56,33 @@ public sealed class MetadataMatchingService
 
     public async Task<MatchDecision> SearchMovieCandidatesAsync(string title, int? year, CancellationToken ct = default)
     {
-        var scoringTitle = NormalizeSearchTitle(title);
+        var rawTitle = title?.Trim() ?? string.Empty;
+        var scoringTitle = NormalizeSearchTitle(rawTitle);
+        int? effectiveYear = year;
+        string? titleWithoutYear = null;
+
+        var yearMatch = TrailingYearRegex.Match(scoringTitle);
+        if (yearMatch.Success && yearMatch.Groups.Count >= 3)
+        {
+            var stripped = yearMatch.Groups[1].Value.Trim();
+            if (!string.IsNullOrWhiteSpace(stripped))
+            {
+                titleWithoutYear = stripped;
+                if (!effectiveYear.HasValue && int.TryParse(yearMatch.Groups[2].Value, out var parsedYear) && parsedYear >= 1880 && parsedYear <= DateTime.UtcNow.Year + 5)
+                {
+                    effectiveYear = parsedYear;
+                }
+            }
+        }
+
         var aggregate = new List<MovieCandidate>();
         MatchDecision? latest = null;
 
-        foreach (var query in BuildSearchQueries(title))
+        foreach (var query in BuildSearchQueries(rawTitle, titleWithoutYear))
         {
-            var candidates = await _metadataProvider.SearchMoviesAsync(new MovieSearchQuery(query, year), ct);
+            var candidates = await _metadataProvider.SearchMoviesAsync(new MovieSearchQuery(query, effectiveYear), ct);
             aggregate.AddRange(candidates);
-            var decision = MetadataScorer.Score(scoringTitle, year, DistinctMovies(aggregate));
+            var decision = MetadataScorer.Score(scoringTitle, effectiveYear, DistinctMovies(aggregate));
             latest = decision;
 
             // A clear winner is sufficient evidence; do not spend additional provider calls after
@@ -72,7 +93,7 @@ public sealed class MetadataMatchingService
             }
         }
 
-        return latest ?? MetadataScorer.Score(scoringTitle, year, Array.Empty<MovieCandidate>());
+        return latest ?? MetadataScorer.Score(scoringTitle, effectiveYear, Array.Empty<MovieCandidate>());
     }
 
     public async Task<Movie> MatchMovieAsync(
@@ -139,7 +160,7 @@ public sealed class MetadataMatchingService
         uow.Commit();
         if (!string.IsNullOrWhiteSpace(metadata.PosterReference) && _posterService != null)
         {
-            _ = _posterService.EnsurePosterCachedAsync(candidate.Provider, metadata.PosterReference, ct);
+            _ = _posterService.EnsurePosterCachedAsync(candidate.Provider, metadata.PosterReference, CancellationToken.None);
         }
         return updatedMovie;
     }
@@ -214,22 +235,41 @@ public sealed class MetadataMatchingService
         uow.Commit();
         if (!string.IsNullOrWhiteSpace(metadata.PosterReference) && _posterService != null)
         {
-            _ = _posterService.EnsurePosterCachedAsync(provider, metadata.PosterReference, ct);
+            _ = _posterService.EnsurePosterCachedAsync(provider, metadata.PosterReference, CancellationToken.None);
         }
         return updatedMovie;
     }
 
     public async Task<TvMatchDecision> SearchTvCandidatesAsync(string title, int? year, CancellationToken ct = default)
     {
-        var scoringTitle = NormalizeSearchTitle(title);
+        var rawTitle = title?.Trim() ?? string.Empty;
+        var scoringTitle = NormalizeSearchTitle(rawTitle);
+        int? effectiveYear = year;
+        string? titleWithoutYear = null;
+
+        var yearMatch = TrailingYearRegex.Match(scoringTitle);
+        if (yearMatch.Success && yearMatch.Groups.Count >= 3)
+        {
+            var stripped = yearMatch.Groups[1].Value.Trim();
+            if (!string.IsNullOrWhiteSpace(stripped))
+            {
+                titleWithoutYear = stripped;
+                if (!effectiveYear.HasValue && int.TryParse(yearMatch.Groups[2].Value, out var parsedYear) && parsedYear >= 1880 && parsedYear <= DateTime.UtcNow.Year + 5)
+                {
+                    effectiveYear = parsedYear;
+                }
+            }
+        }
+
         var aggregate = new List<TvCandidate>();
         TvMatchDecision? latest = null;
 
-        foreach (var query in BuildSearchQueries(title))
+        foreach (var query in BuildSearchQueries(rawTitle, titleWithoutYear))
         {
-            var candidates = await _metadataProvider.SearchTvAsync(new TvSearchQuery(query, year), ct);
+            var candidates = await _metadataProvider.SearchTvAsync(new TvSearchQuery(query, effectiveYear), ct);
             aggregate.AddRange(candidates);
-            var decision = MetadataScorer.ScoreTv(scoringTitle, year, DistinctTv(aggregate));
+
+            var decision = MetadataScorer.ScoreTv(scoringTitle, effectiveYear, DistinctTv(aggregate));
             latest = decision;
             if (decision.Status == MatchStatus.Matched)
             {
@@ -237,23 +277,30 @@ public sealed class MetadataMatchingService
             }
         }
 
-        return latest ?? MetadataScorer.ScoreTv(scoringTitle, year, Array.Empty<TvCandidate>());
+        return latest ?? MetadataScorer.ScoreTv(scoringTitle, effectiveYear, Array.Empty<TvCandidate>());
     }
 
     /// <summary>
-    /// Produces at most three deterministic queries: the user's text, a release-noise-free title,
-    /// and the scorer's punctuation/case-normalized form. Provider failures are deliberately not
-    /// caught here, so authentication/network errors remain service errors rather than no-match.
+    /// Produces deterministic queries: optionally a year-stripped title, the user's text,
+    /// a release-noise-free title, and the scorer's punctuation/case-normalized form. Provider failures
+    /// are deliberately not caught here, so authentication/network errors remain service errors rather than no-match.
     /// </summary>
-    private static IReadOnlyList<string> BuildSearchQueries(string? title)
+    private static IReadOnlyList<string> BuildSearchQueries(string? title, string? titleWithoutYear = null)
     {
         var raw = title?.Trim() ?? string.Empty;
         var cleaned = NormalizeSearchTitle(raw);
         var normalized = MetadataScorer.NormalizeTitle(cleaned);
         var queries = new List<string>(MaxSearchQueries);
+        if (!string.IsNullOrWhiteSpace(titleWithoutYear))
+        {
+            AddQuery(queries, titleWithoutYear);
+        }
         AddQuery(queries, raw);
         AddQuery(queries, cleaned);
-        AddQuery(queries, normalized);
+        if (queries.Count < MaxSearchQueries)
+        {
+            AddQuery(queries, normalized);
+        }
         return queries;
     }
 
@@ -575,7 +622,7 @@ public sealed class MetadataMatchingService
 
         if (!string.IsNullOrWhiteSpace(showMetadata.PosterReference) && _posterService != null)
         {
-            _ = _posterService.EnsurePosterCachedAsync(provider, showMetadata.PosterReference, ct);
+            _ = _posterService.EnsurePosterCachedAsync(provider, showMetadata.PosterReference, CancellationToken.None);
         }
         return updatedShow;
     }

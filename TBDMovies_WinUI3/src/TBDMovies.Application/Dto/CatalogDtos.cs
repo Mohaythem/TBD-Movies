@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using TBDMovies.Application.External;
@@ -11,7 +11,7 @@ using TBDMovies.Domain.Library.Personal;
 
 namespace TBDMovies.Application.Dto;
 
-public record MovieListItem(int Id, string Title, int? Year, string? PosterReference, bool IsMissing, bool HasPendingMetadata, int FileCount = 1, bool ReviewMatch = false, DateTimeOffset DateAdded = default, DateTimeOffset? LastOpenedAt = null, string? BackdropReference = null, string? CustomDisplayTitle = null, string? CanonicalTitle = null);
+public record MovieListItem(int Id, string Title, int? Year, string? PosterReference, bool IsMissing, bool HasPendingMetadata, int FileCount = 1, bool ReviewMatch = false, DateTimeOffset DateAdded = default, DateTimeOffset? LastOpenedAt = null, string? BackdropReference = null, string? CustomDisplayTitle = null, string? CanonicalTitle = null, bool Watched = false, string? ExternalId = null);
 
 /// <summary>
 /// A user-created custom list for the UI. Identity is the stable <paramref name="Id" />; the UI shows the

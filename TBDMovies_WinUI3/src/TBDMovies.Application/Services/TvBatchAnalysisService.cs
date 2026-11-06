@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -58,7 +58,9 @@ public sealed class TvBatchAnalysisService : ITvBatchAnalysisService
         "videos",
         "video",
         "incomplete",
-        "completed"
+        "completed",
+        "torrents",
+        "torrent"
     };
 
     public TvBatchAnalysisResult Analyze(string rootPath, IReadOnlyList<DiscoveredMedia> items)
@@ -232,7 +234,8 @@ public sealed class TvBatchAnalysisService : ITvBatchAnalysisService
             }
 
             if (titleSource == TvEvidenceSource.Filename && !string.IsNullOrWhiteSpace(folderShowTitle)
-                && NormalizeKey(effectiveTitle!) != NormalizeKey(folderShowTitle))
+                && NormalizeKey(effectiveTitle!) != NormalizeKey(folderShowTitle)
+                && NormalizeKey(effectiveTitle!) != NormalizeKey(StripSeasonAndYear(folderShowTitle)))
             {
                 warnings.Add(new TvBatchWarning(TvBatchWarningCode.FolderConflict,
                     "Filename and folder name identify different series. Confirm the series identity."));
@@ -685,6 +688,12 @@ public sealed class TvBatchAnalysisService : ITvBatchAnalysisService
         {
             return Path.GetFileName(filePath);
         }
+    }
+
+    private static string StripSeasonAndYear(string title)
+    {
+        var cleaned = Regex.Replace(title, @"\s*(?:\(\s*\d{4}\s*\)|\b\d{4}\b|(?:season|series|s|(?:ال)?موسم)[\s._\-:]*\d{1,3})\s*$", "", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant).Trim();
+        return string.IsNullOrWhiteSpace(cleaned) ? title : cleaned;
     }
 
     private static string NormalizeKey(string value)

@@ -24,15 +24,19 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     private IReadOnlyList<HomeActivityCard> _continueSource = [];
     private IReadOnlyList<WatchHistoryCardRecord> _historyCards = [];
     private readonly PostHandoffRequestLifetime _playbackRequests = new();
+    private int _renderedContinueCount = -1;
+    private int _renderedHistoryCount = -1;
+    private int _renderedRecentCount = -1;
 
     public HomePage()
     {
         this.InitializeComponent();
+        RecentGrid.ItemContainerTransitions = [];
+        this.SizeChanged += HomePage_SizeChanged;
         ContinueRowGrid.SizeChanged += HomePage_SizeChanged;
         RecentRowGrid.SizeChanged += RecentRowGrid_SizeChanged;
         ContextRequested += Home_ContextRequested;
         ApplyLocalization();
-        Activate();
     }
 
     public event EventHandler<MovieRecord>? MovieSelected;
@@ -50,10 +54,12 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         _history = LoadHistory();
         StatsRepeater.ItemsSource = BuildStats();
         _continueSource = BuildContinueWatching();
-        ContinueRepeater.ItemsSource = _continueSource;
         _historyCards = BuildHistoryCards();
         UpdateContinueVisibility();
         UpdateHistoryVisibility();
+        _renderedContinueCount = -1;
+        _renderedHistoryCount = -1;
+        _renderedRecentCount = -1;
         UpdateActivityShelves();
     }
 
@@ -76,17 +82,14 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         SeeAllButton.Content = LocalizationService.Text("SeeAll");
         ContinueSeeAllButton.Content = LocalizationService.Text("SeeAll");
         HistorySeeAllButton.Content = LocalizationService.Text("SeeAll");
+        ContinueEmptyState.Title = LocalizationService.Text("NothingToContinue");
+        ContinueEmptyState.Message = LocalizationService.Text("NothingToContinueHelp");
+        HistoryEmptyState.Title = LocalizationService.Text("NothingWatched");
+        HistoryEmptyState.Message = LocalizationService.Text("NothingWatchedHelp");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ContinueSeeAllButton,
             $"{LocalizationService.Text("SeeAll")}: {LocalizationService.Text("ContinueWatching")}");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(HistorySeeAllButton,
             $"{LocalizationService.Text("SeeAll")}: {LocalizationService.Text("RecentlyWatched")}");
-        StatsRepeater.ItemsSource = BuildStats();
-        _continueSource = BuildContinueWatching();
-        ContinueRepeater.ItemsSource = _continueSource;
-        _historyCards = BuildHistoryCards();
-        UpdateContinueVisibility();
-        UpdateHistoryVisibility();
-        UpdateActivityShelves();
     }
 
     /// <summary>A catalog read failure leaves Home with zero movies rather than taking the page down.</summary>
@@ -199,7 +202,7 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
 
     private void UpdateContinueVisibility()
     {
-        var hasAny = ContinueRepeater.ItemsSource is IEnumerable<HomeActivityCard> records && records.Any();
+        var hasAny = _continueSource.Count > 0;
         ContinueRowGrid.Visibility = hasAny
             ? Microsoft.UI.Xaml.Visibility.Visible
             : Microsoft.UI.Xaml.Visibility.Collapsed;
@@ -216,7 +219,7 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
 
     private void UpdateHistoryVisibility()
     {
-        var hasAny = _history.Count > 0;
+        var hasAny = _historyCards.Count > 0;
         HistoryRowGrid.Visibility = hasAny ? Visibility.Visible : Visibility.Collapsed;
         HistoryEmptyState.Visibility = hasAny ? Visibility.Collapsed : Visibility.Visible;
         HistoryEmptyState.Title = LocalizationService.Text("NothingWatched");
@@ -234,24 +237,49 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
 
     private void RecentRowGrid_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateRecentShelf();
 
+    private double GetAvailableShelfWidth()
+    {
+        if (ContinueRowGrid.Visibility == Visibility.Visible && ContinueRowGrid.ActualWidth > 0)
+            return ContinueRowGrid.ActualWidth;
+        if (HistoryRowGrid.Visibility == Visibility.Visible && HistoryRowGrid.ActualWidth > 0)
+            return HistoryRowGrid.ActualWidth;
+        if (RecentRowGrid.Visibility == Visibility.Visible && RecentRowGrid.ActualWidth > 0)
+            return RecentRowGrid.ActualWidth;
+        if (double.IsFinite(ActualWidth) && ActualWidth > 64)
+            return ActualWidth - 64;
+        return ActualWidth;
+    }
+
     private void UpdateRecentShelf()
     {
         var width = RecentRowGrid.ActualWidth;
-        if (!double.IsFinite(width) || width <= 0) return;
+        if (!double.IsFinite(width) || width <= 0)
+        {
+            width = GetAvailableShelfWidth();
+            if (!double.IsFinite(width) || width <= 0) return;
+        }
+
         var cellWidth = (double)Microsoft.UI.Xaml.Application.Current.Resources["MediaCardItemWidth"];
+        var height = RecentRowGrid.ActualHeight > 0
+            ? RecentRowGrid.ActualHeight
+            : (double)Microsoft.UI.Xaml.Application.Current.Resources["MediaCardItemHeight"];
+
         RecentRowGrid.Clip = new RectangleGeometry
-            { Rect = new Windows.Foundation.Rect(0, 0, width, RecentRowGrid.ActualHeight) };
-        RecentGrid.ItemsSource = _movies.Take(HomeActivityLayout.CalculateItemsToRender(width, _movies.Count, cellWidth, 0)).ToArray();
+            { Rect = new Windows.Foundation.Rect(0, 0, width, height) };
+
+        var recentCount = HomeActivityLayout.CalculateItemsToRender(width, _movies.Count, cellWidth, 0);
+        if (recentCount != _renderedRecentCount)
+        {
+            _renderedRecentCount = recentCount;
+            RecentGrid.ItemsSource = _movies.Take(recentCount).ToArray();
+        }
         SeeAllButton.Visibility = HomeActivityLayout.ShouldShowSeeAll(width, _movies.Count, cellWidth, 0)
             ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateActivityShelves()
     {
-        var availableWidth = ContinueRowGrid.ActualWidth;
-        if (!double.IsFinite(availableWidth) || availableWidth <= 0)
-            availableWidth = ActualWidth;
-
+        var availableWidth = GetAvailableShelfWidth();
         if (double.IsFinite(availableWidth) && availableWidth > 0)
         {
             var clipRect = new Windows.Foundation.Rect(0, 0, availableWidth, 196);
@@ -262,13 +290,22 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         var continueRender = HomeActivityLayout.CalculateItemsToRender(availableWidth, _continueSource.Count);
         var historyRender = HomeActivityLayout.CalculateItemsToRender(availableWidth, _historyCards.Count);
 
-        ContinueRepeater.ItemsSource = _continueSource.Take(continueRender).ToArray();
-        HistoryRepeater.ItemsSource = _historyCards.Take(historyRender).ToArray();
+        if (continueRender != _renderedContinueCount)
+        {
+            _renderedContinueCount = continueRender;
+            ContinueRepeater.ItemsSource = _continueSource.Take(continueRender).ToArray();
+        }
+
+        if (historyRender != _renderedHistoryCount)
+        {
+            _renderedHistoryCount = historyRender;
+            HistoryRepeater.ItemsSource = _historyCards.Take(historyRender).ToArray();
+        }
 
         ContinueSeeAllButton.Visibility = HomeActivityLayout.ShouldShowSeeAll(availableWidth, _continueSource.Count)
             ? Visibility.Visible
             : Visibility.Collapsed;
-        HistorySeeAllButton.Visibility = HomeActivityLayout.ShouldShowSeeAll(availableWidth, _history.Count)
+        HistorySeeAllButton.Visibility = HomeActivityLayout.ShouldShowSeeAll(availableWidth, _historyCards.Count)
             ? Visibility.Visible
             : Visibility.Collapsed;
         UpdateRecentShelf();

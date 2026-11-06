@@ -262,6 +262,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         OpenFolderButton.IsEnabled = hasFile && !_isOrganizing;
         OrganizeButton.IsEnabled = MoveMovieButton.IsEnabled = hasFile && !_isOrganizing;
         MatchButton.IsEnabled = !_isOrganizing && !_isMatching;
+        MissingBadge.Visibility = !hasFile ? Visibility.Visible : Visibility.Collapsed;
 
         _history.Clear();
         foreach (var entry in movie.WatchHistory ?? [])
@@ -298,23 +299,49 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
             }
             catch (OperationCanceledException) { return; }
             catch (Exception) { /* Leave availability unknown; never mark storage failure as missing. */ }
+
+            bool fileMissingOnDisk = false;
+            if (path is not null && (unavailable is null || !unavailable.Contains(path)))
+            {
+                try
+                {
+                    if (!File.Exists(path))
+                    {
+                        fileMissingOnDisk = true;
+                        if (movie.MediaFileId is int fileId)
+                        {
+                            AppServices.MarkMediaFileMissing(fileId);
+                        }
+                    }
+                }
+                catch { }
+            }
+
             DispatcherQueue.TryEnqueue(() =>
             {
                 if (!request.IsCurrent || _movie.Id != movie.Id
                     || !string.Equals(_movie.FilePath, path, StringComparison.Ordinal)) return;
+
+                if (fileMissingOnDisk)
+                {
+                    _movie = _movie with { HasLocalFile = false };
+                }
+
                 foreach (var file in movie.Files)
                     _fileAvailability[file.FilePath] = unavailable is null ? "UnknownMedia" :
-                        unavailable.Contains(file.FilePath) ? "StorageUnavailable" : file.AvailabilityKey;
+                        unavailable.Contains(file.FilePath) ? "StorageUnavailable" :
+                        (fileMissingOnDisk && file.FilePath == path) ? "Missing" : file.AvailabilityKey;
                 LocalizeFileAvailability();
                 _storageUnavailable = path is not null && unavailable?.Contains(path) == true;
+                var effectiveHasLocalFile = _movie.HasLocalFile && !fileMissingOnDisk;
                 PresentText.Text = LocalizationService.Text(unavailable is null ? "UnknownMedia" :
-                    _storageUnavailable ? "StorageUnavailable" : movie.HasLocalFile ? "Present" : "Missing");
-                if (_storageUnavailable)
-                {
-                    PlayButton.IsEnabled = false;
-                    OpenFolderButton.IsEnabled = false;
-                    OrganizeButton.IsEnabled = MoveMovieButton.IsEnabled = false;
-                }
+                    _storageUnavailable ? "StorageUnavailable" : effectiveHasLocalFile ? "Present" : "Missing");
+
+                var canOpenFile = effectiveHasLocalFile && !_storageUnavailable && !_isOrganizing;
+                PlayButton.IsEnabled = canOpenFile;
+                OpenFolderButton.IsEnabled = canOpenFile;
+                OrganizeButton.IsEnabled = MoveMovieButton.IsEnabled = canOpenFile;
+                MissingBadge.Visibility = !effectiveHasLocalFile ? Visibility.Visible : Visibility.Collapsed;
             });
         });
     }
@@ -324,6 +351,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         Root.FlowDirection = LocalizationService.FlowDirection;
 
         KindText.Text = LocalizationService.Text("DetailsLibraryIdentity");
+        MissingBadgeText.Text = LocalizationService.Text("Missing");
         MovieTitleCopiedText.Text = LocalizationService.Text("TitleCopied");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(MovieTitleText, LocalizationService.Text("CustomTitleAccessibleHelp"));
         Root.Language = LocalizationService.Culture.Name;
@@ -381,8 +409,9 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
     /// </summary>
     private async void PlayButton_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(_movie.FilePath))
+        if (string.IsNullOrWhiteSpace(_movie.FilePath) || !_movie.HasLocalFile)
         {
+            PlayButton.IsEnabled = false;
             ReportMissingFile();
             return;
         }
@@ -409,8 +438,9 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
     /// <summary>Opens the containing folder with the file selected, which is what the design implies.</summary>
     private async void OpenFolderButton_Click(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(_movie.FilePath))
+        if (string.IsNullOrWhiteSpace(_movie.FilePath) || !_movie.HasLocalFile)
         {
+            OpenFolderButton.IsEnabled = false;
             ReportMissingFile();
             return;
         }
@@ -1154,6 +1184,14 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
             var refreshed = await Task.Run(() => AppServices.Matching.RefreshMovieMetadataAsync(movieId, request.Token));
             if (request.IsCurrent && refreshed != null)
             {
+                if (!string.IsNullOrWhiteSpace(refreshed.PosterReference))
+                {
+                    try
+                    {
+                        await AppServices.Poster.EnsurePosterCachedAsync(refreshed.Provider ?? "TMDB", refreshed.PosterReference, request.Token);
+                    }
+                    catch { }
+                }
                 SetMatchingState(false);
                 LoadMovie(movieId);
             }
@@ -1183,7 +1221,19 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
                 // unmatched duplicate whose chosen identity is already owned, it is merged into the owner
                 // and that owner is returned — so load whatever id came back, not the original.
                 var canonical = await Task.Run(() => AppServices.Matching.MatchMovieAsync(movieId, candidate, request.Token));
-                if (request.IsCurrent) { SetMatchingState(false); LoadMovie(canonical.Id); }
+                if (request.IsCurrent)
+                {
+                    if (!string.IsNullOrWhiteSpace(canonical.PosterReference))
+                    {
+                        try
+                        {
+                            await AppServices.Poster.EnsurePosterCachedAsync(canonical.Provider ?? "TMDB", canonical.PosterReference, request.Token);
+                        }
+                        catch { }
+                    }
+                    SetMatchingState(false);
+                    LoadMovie(canonical.Id);
+                }
             }
             catch (Exception error)
             {

@@ -6,6 +6,8 @@ using TBDMovies.UI.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace TBDMovies.UI.Views;
@@ -42,8 +44,8 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
     public static IReadOnlyDictionary<int, int> SelectedSeasonByShowId => _selectedSeasonByShowId;
     private IReadOnlyList<SeasonDisplayRecord> _seasons = [];
     private IReadOnlyList<SeasonTabItem> _seasonTabs = [];
-    private SeasonDisplayRecord? _currentSeason;
     private readonly TitleInteractionController _titleController;
+    private DispatcherTimer? _pathCopiedTimer;
 
     public TVShowDetailsPage()
     {
@@ -117,6 +119,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         _enrichmentRequests.Cancel();
         _availabilityRequests.Cancel();
         _actionRequests.Cancel();
+        _pathCopiedTimer?.Stop();
         _titleController.Dispose();
     }
 
@@ -386,7 +389,6 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
                             if (missingEpisodeIds.Contains(ep.EpisodeId))
                             {
                                 ep.IsFileMissing = true;
-                                ep.HasLocalFile = false;
                             }
                         }
                     }
@@ -550,19 +552,14 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         }
     }
 
-    private void PlayNext_Click(object sender, RoutedEventArgs e) => PlayNextButton_Click(sender, e);
-
     private async void EpisodePlay_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: EpisodeDisplayRecord row })
         {
+            if (!row.CanOpenFile) return;
             await PlayEpisodeAsync(FindEpisode(row), row);
         }
     }
-
-    private void PlayEpisode_Click(object sender, RoutedEventArgs e) => EpisodePlay_Click(sender, e);
-    private void ToggleEpisodeWatched_Click(object sender, RoutedEventArgs e) => EpisodeMarkWatched_Click(sender, e);
-    private void OpenEpisodeFolder_Click(object sender, RoutedEventArgs e) => EpisodeOpenFolder_Click(sender, e);
 
     private void UpdateSeasonsUI(IReadOnlyList<SeasonDisplayRecord> seasons)
     {
@@ -573,7 +570,6 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
             SeasonTabsScrollViewer.Visibility = Visibility.Collapsed;
             EpisodesRepeater.ItemsSource = null;
             CurrentSeasonMetaText.Text = string.Empty;
-            _currentSeason = null;
             _seasonTabs = [];
             return;
         }
@@ -611,8 +607,6 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
             _selectedSeasonByShowId[_show.Id] = target.Number;
         }
 
-        _currentSeason = target;
-
         if (_seasonTabs.Count == _seasons.Count && _seasonTabs.All(t => _seasons.Any(s => s.Number == t.SeasonNumber)))
         {
             foreach (var tab in _seasonTabs)
@@ -635,6 +629,20 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
 
         EpisodesRepeater.ItemsSource = target.Episodes;
         CurrentSeasonMetaText.Text = target.Meta;
+
+        int targetIndex = -1;
+        for (int i = 0; i < _seasons.Count; i++)
+        {
+            if (_seasons[i].Number == target.Number)
+            {
+                targetIndex = i;
+                break;
+            }
+        }
+        if (targetIndex >= 0)
+        {
+            BringSeasonTabIntoView(targetIndex);
+        }
     }
 
     private void SeasonTab_Click(object sender, RoutedEventArgs e)
@@ -645,11 +653,172 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         }
     }
 
+    private void SeasonTabs_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Handled) return;
+
+        if (e.Key != Windows.System.VirtualKey.Right && e.Key != Windows.System.VirtualKey.Left)
+        {
+            return;
+        }
+
+        if (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Menu).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down) ||
+            Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down) ||
+            Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down))
+        {
+            return;
+        }
+
+        if (HandleSeasonArrowNavigation(e.Key))
+        {
+            e.Handled = true;
+        }
+    }
+
+    private void Page_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Handled) return;
+
+        if (e.Key != Windows.System.VirtualKey.Right && e.Key != Windows.System.VirtualKey.Left)
+        {
+            return;
+        }
+
+        if (Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Menu).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down) ||
+            Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down) ||
+            Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Shift).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down))
+        {
+            return;
+        }
+
+        if (ShowTitleEditBox.Visibility == Visibility.Visible)
+        {
+            return;
+        }
+
+        var focused = FocusManager.GetFocusedElement(this.XamlRoot);
+        if (focused is TextBox or RichEditBox or AutoSuggestBox or PasswordBox)
+        {
+            return;
+        }
+
+        if (focused is DependencyObject depObj && (IsDescendantOf(depObj, HeroGrid) || focused is MenuFlyoutItem or MenuFlyoutSubItem))
+        {
+            return;
+        }
+
+        if (HandleSeasonArrowNavigation(e.Key))
+        {
+            e.Handled = true;
+        }
+    }
+
+    private bool HandleSeasonArrowNavigation(Windows.System.VirtualKey key)
+    {
+        if (_seasons.Count <= 1) return false;
+
+        int currentIndex = -1;
+        for (int i = 0; i < _seasons.Count; i++)
+        {
+            if (_seasons[i].Number == _activeSeasonNumber)
+            {
+                currentIndex = i;
+                break;
+            }
+        }
+
+        if (currentIndex < 0) currentIndex = 0;
+
+        int newIndex = key switch
+        {
+            Windows.System.VirtualKey.Right => Math.Min(currentIndex + 1, _seasons.Count - 1),
+            Windows.System.VirtualKey.Left => Math.Max(currentIndex - 1, 0),
+            _ => currentIndex
+        };
+
+        if (newIndex != currentIndex)
+        {
+            SelectSeason(_seasons[newIndex].Number);
+            BringSeasonTabIntoView(newIndex);
+            FocusSeasonTab(newIndex);
+        }
+
+        return true;
+    }
+
+    private void BringSeasonTabIntoView(int index)
+    {
+        if (index < 0 || index >= _seasons.Count) return;
+        try
+        {
+            var element = SeasonTabsRepeater.GetOrCreateElement(index);
+            element?.StartBringIntoView(new BringIntoViewOptions { AnimationDesired = true });
+        }
+        catch
+        {
+            try
+            {
+                SeasonTabsRepeater.GetOrCreateElement(index)?.StartBringIntoView();
+            }
+            catch { }
+        }
+    }
+
+    private void FocusSeasonTab(int index)
+    {
+        if (index < 0 || index >= _seasons.Count) return;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            try
+            {
+                var element = SeasonTabsRepeater.GetOrCreateElement(index);
+                if (element is Panel panel)
+                {
+                    Button? fallback = null;
+                    foreach (var child in panel.Children)
+                    {
+                        if (child is Button button)
+                        {
+                            fallback ??= button;
+                            if (button.Visibility == Visibility.Visible)
+                            {
+                                button.Focus(FocusState.Programmatic);
+                                return;
+                            }
+                        }
+                    }
+
+                    fallback?.Focus(FocusState.Programmatic);
+                }
+            }
+            catch { }
+        });
+    }
+
+    private static bool IsDescendantOf(DependencyObject? element, DependencyObject? parent)
+    {
+        if (element is null || parent is null) return false;
+        var current = element;
+        while (current != null)
+        {
+            if (ReferenceEquals(current, parent)) return true;
+            try
+            {
+                current = VisualTreeHelper.GetParent(current);
+            }
+            catch
+            {
+                break;
+            }
+        }
+        return false;
+    }
+
     private async void EpisodeMarkWatched_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: EpisodeDisplayRecord row }) return;
         var episode = FindEpisode(row);
-        if (episode is null || !episode.HasLocalFile || episode.Id <= 0) return;
+        if (episode is null || !row.CanMarkWatched || episode.Id <= 0) return;
         try
         {
             var season = _show.Seasons.FirstOrDefault(s => s.Episodes.Any(ep => ep.Id == episode.Id));
@@ -737,7 +906,6 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         catch { }
 
         row.IsFileMissing = true;
-        row.HasLocalFile = false;
         UpdateShowEpisodeMissing(episode.Id);
     }
 
@@ -749,7 +917,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
             if (!matched) return season;
 
             var updatedEpisodes = season.Episodes.Select(ep =>
-                ep.Id == episodeId ? ep with { HasLocalFile = false, IsFileMissing = true } : ep).ToList();
+                ep.Id == episodeId ? ep with { IsFileMissing = true } : ep).ToList();
 
             return new SeasonRecord(season.Id, season.Number, updatedEpisodes);
         }).ToList();
@@ -764,6 +932,8 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         {
             return;
         }
+
+        if (!row.CanOpenFile) return;
 
         var episode = FindEpisode(row);
 
@@ -792,38 +962,76 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         }
     }
 
-    /// <summary>
-    /// Shows what the catalog knows about the episode's file. The flyout the design puts on a movie's
-    /// file block has no episode equivalent, so the same facts are stated in a themed dialog.
-    /// </summary>
     private void EpisodeDetails_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Tag: EpisodeDisplayRecord row })
+        if (sender is not Button button || button.Tag is not EpisodeDisplayRecord row)
         {
             return;
         }
 
         var episode = FindEpisode(row);
+        var flyout = new MenuFlyout();
 
-        if (episode is null)
+        var files = episode != null ? SafeEpisodeFiles(episode.Id) : [];
+        var paths = files.Select(f => f.CurrentPath).Where(p => !string.IsNullOrWhiteSpace(p)).Distinct().ToList();
+
+        if (paths.Count == 0 && !string.IsNullOrWhiteSpace(row.FilePath ?? episode?.FilePath))
         {
-            return;
+            paths.Add((row.FilePath ?? episode?.FilePath)!);
         }
 
-        var files = SafeEpisodeFiles(episode.Id);
+        if (paths.Count > 0)
+        {
+            foreach (var path in paths)
+            {
+                var copyItem = new MenuFlyoutItem
+                {
+                    Text = path,
+                    Icon = new FontIcon { Glyph = "\uE8C8" }
+                };
+                ToolTipService.SetToolTip(copyItem, path);
+                copyItem.Click += (_, _) => CopyPathToClipboard(path);
+                flyout.Items.Add(copyItem);
+            }
+        }
+        else
+        {
+            var noFileItem = new MenuFlyoutItem
+            {
+                Text = LocalizationService.Text("NoLocalFile"),
+                IsEnabled = false,
+                Icon = new FontIcon { Glyph = "\uE7BA" }
+            };
+            flyout.Items.Add(noFileItem);
+        }
 
-        var body = files.Count == 0
-            ? LocalizationService.Text("NoLocalFileHelp")
-            : string.Join(
-                Environment.NewLine,
-                files.Select(file => file.CurrentPath
-                    + Environment.NewLine
-                    + LocalizationService.Text(
-                        file.Status == TBDMovies.Domain.Library.Movies.MediaFileStatus.Present
-                            ? "Present"
-                            : "Missing")));
+        flyout.ShowAt(button);
+    }
 
-        _ = ShowMessageAsync(LocalizationService.Text("MediaFile"), body);
+    private void CopyPathToClipboard(string path)
+    {
+        try
+        {
+            var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+            package.SetText(path);
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+
+            PathCopiedInfoBar.Message = $"{LocalizationService.Text("PathCopied")}: {path}";
+            PathCopiedInfoBar.IsOpen = true;
+
+            _pathCopiedTimer?.Stop();
+            _pathCopiedTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            _pathCopiedTimer.Tick += (_, _) =>
+            {
+                PathCopiedInfoBar.IsOpen = false;
+                _pathCopiedTimer?.Stop();
+            };
+            _pathCopiedTimer.Start();
+        }
+        catch (Exception error)
+        {
+            _ = ShowMessageAsync(LocalizationService.Text("Failed"), error.Message);
+        }
     }
 
     private async Task PlayEpisodeAsync(EpisodeRecord? episode, EpisodeDisplayRecord? row = null)
@@ -952,7 +1160,8 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
                         stillReference: episode.StillReference,
                         overview: episode.Overview,
                         airDate: episode.AirDate,
-                        fallbackArtReferences: [show.BackdropReference, show.PosterReference])),
+                        fallbackArtReferences: [show.BackdropReference, show.PosterReference],
+                        filePath: episode.FilePath)),
                 ])),
         ];
     }
@@ -1098,6 +1307,14 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
             var refreshed = await Task.Run(() => AppServices.Matching.RefreshTvShowMetadataAsync(showId, true, request.Token));
             if (request.IsCurrent && refreshed != null)
             {
+                if (!string.IsNullOrWhiteSpace(refreshed.PosterReference))
+                {
+                    try
+                    {
+                        await AppServices.Poster.EnsurePosterCachedAsync(refreshed.Provider ?? "TMDB", refreshed.PosterReference, request.Token);
+                    }
+                    catch { }
+                }
                 SetMatchingState(false);
                 LoadShow(showId);
             }
@@ -1123,8 +1340,20 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
             SetMatchingState(true);
             try
             {
-                await Task.Run(() => AppServices.Matching.MatchTvShowAsync(showId, candidate, true, request.Token));
-                if (request.IsCurrent) { SetMatchingState(false); LoadShow(showId); }
+                var matched = await Task.Run(() => AppServices.Matching.MatchTvShowAsync(showId, candidate, true, request.Token));
+                if (request.IsCurrent)
+                {
+                    if (matched != null && !string.IsNullOrWhiteSpace(matched.PosterReference))
+                    {
+                        try
+                        {
+                            await AppServices.Poster.EnsurePosterCachedAsync(matched.Provider ?? "TMDB", matched.PosterReference, request.Token);
+                        }
+                        catch { }
+                    }
+                    SetMatchingState(false);
+                    LoadShow(showId);
+                }
             }
             catch (Exception error)
             {

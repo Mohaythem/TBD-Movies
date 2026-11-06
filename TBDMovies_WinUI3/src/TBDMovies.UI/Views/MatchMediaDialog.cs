@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Globalization;
 using System.Threading.Tasks;
 using TBDMovies.Application.Metadata;
@@ -68,6 +68,8 @@ public sealed class MatchMediaDialog : ContentDialog
         {
             PlaceholderText = LocalizationService.Text("Title"),
             Text = _initialTitle,
+            TabIndex = 0,
+            IsTabStop = true,
         };
         _titleBox.KeyDown += OnInputKeyDown;
         Grid.SetColumn(_titleBox, 0);
@@ -76,6 +78,8 @@ public sealed class MatchMediaDialog : ContentDialog
         {
             PlaceholderText = LocalizationService.Text("Year"),
             Text = _initialYear is int iy ? iy.ToString(CultureInfo.InvariantCulture) : string.Empty,
+            TabIndex = 1,
+            IsTabStop = true,
         };
         _yearBox.KeyDown += OnInputKeyDown;
         Grid.SetColumn(_yearBox, 1);
@@ -84,6 +88,8 @@ public sealed class MatchMediaDialog : ContentDialog
         {
             Content = LocalizationService.Text("SearchTmdb"),
             Style = (Style)Microsoft.UI.Xaml.Application.Current.Resources["AccentControlButtonStyle"],
+            TabIndex = 2,
+            IsTabStop = true,
         };
         _searchButton.Click += async (_, _) => await PerformSearchAsync();
         Grid.SetColumn(_searchButton, 2);
@@ -121,9 +127,13 @@ public sealed class MatchMediaDialog : ContentDialog
         {
             SelectionMode = ListViewSelectionMode.Single,
             MaxHeight = 320,
-            MinHeight = 120
+            MinHeight = 120,
+            TabIndex = 3,
+            IsTabStop = true,
         };
         _candidateList.SelectionChanged += OnCandidateSelectionChanged;
+        _candidateList.KeyDown += OnCandidateListKeyDown;
+        _candidateList.DoubleTapped += (_, _) => OnCandidateChosen();
         contentStack.Children.Add(_candidateList);
 
         // Manual "Paste TMDB URL" fallback. A themoviedb.org movie/show link is an explicit identity, so it
@@ -132,13 +142,23 @@ public sealed class MatchMediaDialog : ContentDialog
         var urlGrid = new Grid { ColumnSpacing = 8 };
         urlGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         urlGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        _urlBox = new TextBox { PlaceholderText = LocalizationService.Text("PasteTmdbUrlPlaceholder") };
+        _urlBox = new TextBox
+        {
+            PlaceholderText = LocalizationService.Text("PasteTmdbUrlPlaceholder"),
+            TabIndex = 4,
+            IsTabStop = true,
+        };
         _urlBox.KeyDown += (_, e) =>
         {
             if (e.Key == Windows.System.VirtualKey.Enter) { e.Handled = true; OnUseLinkClick(); }
         };
         Grid.SetColumn(_urlBox, 0);
-        var urlButton = new Button { Content = LocalizationService.Text("UseTmdbLink") };
+        var urlButton = new Button
+        {
+            Content = LocalizationService.Text("UseTmdbLink"),
+            TabIndex = 5,
+            IsTabStop = true,
+        };
         urlButton.Click += (_, _) => OnUseLinkClick();
         Grid.SetColumn(urlButton, 1);
         urlGrid.Children.Add(_urlBox);
@@ -162,8 +182,15 @@ public sealed class MatchMediaDialog : ContentDialog
             _searchCts?.Dispose();
             _searchCts = null;
         };
+        Loaded += (_, _) =>
+        {
+            _titleBox.Focus(FocusState.Programmatic);
+            _titleBox.SelectAll();
+        };
         Opened += async (_, _) =>
         {
+            _titleBox.Focus(FocusState.Programmatic);
+            _titleBox.SelectAll();
             // Generate the automatic candidates for the detected title on open; the user can then refine.
             if (!_hasSearched && !string.IsNullOrWhiteSpace(_titleBox.Text))
             {
@@ -179,6 +206,49 @@ public sealed class MatchMediaDialog : ContentDialog
         {
             e.Handled = true;
             _ = PerformSearchAsync();
+        }
+        else if (e.Key == Windows.System.VirtualKey.Down)
+        {
+            if (_candidateList.Items.Count > 0)
+            {
+                e.Handled = true;
+                if (_candidateList.SelectedIndex < 0)
+                {
+                    _candidateList.SelectedIndex = 0;
+                }
+                _candidateList.Focus(FocusState.Keyboard);
+            }
+        }
+    }
+
+    private void OnCandidateListKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == Windows.System.VirtualKey.Up && _candidateList.SelectedIndex <= 0)
+        {
+            e.Handled = true;
+            _titleBox.Focus(FocusState.Keyboard);
+            _titleBox.SelectAll();
+        }
+        else if (e.Key == Windows.System.VirtualKey.Enter && _candidateList.SelectedItem != null)
+        {
+            e.Handled = true;
+            OnCandidateChosen();
+        }
+    }
+
+    private void OnCandidateChosen()
+    {
+        if (_candidateList.SelectedItem is ListViewItem item)
+        {
+            if (_isMovie)
+            {
+                SelectedMovieCandidate = item.Tag as MovieCandidate;
+            }
+            else
+            {
+                SelectedTvCandidate = item.Tag as TvCandidate;
+            }
+            Hide();
         }
     }
 
@@ -253,6 +323,15 @@ public sealed class MatchMediaDialog : ContentDialog
         var title = _titleBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(title)) return;
 
+        if (!AppServices.Metadata.IsConfigured)
+        {
+            _statusPanel.Visibility = Visibility.Visible;
+            _progressRing.IsActive = false;
+            _statusText.Text = LocalizationService.Text("TmdbNotConfiguredPrompt");
+            _titleBox.Focus(FocusState.Programmatic);
+            return;
+        }
+
         int? year = int.TryParse(_yearBox.Text.Trim(), out var parsedYear) && parsedYear > 0 ? parsedYear : null;
 
         _isSearching = true;
@@ -294,7 +373,8 @@ public sealed class MatchMediaDialog : ContentDialog
                                 scored.Score,
                                 candidate.Overview,
                                 candidate.Popularity,
-                                CachedPosterPath(candidate.Provider, candidate.PosterReference)),
+                                CachedPosterPath(candidate.Provider, candidate.PosterReference),
+                                candidate.PosterReference),
                             Tag = candidate,
                             HorizontalContentAlignment = HorizontalAlignment.Stretch
                         };
@@ -326,7 +406,8 @@ public sealed class MatchMediaDialog : ContentDialog
                                 scored.Score,
                                 candidate.Overview,
                                 candidate.Popularity,
-                                CachedPosterPath(candidate.Provider, candidate.PosterReference)),
+                                CachedPosterPath(candidate.Provider, candidate.PosterReference),
+                                candidate.PosterReference),
                             Tag = candidate,
                             HorizontalContentAlignment = HorizontalAlignment.Stretch
                         };
@@ -358,12 +439,24 @@ public sealed class MatchMediaDialog : ContentDialog
                 _isSearching = false;
                 _searchButton.IsEnabled = true;
 
-                // Focus the results (never the search box), so choosing a match is the next keyboard step
-                // and the Search field never silently reclaims the caret. Pre-select the top candidate.
+                var focused = FocusManager.GetFocusedElement(XamlRoot) as DependencyObject;
+                bool userIsEditing = ReferenceEquals(focused, _titleBox) || ReferenceEquals(focused, _yearBox) || ReferenceEquals(focused, _urlBox);
+
+                // Focus results only when user is not actively editing inputs, preserving cursor position.
                 if (_candidateList.Items.Count > 0)
                 {
-                    _candidateList.SelectedIndex = 0;
-                    _candidateList.Focus(Microsoft.UI.Xaml.FocusState.Programmatic);
+                    if (_candidateList.SelectedIndex < 0)
+                    {
+                        _candidateList.SelectedIndex = 0;
+                    }
+                    if (!userIsEditing)
+                    {
+                        _candidateList.Focus(Microsoft.UI.Xaml.FocusState.Programmatic);
+                    }
+                }
+                else if (!userIsEditing)
+                {
+                    _titleBox.Focus(Microsoft.UI.Xaml.FocusState.Programmatic);
                 }
             }
         }
@@ -393,21 +486,33 @@ public sealed class MatchMediaDialog : ContentDialog
         double score,
         string? overview,
         double? popularity,
-        string? posterPath)
+        string? posterPath,
+        string? posterReference = null)
     {
+        string? imageUriString = null;
+        if (!string.IsNullOrWhiteSpace(posterPath))
+        {
+            imageUriString = posterPath;
+        }
+        else if (!string.IsNullOrWhiteSpace(posterReference))
+        {
+            var cleanRef = posterReference.Trim().TrimStart('/', '\\');
+            imageUriString = $"https://image.tmdb.org/t/p/w92/{cleanRef}";
+        }
+
         var rootGrid = new Grid
         {
             Margin = new Thickness(0, 4, 0, 4),
             ColumnSpacing = 10,
         };
-        if (!string.IsNullOrWhiteSpace(posterPath))
+        if (!string.IsNullOrWhiteSpace(imageUriString))
         {
             rootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
         }
         rootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
         var details = new StackPanel { Spacing = 4 };
-        Grid.SetColumn(details, string.IsNullOrWhiteSpace(posterPath) ? 0 : 1);
+        Grid.SetColumn(details, string.IsNullOrWhiteSpace(imageUriString) ? 0 : 1);
 
         var headerGrid = new Grid { ColumnSpacing = 8 };
         headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -500,7 +605,7 @@ public sealed class MatchMediaDialog : ContentDialog
 
         rootGrid.Children.Add(details);
 
-        if (!string.IsNullOrWhiteSpace(posterPath))
+        if (!string.IsNullOrWhiteSpace(imageUriString))
         {
             try
             {
@@ -509,7 +614,7 @@ public sealed class MatchMediaDialog : ContentDialog
                     Width = 52,
                     Height = 78,
                     Stretch = Stretch.UniformToFill,
-                    Source = new BitmapImage(new Uri(posterPath)),
+                    Source = new BitmapImage(new Uri(imageUriString)),
                 };
                 AutomationProperties.SetName(poster, title);
                 Grid.SetColumn(poster, 0);

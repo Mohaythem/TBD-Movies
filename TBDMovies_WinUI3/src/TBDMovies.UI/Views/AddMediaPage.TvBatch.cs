@@ -1,4 +1,4 @@
-﻿using TBDMovies.Application.Dto;
+using TBDMovies.Application.Dto;
 using TBDMovies.Application.Services;
 using TBDMovies.Domain.Media.Discovery;
 using TBDMovies.UI.Models;
@@ -178,6 +178,10 @@ public sealed partial class AddMediaPage
                     singleFile || oneSeason ? (int)season.Value : candidate.SeasonNumber,
                     singleFile ? (int)episode.Value : candidate.EpisodeNumber);
                 row.CorrectTv(corrected, (target.SelectedItem as TvTargetChoice)?.Id);
+                if (row.CanAdd)
+                {
+                    row.IsSelected = true;
+                }
             }
             _batchPresentation = false;
             RebuildVisibleQueue();

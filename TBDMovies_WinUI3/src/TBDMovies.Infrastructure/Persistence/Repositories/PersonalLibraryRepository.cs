@@ -625,6 +625,32 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         return ids;
     }
 
+    public IReadOnlySet<int> ListWatchedMovieIds()
+    {
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = Command(connection, null, "SELECT DISTINCT movie_id FROM watch_events WHERE media_kind = 'MOVIE' AND movie_id IS NOT NULL;");
+        var ids = new HashSet<int>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read()) ids.Add(reader.GetInt32(0));
+        return ids;
+    }
+
+    public IReadOnlySet<int> GetWatchedShowIds()
+    {
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = Command(connection, null, """
+            SELECT DISTINCT se.show_id
+              FROM watch_events w
+              JOIN tv_episodes e ON e.id = w.episode_id
+              JOIN tv_seasons se ON se.id = e.season_id
+             WHERE w.media_kind = 'EPISODE' AND se.show_id IS NOT NULL;
+            """);
+        var ids = new HashSet<int>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read()) ids.Add(reader.GetInt32(0));
+        return ids;
+    }
+
     private static IReadOnlyList<WatchHistoryEntry> ReadHistory(SqliteConnection connection, SqliteTransaction? transaction, int? eventId = null)
     {
         using var command = Command(connection, transaction, """

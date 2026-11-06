@@ -338,14 +338,13 @@ internal static class AppServices
         {
             if (!IsAvailable)
             {
-                return (AppTheme.Slate, UiLanguage.English);
+                return (AppTheme.Dark, UiLanguage.English);
             }
 
             var theme = Settings.CurrentUiTheme() switch
             {
-                TBDMovies.Domain.Configuration.UiTheme.Dark => AppTheme.Dark,
                 TBDMovies.Domain.Configuration.UiTheme.Light => AppTheme.Light,
-                _ => AppTheme.Slate,
+                _ => AppTheme.Dark,
             };
 
             var language = Settings.CurrentUiLanguage() == TBDMovies.Domain.Configuration.UiLanguage.Arabic
@@ -356,7 +355,7 @@ internal static class AppServices
         }
         catch (Exception)
         {
-            return (AppTheme.Slate, UiLanguage.English);
+            return (AppTheme.Dark, UiLanguage.English);
         }
     }
 
@@ -369,9 +368,8 @@ internal static class AppServices
             {
                 Settings.SetUiTheme(theme switch
                 {
-                    AppTheme.Dark => TBDMovies.Domain.Configuration.UiTheme.Dark,
                     AppTheme.Light => TBDMovies.Domain.Configuration.UiTheme.Light,
-                    _ => TBDMovies.Domain.Configuration.UiTheme.Slate,
+                    _ => TBDMovies.Domain.Configuration.UiTheme.Dark,
                 });
             }
         }
@@ -524,7 +522,7 @@ internal static class AppServices
                     settings: settingsRepository);
                 var settings = new SettingsService(maintenance, posterCache: posterCache,
                     settings: settingsRepository, credentialStore: credentialStore);
-                var tmdbClient = new TmdbClient(() => settings.GetTmdbToken(),
+                var tmdbClient = new TmdbClient(() => settings.GetTmdbToken() ?? ResolveEnvTmdbToken(),
                     authenticationResult: settings.RecordTmdbAuthenticationResult);
                 var matching = new MetadataMatchingService(catalogFactory, tmdbClient, posterCache);
 
@@ -574,6 +572,7 @@ internal static class AppServices
                 _posterCache = posterCache;
                 _tmdbClient = tmdbClient;
                 _metadataProvider = tmdbClient;
+                _matching = matching;
                 _repair = repair;
                 _personalRepo = personal;
                 _watchHistoryRepo = personal;
@@ -951,6 +950,12 @@ internal static class AppServices
             }
         }
         return TBDMovies.FileSystem.Inspection.CrashTempFileInspector.FindStaleTempFiles(roots, () => token.IsCancellationRequested);
+    }
+
+    private static string? ResolveEnvTmdbToken()
+    {
+        var token = Environment.GetEnvironmentVariable("TMDB_READ_TOKEN") ?? Environment.GetEnvironmentVariable("TMDB_API_KEY");
+        return string.IsNullOrWhiteSpace(token) ? null : token.Trim();
     }
 
     private static T Require<T>(T? service)

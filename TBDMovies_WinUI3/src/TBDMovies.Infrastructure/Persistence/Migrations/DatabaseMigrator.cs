@@ -658,6 +658,15 @@ public class DatabaseMigrator
         if (currentVersion == 0 && HasUserSchemaObjects(connection))
             throw new InvalidOperationException("A non-empty database with schema version 0 is not a supported TBDMovies schema.");
 
+        // Fast path: when the database is already at the target latest version, skip redundant
+        // PRAGMA foreign_key_check and exhaustive schema validation (column introspection),
+        // verifying table and index existence before returning.
+        if (currentVersion == LatestVersion && targetVersion == LatestVersion)
+        {
+            ValidateSchema(connection, exhaustive: false);
+            return;
+        }
+
         EnsureForeignKeyIntegrity(connection, null, "Existing database");
         ExecutePragma(connection, "foreign_keys", "ON");
         ExecutePragma(connection, "journal_mode", "WAL");
@@ -720,7 +729,8 @@ public class DatabaseMigrator
 
     private static void ValidateSchema(SqliteConnection connection, SqliteTransaction? transaction = null,
         bool includeActivity = true, bool includeViewing = true, bool includeShowPersonal = true,
-        bool includeTrakt = true, bool includeCustomTitle = true, bool includeScaleIndexes = true)
+        bool includeTrakt = true, bool includeCustomTitle = true, bool includeScaleIndexes = true,
+        bool exhaustive = true)
     {
         var requiredTables = new[]
         {
@@ -746,48 +756,60 @@ public class DatabaseMigrator
             RequireSchemaObject(connection, "table", "active_viewings", transaction);
             foreach (var index in new[] { "ux_active_viewings_movie", "ux_active_viewings_episode", "idx_active_viewings_started" })
                 RequireSchemaObject(connection, "index", index, transaction);
-            RequireTableColumns(connection, "active_viewings", transaction,
-                "media_kind", "movie_id", "episode_id", "media_file_id", "path", "started_at");
+            if (exhaustive)
+            {
+                RequireTableColumns(connection, "active_viewings", transaction,
+                    "media_kind", "movie_id", "episode_id", "media_file_id", "path", "started_at");
+            }
         }
         if (includeShowPersonal)
         {
             RequireSchemaObject(connection, "table", "tv_show_personal_state", transaction);
             foreach (var index in new[] { "idx_tv_show_personal_state_favorite", "idx_tv_show_personal_state_watch_later" })
                 RequireSchemaObject(connection, "index", index, transaction);
-            RequireTableColumns(connection, "tv_show_personal_state", transaction,
-                "show_id", "is_favorite", "watch_later_added_at", "created_at", "updated_at");
+            if (exhaustive)
+            {
+                RequireTableColumns(connection, "tv_show_personal_state", transaction,
+                    "show_id", "is_favorite", "watch_later_added_at", "created_at", "updated_at");
+            }
         }
         if (includeTrakt)
         {
             RequireSchemaObject(connection, "table", "trakt_resource_cache", transaction);
             RequireSchemaObject(connection, "index", "idx_trakt_resource_cache_account", transaction);
-            RequireTableColumns(connection, "trakt_resource_cache", transaction,
-                "account_id", "resource_key", "payload_json", "succeeded_at", "attempted_at", "error_code");
+            if (exhaustive)
+            {
+                RequireTableColumns(connection, "trakt_resource_cache", transaction,
+                    "account_id", "resource_key", "payload_json", "succeeded_at", "attempted_at", "error_code");
+            }
         }
         if (includeScaleIndexes)
         {
             foreach (var index in new[] { "idx_movies_date_added", "idx_movies_last_opened", "idx_movies_title", "idx_tv_shows_date_added" })
                 RequireSchemaObject(connection, "index", index, transaction);
         }
-        // Column-level guard: user_version alone cannot detect a table left on an older shape by a
-        // migration script that was edited after it had already been stamped (the drift that made
-        // Mark Watched fail with 'no column named poster_reference'). Assert the columns the write
-        // paths depend on actually exist so any future drift fails startup loudly instead of being
-        // masked behind a generic runtime error dialog.
-        RequireTableColumns(connection, "watch_events", transaction,
-            "artwork_reference", "backdrop_reference", "poster_reference");
-        RequireTableColumns(connection, "movies", transaction, "review_match");
-        if (includeActivity)
+        if (exhaustive)
         {
-            RequireTableColumns(connection, "movies", transaction, "last_opened_at");
-            RequireTableColumns(connection, "tv_shows", transaction, "last_opened_at");
+            // Column-level guard: user_version alone cannot detect a table left on an older shape by a
+            // migration script that was edited after it had already been stamped (the drift that made
+            // Mark Watched fail with 'no column named poster_reference'). Assert the columns the write
+            // paths depend on actually exist so any future drift fails startup loudly instead of being
+            // masked behind a generic runtime error dialog.
+            RequireTableColumns(connection, "watch_events", transaction,
+                "artwork_reference", "backdrop_reference", "poster_reference");
+            RequireTableColumns(connection, "movies", transaction, "review_match");
+            if (includeActivity)
+            {
+                RequireTableColumns(connection, "movies", transaction, "last_opened_at");
+                RequireTableColumns(connection, "tv_shows", transaction, "last_opened_at");
+            }
+            if (includeCustomTitle)
+            {
+                RequireTableColumns(connection, "movies", transaction, "custom_display_title");
+                RequireTableColumns(connection, "tv_shows", transaction, "custom_display_title");
+            }
+            EnsureForeignKeyIntegrity(connection, transaction, "Database schema");
         }
-        if (includeCustomTitle)
-        {
-            RequireTableColumns(connection, "movies", transaction, "custom_display_title");
-            RequireTableColumns(connection, "tv_shows", transaction, "custom_display_title");
-        }
-        EnsureForeignKeyIntegrity(connection, transaction, "Database schema");
     }
 
     private static void RequireSchemaObject(
