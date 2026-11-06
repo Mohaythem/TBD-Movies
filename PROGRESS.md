@@ -1,7 +1,7 @@
 # TBD Movies — Active Progress & Status Checkpoint
 
 ## Current Goal
-- Next Milestone: Eliminate white theme flicker on theme switch (`MainWindow.xaml.cs:ApplyTheme()`).
+- Next Milestone: Unified Cinematic Color Palette (Cinema Gold & Obsidian) across `ThemeResources.xaml` and `MainWindow.xaml.cs`.
 
 ## Completed Work
 1. **Core Issues Track**:
@@ -15,6 +15,7 @@
    - Added 200ms UI `DispatcherQueueTimer` debouncing to `SearchBox_TextChanged` across `LibraryPage`, `MyListsPage`, and `TraktPage`.
    - Immediate refresh on query clear (`string.IsNullOrEmpty(text)`).
    - Safe timer disposal on navigation / unload (`Deactivate()`, `IDeactivatableView`, `Unloaded`).
+   - Eliminated white theme flicker completely on theme switch in `MainWindow.xaml.cs:ApplyTheme()`, removing the temporary flip to `ElementTheme.Default` and mutating `RootGrid.Resources` in place.
 3. **UI Layouts Track**:
    - Styled `MyListsPage` list tabs as rounded pill capsules (`TabPillItemStyle` with `CornerRadius="12"`, background `#1F2937`, active `#1A324A` with accent border).
    - Re-introduced 3-tab media type selector in `LibraryPage.xaml`: `[ All ] | [ Movies ] | [ TV Shows ]` with fast in-memory filtering.
