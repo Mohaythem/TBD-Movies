@@ -1,7 +1,10 @@
+Created At: 2026-11-06T22:42:00+02:00
+Completed At: 2026-11-06T22:42:00+02:00
+
 # TBD Movies — Active Progress & Status Checkpoint
 
 ## Current Goal
-- Integrate Trakt lists into the "Add to List" menus across movie/show details pages and media card context menus.
+- Support multiple editions and physical video files per movie with per-file action controls in Movie Details.
 
 ## Completed Work
 1. **Core Issues Track**:
@@ -26,6 +29,12 @@
    - Extended `MediaCardContextMenu.cs` to show Trakt Watchlist and custom lists on right-click context menus for both movies and TV shows across Library and Home pages.
    - Implemented `TraktItemExtensions` extracting TMDB IDs directly from Trakt items' `RawElement` JSON safely.
    - Added thread-safe `RunSafe(FrameworkElement owner, Func<Task> asyncAction)` overload handling async actions.
+5. **Multiple Editions & File Intelligence Track**:
+   - Enhanced `MovieFileRecord` with `MediaFileId`, `IsPrimary`, `IsPresent`, computed button visibilities, and localized labels.
+   - Added English and Arabic localization strings for `PrimaryVersion`, `SetAsPrimary`, `PlayThisVersion`, `OpenThisFolder`, and `CopyThisPath`.
+   - Added in-memory session persistence for preferred primary file in `LibraryProjection` via `s_preferredMovieFileIds` and `SetPreferredMediaFileId`.
+   - Redesigned `AllFilesPanel` / `MediaFilesRepeater` item cards in `MovieDetailsPage.xaml` into modern Fluent cards with primary badge, availability status, full copyable path, media facts, and action buttons (`Play`, `Open Folder`, `Copy Path`, `Set as Primary`).
+   - Implemented `PlayFile_Click`, `OpenFileFolder_Click`, `CopyFilePath_Click`, and `SetPrimaryFile_Click` in `MovieDetailsPage.xaml.cs`.
 
 ## Verification
 - **Build**: `dotnet build -c Release` succeeded (0 Warnings, 0 Errors).
