@@ -576,26 +576,24 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private void ApplyTheme()
     {
-        // Dark theme uses the Slate navy palette (#18222D). Keeping it window-local means
-        // Light and High Contrast continue to resolve the framework resources cleanly.
-        // Each brush is a new instance, so no shared WinUI brush is mutated during a switch.
-        RootGrid.Resources = ThemeService.UsesSlateSurface
-            && !_accessibilitySettings.HighContrast
-            ? _slatePaletteResources
-            : new ResourceDictionary();
+        var isSlate = ThemeService.UsesSlateSurface && !_accessibilitySettings.HighContrast;
+
+        if (isSlate)
+        {
+            foreach (var key in _slatePaletteResources.Keys)
+            {
+                RootGrid.Resources[key] = _slatePaletteResources[key];
+            }
+        }
+        else
+        {
+            RootGrid.Resources.Clear();
+        }
 
         var targetTheme = ThemeService.ElementTheme;
-
-        // Temporarily toggling RequestedTheme to Default and then back to targetTheme forces
-        // WinUI 3 to re-evaluate all theme resources throughout the visual tree (ShellNavigation,
-        // ContentHost, and cached pages) without flashing white (Default inherits the window's dark base).
-        if (RootGrid.RequestedTheme == targetTheme)
-        {
-            RootGrid.RequestedTheme = ElementTheme.Default;
-        }
         RootGrid.RequestedTheme = targetTheme;
+        SlateSurface.Visibility = isSlate ? Visibility.Visible : Visibility.Collapsed;
 
-        SlateSurface.Visibility = ThemeService.UsesSlateSurface ? Visibility.Visible : Visibility.Collapsed;
         UpdateNavigationPaneBackgrounds();
         UpdateTitleBarColors();
     }
