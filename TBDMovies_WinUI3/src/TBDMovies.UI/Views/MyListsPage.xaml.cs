@@ -3,6 +3,7 @@ using TBDMovies.Application.Dto;
 using TBDMovies.Domain.Library.Personal;
 using TBDMovies.UI.Models;
 using TBDMovies.UI.Services;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -53,6 +54,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         _isReady = true;
         Invalidate();
         ApplyLocalization();
+        Unloaded += (_, _) => Deactivate();
     }
 
     // APPEND_MARKER
@@ -592,10 +594,36 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         Refresh();
     }
 
+    private DispatcherQueueTimer? _searchDebounceTimer;
+
+    private void EnsureSearchDebounceTimer()
+    {
+        if (_searchDebounceTimer is not null) return;
+        _searchDebounceTimer = DispatcherQueue.CreateTimer();
+        _searchDebounceTimer.Interval = TimeSpan.FromMilliseconds(200);
+        _searchDebounceTimer.IsRepeating = false;
+        _searchDebounceTimer.Tick += (_, _) =>
+        {
+            _searchDebounceTimer?.Stop();
+            _query = SearchBox.Text?.Trim() ?? string.Empty;
+            Refresh();
+        };
+    }
+
     private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
-        _query = sender.Text?.Trim() ?? string.Empty;
-        Refresh();
+        var text = sender.Text?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(text))
+        {
+            _searchDebounceTimer?.Stop();
+            _query = string.Empty;
+            Refresh();
+            return;
+        }
+
+        EnsureSearchDebounceTimer();
+        _searchDebounceTimer?.Stop();
+        _searchDebounceTimer?.Start();
     }
 
     private void EmptyStateAction_Click(object sender, RoutedEventArgs e)

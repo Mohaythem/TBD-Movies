@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using TBDMovies.Application.Trakt;
 using TBDMovies.UI.Services;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -51,6 +52,7 @@ public sealed partial class TraktPage : Page, ILocalizableView, IActivatableView
     {
         InitializeComponent();
         ApplyLocalization();
+        Unloaded += (_, _) => Deactivate();
     }
 
     /// <inheritdoc />
@@ -67,6 +69,7 @@ public sealed partial class TraktPage : Page, ILocalizableView, IActivatableView
     /// <inheritdoc />
     public void Deactivate()
     {
+        _searchDebounceTimer?.Stop();
         AppServices.TraktSyncCompleted -= OnTraktSyncCompleted;
         _isActivated = false;
         _activeLoadCts?.Cancel();
@@ -314,9 +317,34 @@ public sealed partial class TraktPage : Page, ILocalizableView, IActivatableView
         ReloadCurrentResource();
     }
 
+    private DispatcherQueueTimer? _searchDebounceTimer;
+
+    private void EnsureSearchDebounceTimer()
+    {
+        if (_searchDebounceTimer is not null) return;
+        _searchDebounceTimer = DispatcherQueue.CreateTimer();
+        _searchDebounceTimer.Interval = TimeSpan.FromMilliseconds(200);
+        _searchDebounceTimer.IsRepeating = false;
+        _searchDebounceTimer.Tick += (_, _) =>
+        {
+            _searchDebounceTimer?.Stop();
+            FilterDisplayedRows();
+        };
+    }
+
     private void SearchBox_TextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
     {
-        FilterDisplayedRows();
+        var text = sender.Text?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(text))
+        {
+            _searchDebounceTimer?.Stop();
+            FilterDisplayedRows();
+            return;
+        }
+
+        EnsureSearchDebounceTimer();
+        _searchDebounceTimer?.Stop();
+        _searchDebounceTimer?.Start();
     }
 
     private void ReloadCurrentResource()

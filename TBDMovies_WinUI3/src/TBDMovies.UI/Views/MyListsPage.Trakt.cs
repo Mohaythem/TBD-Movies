@@ -815,6 +815,7 @@ public sealed partial class MyListsPage
 
     public void Deactivate()
     {
+        _searchDebounceTimer?.Stop();
         AppServices.TraktSyncCompleted -= OnTraktSyncCompleted;
         _traktActive = false;
         ++_traktGeneration;
