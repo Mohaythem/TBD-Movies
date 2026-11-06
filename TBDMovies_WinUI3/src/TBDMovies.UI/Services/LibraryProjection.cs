@@ -41,6 +41,11 @@ internal static class LibraryProjection
 
     public static MovieRecord ToRecord(MovieListItem item) => ToCard(item);
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, int> s_preferredMovieFileIds = new();
+
+    public static void SetPreferredMediaFileId(int movieId, int mediaFileId) =>
+        s_preferredMovieFileIds[movieId] = mediaFileId;
+
     /// <summary>
     /// The details hero, file block, personal state and watch history for one movie. The watch
     /// history keeps the event id in its label-free record so the remove button can call
@@ -51,9 +56,13 @@ internal static class LibraryProjection
         PersonalMovieSnapshot personal,
         IReadOnlyList<WatchEvent> watchEvents)
     {
-        var file = details.MediaFiles
-            .OrderByDescending(candidate => candidate.Status == MediaFileStatus.Present)
-            .FirstOrDefault();
+        int? preferredId = s_preferredMovieFileIds.TryGetValue(details.Id, out var pref) ? pref : null;
+        var file = (preferredId is not null
+                ? details.MediaFiles.FirstOrDefault(f => f.Id == preferredId && f.Status == MediaFileStatus.Present)
+                : null)
+            ?? details.MediaFiles
+                .OrderByDescending(candidate => candidate.Status == MediaFileStatus.Present)
+                .FirstOrDefault();
 
         // Every associated local file, so Movie Details can list all versions/copies of one movie.
         var mediaFiles = details.MediaFiles
@@ -62,7 +71,11 @@ internal static class LibraryProjection
                 f.CurrentPath,
                 string.IsNullOrWhiteSpace(f.Extension) ? Path.GetExtension(f.CurrentPath) : f.Extension!,
                 LocalizationService.Text(f.Status == MediaFileStatus.Present ? "Present" : "Missing"),
-                FileFacts(f), f.Status == MediaFileStatus.Present ? "Present" : "Missing"))
+                FileFacts(f),
+                f.Status == MediaFileStatus.Present ? "Present" : "Missing",
+                MediaFileId: f.Id,
+                IsPrimary: file != null && f.Id == file.Id,
+                IsPresent: f.Status == MediaFileStatus.Present))
             .ToList();
 
         return new MovieRecord(

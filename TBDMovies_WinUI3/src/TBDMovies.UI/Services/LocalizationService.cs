@@ -715,6 +715,11 @@ public static class LocalizationService
         ["CrashTempTitle"] = "Temporary files need review",
         ["CrashTempHelp"] = "Found {0} possible interrupted-transfer files. They were not changed or deleted; review them with the operation log before taking action.",
         ["FixMatch"] = "Fix match…",
+        ["PrimaryVersion"] = "Primary",
+        ["SetAsPrimary"] = "Set as primary",
+        ["PlayThisVersion"] = "Play this file",
+        ["OpenThisFolder"] = "Open containing folder",
+        ["CopyThisPath"] = "Copy file path",
     };
 
     private static readonly IReadOnlyDictionary<string, string> Arabic = new Dictionary<string, string>
@@ -1422,6 +1427,11 @@ public static class LocalizationService
         ["CrashTempTitle"] = "ملفات مؤقتة تحتاج إلى مراجعة",
         ["CrashTempHelp"] = "عُثر على {0} ملف يحتمل أنه ناتج عن نقل انقطع. لم تُغيّر الملفات أو تُحذف؛ راجعها مع سجل العمليات قبل اتخاذ أي إجراء.",
         ["FixMatch"] = "تصحيح المطابقة…",
+        ["PrimaryVersion"] = "أساسي",
+        ["SetAsPrimary"] = "تعيين كملف أساسي",
+        ["PlayThisVersion"] = "تشغيل هذا الملف",
+        ["OpenThisFolder"] = "فتح المجلد الحاوي",
+        ["CopyThisPath"] = "نسخ مسار الملف",
     };
 
     public static UiLanguage CurrentLanguage { get; private set; } = UiLanguage.English;

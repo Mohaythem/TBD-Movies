@@ -10,8 +10,27 @@ using Microsoft.UI.Xaml.Media.Imaging;
 namespace TBDMovies.UI.Models;
 
 /// <summary>One associated local file shown in the Movie Details media-files list.</summary>
-public sealed record MovieFileRecord(string FileName, string FilePath, string Extension, string Availability,
-    string Facts = "", string AvailabilityKey = "UnknownMedia");
+public sealed record MovieFileRecord(
+    string FileName,
+    string FilePath,
+    string Extension,
+    string Availability,
+    string Facts = "",
+    string AvailabilityKey = "UnknownMedia",
+    int MediaFileId = 0,
+    bool IsPrimary = false,
+    bool IsPresent = true)
+{
+    public Visibility PrimaryBadgeVisibility => IsPrimary ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility SetPrimaryButtonVisibility => !IsPrimary ? Visibility.Visible : Visibility.Collapsed;
+    public bool CanPlayOrOpen => IsPresent && AvailabilityKey != "Missing" && AvailabilityKey != "StorageUnavailable";
+
+    public string PrimaryLabel => LocalizationService.Text("PrimaryVersion");
+    public string SetPrimaryLabel => LocalizationService.Text("SetAsPrimary");
+    public string PlayLabel => LocalizationService.Text("PlayThisVersion");
+    public string OpenFolderLabel => LocalizationService.Text("OpenThisFolder");
+    public string CopyPathLabel => LocalizationService.Text("CopyThisPath");
+}
 
 /// <summary>One configured media root in Settings, with its per-row Replace / Remove actions.</summary>
 public sealed record MediaFolderRow(string Path)

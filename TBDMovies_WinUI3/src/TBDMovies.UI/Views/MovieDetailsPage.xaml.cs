@@ -289,7 +289,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         if (movie.Files.Count == 0) return;
         var path = movie.FilePath;
         var request = _availabilityRequests.Begin();
-        MediaFilesRepeater.ItemsSource = movie.Files.Select(file => file with { Availability = LocalizationService.Text("UnknownMedia") }).ToList();
+        MediaFilesRepeater.ItemsSource = movie.Files.Select(file => file with { Availability = LocalizationService.Text("UnknownMedia"), AvailabilityKey = "UnknownMedia", IsPresent = false }).ToList();
         PresentText.Text = LocalizationService.Text("UnknownMedia");
         _ = Task.Run(() =>
         {
@@ -1049,6 +1049,105 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         catch (Exception error) { ReportFailure(error); }
     }
 
+    private async void PlayFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: MovieFileRecord fileRecord }) return;
+        if (string.IsNullOrWhiteSpace(fileRecord.FilePath) || !fileRecord.CanPlayOrOpen)
+        {
+            ReportMissingFile();
+            return;
+        }
+
+        var request = _actionRequests.Begin();
+        try
+        {
+            var result = await AppServices.PlayMediaFileAsync(fileRecord.FilePath, request.Token);
+            if (!request.IsCurrent) return;
+            if (result.ErrorCode == "PlaybackActivityNotSaved")
+            {
+                await ShowMessageAsync(LocalizationService.Text("Failed"), LocalizationService.Text("PlaybackActivityNotSaved"));
+                return;
+            }
+            await PresentActionResultAsync(result.Status);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error)
+        {
+            if (request.IsCurrent) ReportFailure(error);
+        }
+    }
+
+    private async void OpenFileFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: MovieFileRecord fileRecord }) return;
+        if (string.IsNullOrWhiteSpace(fileRecord.FilePath) || !fileRecord.CanPlayOrOpen)
+        {
+            ReportMissingFile();
+            return;
+        }
+
+        var request = _actionRequests.Begin();
+        try
+        {
+            var result = await AppServices.MediaFileActions.OpenContainingFolderAsync(fileRecord.FilePath, request.Token);
+            if (!request.IsCurrent) return;
+            await PresentActionResultAsync(result.Status);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error)
+        {
+            if (request.IsCurrent) ReportFailure(error);
+        }
+    }
+
+    private void CopyFilePath_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: MovieFileRecord fileRecord }) return;
+        if (string.IsNullOrWhiteSpace(fileRecord.FilePath)) return;
+        try
+        {
+            var package = new Windows.ApplicationModel.DataTransfer.DataPackage();
+            package.SetText(fileRecord.FilePath);
+            Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(package);
+        }
+        catch (Exception error) { ReportFailure(error); }
+    }
+
+    private void SetPrimaryFile_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: MovieFileRecord fileRecord }) return;
+        if (!fileRecord.CanPlayOrOpen) return;
+
+        LibraryProjection.SetPreferredMediaFileId(_movie.Id, fileRecord.MediaFileId);
+
+        var updatedFiles = _movie.Files.Select(f => f with
+        {
+            IsPrimary = f.MediaFileId == fileRecord.MediaFileId
+        }).ToList();
+
+        _movie = _movie with
+        {
+            FilePath = fileRecord.FilePath,
+            FileName = fileRecord.FileName,
+            FileFacts = fileRecord.Facts,
+            MediaFileId = fileRecord.MediaFileId,
+            MediaFiles = updatedFiles,
+            HasLocalFile = fileRecord.IsPresent
+        };
+
+        FileNameText.Text = _movie.FileName ?? string.Empty;
+        FilePathText.Text = _movie.FilePath ?? string.Empty;
+        FileFactsText.Text = _movie.FileFacts ?? string.Empty;
+        FileFactsText.Visibility = string.IsNullOrWhiteSpace(_movie.FileFacts) ? Visibility.Collapsed : Visibility.Visible;
+
+        var canOpen = fileRecord.CanPlayOrOpen && !_isOrganizing;
+        PlayButton.IsEnabled = canOpen;
+        OpenFolderButton.IsEnabled = canOpen;
+        OrganizeButton.IsEnabled = MoveMovieButton.IsEnabled = canOpen;
+
+        MediaFilesRepeater.ItemsSource = updatedFiles;
+    }
+
     private void UpdatePosterVisuals()
     {
         if (string.IsNullOrWhiteSpace(_movie.PosterReference) || !AppServices.IsAvailable)
@@ -1102,10 +1201,14 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
     private bool _scrollToTopOnLoad;
     private void LocalizeFileAvailability()
     {
-        MediaFilesRepeater.ItemsSource = _movie.Files.Select(file => file with
+        var localizedFiles = _movie.Files.Select(file => file with
         {
-            Availability = LocalizationService.Text(_fileAvailability.GetValueOrDefault(file.FilePath, "UnknownMedia"))
+            Availability = LocalizationService.Text(_fileAvailability.GetValueOrDefault(file.FilePath, "UnknownMedia")),
+            AvailabilityKey = _fileAvailability.GetValueOrDefault(file.FilePath, "UnknownMedia"),
+            IsPresent = _fileAvailability.GetValueOrDefault(file.FilePath, "UnknownMedia") == "Present"
         }).ToList();
+        _movie = _movie with { MediaFiles = localizedFiles };
+        MediaFilesRepeater.ItemsSource = localizedFiles;
         PresentText.Text = LocalizationService.Text(_movie.FilePath is null ? "UnknownMedia" :
             _fileAvailability.GetValueOrDefault(_movie.FilePath, "UnknownMedia"));
         if (!_movie.HasLocalFile && _movie.Files.Count > 0)
