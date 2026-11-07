@@ -1,4 +1,4 @@
-﻿<Page
+<Page
     x:Class="TBDMovies.UI.Views.CheckLibraryPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -155,9 +155,13 @@
                                                 <Button
                                                     x:Name="IssueActionButton"
                                                     Click="IssueAction_Click"
-                                                    Content="{x:Bind ActionLabel}"
                                                     Tag="{x:Bind}"
-                                                    Style="{StaticResource SubtleControlButtonStyle}" />
+                                                    Style="{StaticResource SubtleControlButtonStyle}">
+                                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                        <FontIcon Glyph="&#xE890;" FontSize="12" FontFamily="{StaticResource SymbolThemeFontFamily}" VerticalAlignment="Center" />
+                                                        <TextBlock Text="{x:Bind ActionLabel}" VerticalAlignment="Center" />
+                                                    </StackPanel>
+                                                </Button>
                                             </StackPanel>
                                         </Grid>
                                     </Border>

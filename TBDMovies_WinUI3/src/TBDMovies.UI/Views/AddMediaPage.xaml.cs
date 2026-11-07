@@ -361,6 +361,10 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
             var candidate = newItem.Classification == DiscoveryClassification.TvEpisodeCandidate
                 ? new TvBatchAnalysisService().Analyze(Path.GetDirectoryName(newItem.Path)!, [newItem]).AllFiles.FirstOrDefault() : null;
             var replacement = new DetectedMediaDisplayRecord(newItem, candidate, Path.GetDirectoryName(newItem.Path));
+            if (replacement.CanAdd)
+            {
+                replacement.IsSelected = true;
+            }
             replacement.PropertyChanged += SelectionChanged;
             _rows[index] = replacement;
         }
@@ -609,7 +613,7 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
         _batchPresentation = true;
         foreach (var row in _rows)
         {
-            row.IsSelected = row.IsReadyToAdd;
+            row.IsSelected = row.IsTv ? row.CanAdd : row.IsReadyToAdd;
         }
         _batchPresentation = false;
         Refresh();
@@ -1069,6 +1073,10 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
             {
                 _isReviewingMetadata = false;
                 _metadataCancellation = null;
+                foreach (var row in _rows.Where(r => r.IsTv && r.CanAdd))
+                {
+                    row.IsSelected = true;
+                }
                 // Matching has settled (Ready). Re-apply any active sort once so a Status/Type sort the
                 // user chose reflects the final states, without rows jumping on every row update.
                 ApplySort();

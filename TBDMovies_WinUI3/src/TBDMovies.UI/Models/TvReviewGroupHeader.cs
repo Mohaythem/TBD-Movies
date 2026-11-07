@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using TBDMovies.UI.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -21,10 +21,11 @@ public sealed class TvReviewGroupHeader(string key, string title, int? season, I
     public string ChevronGlyph => State.IsExpanded ? "\uE70D"
         : LocalizationService.FlowDirection == FlowDirection.RightToLeft ? "\uE76B" : "\uE76C";
     public string CorrectLabel => LocalizationService.Text("TvBatchCorrect");
+    public Thickness Indent => Season is not null ? new Thickness(32, 0, 0, 0) : new Thickness(0);
     public string AutomationName => Label + " · " + Count;
     public void Refresh()
     {
-        foreach (var name in new[] { nameof(Label), nameof(Count), nameof(Selected), nameof(CanSelect), nameof(IsEnabled), nameof(ExpandLabel), nameof(ChevronGlyph), nameof(CorrectLabel), nameof(AutomationName) })
+        foreach (var name in new[] { nameof(Label), nameof(Count), nameof(Selected), nameof(CanSelect), nameof(IsEnabled), nameof(ExpandLabel), nameof(ChevronGlyph), nameof(CorrectLabel), nameof(Indent), nameof(AutomationName) })
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
     public event PropertyChangedEventHandler? PropertyChanged;

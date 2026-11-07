@@ -1,15 +1,15 @@
-﻿using TBDMovies.Application.Dto;
+using TBDMovies.Application.Dto;
 
 namespace TBDMovies.UI.Services;
 
 public enum AddMediaReviewFilter { AllNew, Ready, NeedsAttention }
 
 /// <summary>Presentation facts only. Metadata failure does not change local eligibility.</summary>
-public readonly record struct AddMediaReviewFacts(bool LocalEligible, ImportItemStatus Status, bool Selected, bool DiscoveredFile = true)
+public readonly record struct AddMediaReviewFacts(bool LocalEligible, ImportItemStatus Status, bool Selected, bool DiscoveredFile = true, bool IsEpisode = false)
 {
     public bool Registered => Status == ImportItemStatus.AlreadyInLibrary;
     public bool CanAdd => LocalEligible && !Registered;
-    public bool Ready => CanAdd && Status is ImportItemStatus.ReadyToAdd or ImportItemStatus.Matched;
+    public bool Ready => CanAdd && (IsEpisode || Status is ImportItemStatus.ReadyToAdd or ImportItemStatus.Matched);
     public bool NeedsAttention => !Registered && !Ready && Status != ImportItemStatus.Matching
         && (Status != ImportItemStatus.SkippedByUser || !LocalEligible);
 

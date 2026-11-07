@@ -9,6 +9,8 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Foundation;
+using TBDMovies.Domain.Library.Personal;
 using XamlApplication = Microsoft.UI.Xaml.Application;
 
 namespace TBDMovies.UI.Views;
@@ -61,7 +63,14 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         _isReady = true;
         ApplyLocalization();
         ApplyViewMode(_viewMode, persist: false);
-        Unloaded += (_, _) => Deactivate();
+        MoviesGrid.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnGridPointerPressed), handledEventsToo: true);
+        MoviesGrid.PointerMoved += OnGridPointerMoved;
+        MoviesGrid.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler(OnGridPointerReleased), handledEventsToo: true);
+        MoviesGrid.AddHandler(UIElement.PointerCanceledEvent, new PointerEventHandler(OnGridPointerReleased), handledEventsToo: true);
+        MoviesGrid.AddHandler(UIElement.PreviewKeyDownEvent, new KeyEventHandler(OnGridPreviewKeyDown), handledEventsToo: true);
+        ShowsGrid.AddHandler(UIElement.PreviewKeyDownEvent, new KeyEventHandler(OnGridPreviewKeyDown), handledEventsToo: true);
+        Loaded += OnLibraryPageLoaded;
+        Unloaded += OnLibraryPageUnloaded;
     }
 
     public event EventHandler<MovieRecord>? MovieSelected;
@@ -92,6 +101,9 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
     public void Deactivate()
     {
         _searchDebounceTimer?.Stop();
+        _headerNotificationTimer?.Stop();
+        HeaderNotificationBadge.Visibility = Visibility.Collapsed;
+        ClearSelection();
     }
 
     public void InvalidateCatalog()
@@ -174,7 +186,29 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         ErrorState.Title = LocalizationService.Text("LibraryError");
         ErrorState.Message = LocalizationService.Text("LibraryErrorHelp");
         ErrorState.ActionText = LocalizationService.Text("Retry");
+        SelectAllButtonText.Text = LocalizationService.Text("SelectAll");
+        AddToListButtonText.Text = LocalizationService.Text("AddToList");
+        ToolTipService.SetToolTip(ClearSelectionButton, LocalizationService.Text("Cancel"));
+        UpdateViewModeToggleButtonVisuals();
         Refresh();
+    }
+
+    private void ViewModeToggleButton_Click(object sender, RoutedEventArgs e)
+    {
+        var newMode = _viewMode == LibraryViewMode.Compact ? LibraryViewMode.Grid : LibraryViewMode.Compact;
+        ApplyViewMode(newMode, persist: true);
+    }
+
+    private void UpdateViewModeToggleButtonVisuals()
+    {
+        if (ViewModeToggleButton is null || ViewModeToggleIcon is null) return;
+        bool isCompact = _viewMode == LibraryViewMode.Compact;
+        ViewModeToggleIcon.Glyph = isCompact ? "\uE8A9" : "\uEA37";
+        var tooltip = isCompact
+            ? (LocalizationService.Text("LibraryViewGrid") ?? "Grid view")
+            : (LocalizationService.Text("LibraryViewCompact") ?? "List view");
+        ToolTipService.SetToolTip(ViewModeToggleButton, tooltip);
+        ViewModeToggleButton.SetValue(Microsoft.UI.Xaml.Automation.AutomationProperties.NameProperty, tooltip);
     }
 
     private void ViewModeSelector_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
@@ -199,6 +233,8 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         {
             ViewModeSelector.SelectedItem = selected;
         }
+
+        UpdateViewModeToggleButtonVisuals();
 
         if (persist)
         {
@@ -469,6 +505,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
 
         var result = items.ToArray();
         MoviesGrid.ItemsSource = result;
+        UpdateSelectionState();
         return result.Length;
     }
 
@@ -723,8 +760,23 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
 
     private void MoviesGrid_ItemClick(object sender, ItemClickEventArgs e)
     {
+        if (_justFinishedMarquee)
+        {
+            _justFinishedMarquee = false;
+            return;
+        }
+
         if (e.ClickedItem is LibraryCardItem item)
         {
+            bool isCtrl = Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
+                .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+            if (isCtrl || SelectedCount > 0)
+            {
+                ToggleItemSelection(item);
+                return;
+            }
+
             if (item.Show is { } show)
             {
                 ShowSelected?.Invoke(this, show);
@@ -755,4 +807,631 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
                 onChanged: () => { InvalidateCatalog(); Refresh(); });
     }
 
+    #region Batch Selection & Marquee
+
+    public int SelectedCount => GetDisplayedItems().Count(item => item.IsSelected);
+
+    private IEnumerable<LibraryCardItem> GetDisplayedItems()
+    {
+        if (MoviesGrid.ItemsSource is IEnumerable<LibraryCardItem> items)
+        {
+            return items;
+        }
+        return [];
+    }
+
+    private void ToggleItemSelection(LibraryCardItem item)
+    {
+        item.IsSelected = !item.IsSelected;
+        UpdateSelectionState();
+    }
+
+    private void UpdateSelectionState()
+    {
+        var items = GetDisplayedItems().ToList();
+        var selectedCount = items.Count(i => i.IsSelected);
+        bool modeActive = selectedCount > 0;
+
+        foreach (var card in items)
+        {
+            card.IsSelectionModeActive = modeActive;
+        }
+
+        if (modeActive)
+        {
+            SelectionCommandBar.Visibility = Visibility.Visible;
+            SelectedCountText.Text = LocalizationService.Format("SelectedItemsFormat", selectedCount);
+            SelectAllButtonText.Text = (selectedCount == items.Count && items.Count > 0)
+                ? (LocalizationService.Text("Cancel") ?? "Deselect All")
+                : (LocalizationService.Text("SelectAll") ?? "Select All");
+        }
+        else
+        {
+            SelectionCommandBar.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    public void ClearSelection()
+    {
+        foreach (var item in GetDisplayedItems())
+        {
+            item.IsSelected = false;
+            item.IsSelectionModeActive = false;
+        }
+        UpdateSelectionState();
+    }
+
+    private void ClearSelectionButton_Click(object sender, RoutedEventArgs e) => ClearSelection();
+
+    private void SelectAllButton_Click(object sender, RoutedEventArgs e)
+    {
+        var items = GetDisplayedItems().ToList();
+        if (items.Count == 0) return;
+
+        bool selectAll = items.Any(i => !i.IsSelected);
+        foreach (var item in items)
+        {
+            item.IsSelected = selectAll;
+        }
+        UpdateSelectionState();
+    }
+
+    private void Card_PointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: LibraryCardItem item })
+        {
+            item.IsHovered = true;
+        }
+    }
+
+    private void Card_PointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: LibraryCardItem item })
+        {
+            item.IsHovered = false;
+        }
+    }
+
+    private bool _suppressMarquee;
+
+    private void SelectionCircle_PointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        _suppressMarquee = true;
+        e.Handled = true;
+        if (sender is FrameworkElement { DataContext: LibraryCardItem item })
+        {
+            ToggleItemSelection(item);
+            MoviesGrid.Focus(FocusState.Programmatic);
+        }
+    }
+
+    private void SelectionCircle_Tapped(object sender, TappedRoutedEventArgs e)
+    {
+        e.Handled = true;
+    }
+
+    private Point _dragStartPoint;
+    private bool _isPointerDown;
+    private bool _isDraggingMarquee;
+    private bool _justFinishedMarquee;
+    private Dictionary<LibraryCardItem, bool>? _preDragSelection;
+    private readonly HashSet<(bool IsShow, int Id)> _dragAccumulatedKeys = new();
+
+    private void OnGridPointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (_suppressMarquee)
+        {
+            _suppressMarquee = false;
+            return;
+        }
+
+        if (e.Pointer.PointerDeviceType == Microsoft.UI.Input.PointerDeviceType.Touch)
+        {
+            return;
+        }
+
+        var ptr = e.GetCurrentPoint(SelectionCanvas);
+        if (!ptr.Properties.IsLeftButtonPressed) return;
+
+        if (e.OriginalSource is DependencyObject source && (IsInsideScrollBar(source) || IsInsideGridViewItem(source)))
+        {
+            return;
+        }
+
+        _dragStartPoint = ptr.Position;
+        _isPointerDown = true;
+        _isDraggingMarquee = false;
+    }
+
+    private void OnGridPointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_isPointerDown) return;
+
+        var ptr = e.GetCurrentPoint(SelectionCanvas);
+        if (!ptr.Properties.IsLeftButtonPressed)
+        {
+            OnGridPointerReleased(sender, e);
+            return;
+        }
+
+        var currentPoint = ptr.Position;
+        var deltaX = currentPoint.X - _dragStartPoint.X;
+        var deltaY = currentPoint.Y - _dragStartPoint.Y;
+
+        if (!_isDraggingMarquee)
+        {
+            if (Math.Abs(deltaX) > 6 || Math.Abs(deltaY) > 6)
+            {
+                _isDraggingMarquee = true;
+                try
+                {
+                    MoviesGrid.CapturePointer(e.Pointer);
+                }
+                catch
+                {
+                }
+
+                _dragAccumulatedKeys.Clear();
+                foreach (var item in GetDisplayedItems())
+                {
+                    if (item.IsSelected)
+                    {
+                        _dragAccumulatedKeys.Add((item.IsShow, item.Id));
+                    }
+                }
+
+                _preDragSelection = GetDisplayedItems().ToDictionary(i => i, i => i.IsSelected);
+                SelectionRectangle.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                return;
+            }
+        }
+
+        var left = Math.Min(_dragStartPoint.X, currentPoint.X);
+        var top = Math.Min(_dragStartPoint.Y, currentPoint.Y);
+        var width = Math.Abs(deltaX);
+        var height = Math.Abs(deltaY);
+
+        Canvas.SetLeft(SelectionRectangle, left);
+        Canvas.SetTop(SelectionRectangle, top);
+        SelectionRectangle.Width = width;
+        SelectionRectangle.Height = height;
+
+        var marqueeRect = new Windows.Foundation.Rect(left, top, width, height);
+
+        foreach (var item in GetDisplayedItems())
+        {
+            if (_dragAccumulatedKeys.Contains((item.IsShow, item.Id)))
+            {
+                item.IsSelected = true;
+                continue;
+            }
+
+            if (MoviesGrid.ContainerFromItem(item) is FrameworkElement container && container.Visibility == Visibility.Visible)
+            {
+                try
+                {
+                    var transform = container.TransformToVisual(SelectionCanvas);
+                    var bounds = transform.TransformBounds(new Windows.Foundation.Rect(0, 0, container.ActualWidth, container.ActualHeight));
+                    bool intersects = Intersects(marqueeRect, bounds);
+
+                    if (intersects)
+                    {
+                        _dragAccumulatedKeys.Add((item.IsShow, item.Id));
+                        item.IsSelected = true;
+                    }
+                    else if (_preDragSelection != null && _preDragSelection.TryGetValue(item, out var wasSelected) && wasSelected)
+                    {
+                        item.IsSelected = true;
+                    }
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        UpdateSelectionState();
+
+        if (_isDraggingMarquee)
+        {
+            var scrollViewer = GetGridScrollViewer();
+            if (scrollViewer is not null)
+            {
+                var gridHeight = MoviesGrid.ActualHeight;
+                var pointerInGrid = e.GetCurrentPoint(MoviesGrid).Position;
+
+                if (pointerInGrid.Y > gridHeight - 60)
+                {
+                    scrollViewer.ChangeView(null, scrollViewer.VerticalOffset + 25, null, true);
+                }
+                else if (pointerInGrid.Y < 60 && scrollViewer.VerticalOffset > 0)
+                {
+                    scrollViewer.ChangeView(null, Math.Max(0, scrollViewer.VerticalOffset - 25), null, true);
+                }
+            }
+        }
+    }
+
+    private ScrollViewer? _gridScrollViewer;
+
+    private ScrollViewer? GetGridScrollViewer()
+    {
+        if (_gridScrollViewer is not null) return _gridScrollViewer;
+        _gridScrollViewer = FindChild<ScrollViewer>(MoviesGrid);
+        return _gridScrollViewer;
+    }
+
+    private static T? FindChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(parent);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T typed) return typed;
+            var descendant = FindChild<T>(child);
+            if (descendant is not null) return descendant;
+        }
+        return null;
+    }
+
+    private void OnGridPointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (_isDraggingMarquee)
+        {
+            try
+            {
+                MoviesGrid.ReleasePointerCapture(e.Pointer);
+            }
+            catch
+            {
+            }
+
+            SelectionRectangle.Visibility = Visibility.Collapsed;
+            _isDraggingMarquee = false;
+            _justFinishedMarquee = true;
+            _dragAccumulatedKeys.Clear();
+            _preDragSelection = null;
+            UpdateSelectionState();
+
+            if (SelectedCount > 0)
+            {
+                ClearSelectionButton.Focus(FocusState.Programmatic);
+            }
+
+            DispatcherQueue.TryEnqueue(() => _justFinishedMarquee = false);
+        }
+
+        _isPointerDown = false;
+    }
+
+    private static bool Intersects(Windows.Foundation.Rect a, Windows.Foundation.Rect b) =>
+        !(a.Right < b.Left || a.Left > b.Right || a.Bottom < b.Top || a.Top > b.Bottom);
+
+    private static bool IsInsideScrollBar(DependencyObject? obj)
+    {
+        while (obj != null)
+        {
+            if (obj is ScrollBar or Thumb) return true;
+            obj = VisualTreeHelper.GetParent(obj);
+        }
+        return false;
+    }
+
+    private static bool IsInsideGridViewItem(DependencyObject? obj)
+    {
+        while (obj != null)
+        {
+            if (obj is GridViewItem) return true;
+            obj = VisualTreeHelper.GetParent(obj);
+        }
+        return false;
+    }
+
+    private void AddToListFlyout_Opening(object? sender, object? e)
+    {
+        AddToListFlyout.Items.Clear();
+
+        try
+        {
+            var customLists = AppServices.Personal.ListCustomLists();
+            if (customLists.Count > 0)
+            {
+                foreach (var list in customLists)
+                {
+                    var item = new MenuFlyoutItem
+                    {
+                        Text = list.Name,
+                        Tag = list.Id,
+                        Icon = new FontIcon { Glyph = "\uE8B7" }
+                    };
+                    item.Click += async (_, _) => await AddSelectedToCustomListAsync(list.Id, list.Name);
+                    AddToListFlyout.Items.Add(item);
+                }
+
+                AddToListFlyout.Items.Add(new MenuFlyoutSeparator());
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[LibraryPage] ListCustomLists failed: {ex.Message}");
+        }
+
+        var createNewItem = new MenuFlyoutItem
+        {
+            Text = LocalizationService.Text("NewList") ?? "New list…",
+            Icon = new FontIcon { Glyph = "\uE710" }
+        };
+        createNewItem.Click += async (_, _) => await CreateNewListAndAddSelectedAsync();
+        AddToListFlyout.Items.Add(createNewItem);
+    }
+
+    private async Task AddSelectedToCustomListAsync(int listId, string listName)
+    {
+        var selected = GetDisplayedItems().Where(item => item.IsSelected).ToList();
+        if (selected.Count == 0) return;
+
+        try
+        {
+            var existingItems = await Task.Run(() => AppServices.Personal.ListCustomListItems(listId));
+            var existingMovieIds = existingItems.Where(i => i.Kind == CustomListMediaKind.Movie).Select(i => i.Id).ToHashSet();
+            var existingShowIds = existingItems.Where(i => i.Kind == CustomListMediaKind.Show).Select(i => i.Id).ToHashSet();
+
+            var itemsToAdd = new List<LibraryCardItem>();
+            int alreadyPresentCount = 0;
+
+            foreach (var item in selected)
+            {
+                bool alreadyPresent = item.IsShow
+                    ? existingShowIds.Contains(item.Id)
+                    : existingMovieIds.Contains(item.Id);
+
+                if (alreadyPresent)
+                {
+                    alreadyPresentCount++;
+                }
+                else
+                {
+                    itemsToAdd.Add(item);
+                }
+            }
+
+            if (itemsToAdd.Count > 0)
+            {
+                await Task.Run(() =>
+                {
+                    foreach (var item in itemsToAdd)
+                    {
+                        if (item.IsShow)
+                        {
+                            AppServices.Personal.AddShowToCustomList(listId, item.Id);
+                        }
+                        else
+                        {
+                            AppServices.Personal.AddMovieToCustomList(listId, item.Id);
+                        }
+                    }
+                });
+            }
+
+            bool isRtl = LocalizationService.FlowDirection == FlowDirection.RightToLeft;
+            string message;
+            if (itemsToAdd.Count == 0)
+            {
+                message = isRtl
+                    ? $"جميع العناصر المحددة موجودة بالفعل في \"{listName}\""
+                    : $"All selected items are already in \"{listName}\"";
+            }
+            else
+            {
+                int moviesCount = itemsToAdd.Count(i => !i.IsShow);
+                int showsCount = itemsToAdd.Count(i => i.IsShow);
+
+                string duplicateNote = string.Empty;
+                if (alreadyPresentCount > 0)
+                {
+                    duplicateNote = isRtl
+                        ? (alreadyPresentCount == 1 ? " (تم استبعاد مكرر واحد)" : $" (تم استبعاد {alreadyPresentCount} مكرر)")
+                        : (alreadyPresentCount == 1 ? " (1 duplicate skipped)" : $" ({alreadyPresentCount} duplicates skipped)");
+                }
+
+                if (moviesCount > 0 && showsCount > 0)
+                {
+                    message = isRtl
+                        ? $"تمت إضافة {FormatMovieCount(moviesCount, true)} و {FormatShowCount(showsCount, true)} إلى \"{listName}\"{duplicateNote}"
+                        : $"Added {FormatMovieCount(moviesCount, false)} and {FormatShowCount(showsCount, false)} to \"{listName}\"{duplicateNote}";
+                }
+                else if (moviesCount > 0)
+                {
+                    message = isRtl
+                        ? $"تمت إضافة {FormatMovieCount(moviesCount, true)} إلى \"{listName}\"{duplicateNote}"
+                        : $"Added {FormatMovieCount(moviesCount, false)} to \"{listName}\"{duplicateNote}";
+                }
+                else
+                {
+                    message = isRtl
+                        ? $"تمت إضافة {FormatShowCount(showsCount, true)} إلى \"{listName}\"{duplicateNote}"
+                        : $"Added {FormatShowCount(showsCount, false)} to \"{listName}\"{duplicateNote}";
+                }
+            }
+
+            ShowHeaderNotification(message, isSuccess: itemsToAdd.Count > 0);
+            ClearSelection();
+        }
+        catch (Exception ex)
+        {
+            ShowHeaderNotification(MetadataErrorText.For(ex), isSuccess: false);
+        }
+    }
+
+    private static string FormatMovieCount(int count, bool isRtl)
+    {
+        if (!isRtl) return count == 1 ? "1 movie" : $"{count} movies";
+        if (count == 1) return "فيلم واحد";
+        if (count == 2) return "فيلمان";
+        if (count >= 3 && count <= 10) return $"{count} أفلام";
+        return $"{count} فيلماً";
+    }
+
+    private static string FormatShowCount(int count, bool isRtl)
+    {
+        if (!isRtl) return count == 1 ? "1 TV show" : $"{count} TV shows";
+        if (count == 1) return "مسلسل واحد";
+        if (count == 2) return "مسلسلان";
+        if (count >= 3 && count <= 10) return $"{count} مسلسلات";
+        return $"{count} مسلسلاً";
+    }
+
+    private async Task CreateNewListAndAddSelectedAsync()
+    {
+        var name = await PromptListNameAsync(LocalizationService.Text("NewList"), string.Empty);
+        if (string.IsNullOrWhiteSpace(name)) return;
+
+        try
+        {
+            var created = AppServices.Personal.CreateCustomList(name);
+            await AddSelectedToCustomListAsync(created.Id, created.Name);
+        }
+        catch (TBDMovies.Application.DuplicateCustomListNameException)
+        {
+            ShowHeaderNotification(LocalizationService.Text("DuplicateListName"), isSuccess: false);
+        }
+        catch (Exception ex)
+        {
+            ShowHeaderNotification(MetadataErrorText.For(ex), isSuccess: false);
+        }
+    }
+
+    private async Task<string?> PromptListNameAsync(string title, string value)
+    {
+        var input = new TextBox
+        {
+            Text = value,
+            PlaceholderText = LocalizationService.Text("ListNamePlaceholder"),
+            Style = (Style)XamlApplication.Current.Resources["FormInputTextBoxStyle"],
+        };
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            FlowDirection = LocalizationService.FlowDirection,
+            RequestedTheme = ThemeService.ElementTheme,
+            Title = title,
+            Content = input,
+            PrimaryButtonText = LocalizationService.Text("Save"),
+            CloseButtonText = LocalizationService.Text("Cancel"),
+            DefaultButton = ContentDialogButton.Primary,
+        };
+
+        if (await ContentDialogCoordinator.ShowAsync(dialog) != ContentDialogResult.Primary)
+        {
+            return null;
+        }
+
+        var name = input.Text?.Trim();
+        return string.IsNullOrWhiteSpace(name) ? null : name;
+    }
+
+    private DispatcherQueueTimer? _headerNotificationTimer;
+
+    private void ShowHeaderNotification(string message, bool isSuccess)
+    {
+        HeaderNotificationText.Text = message;
+        HeaderNotificationIcon.Glyph = isSuccess ? "\uE73E" : "\uE946";
+        HeaderNotificationIcon.Foreground = (Brush)XamlApplication.Current.Resources[
+            isSuccess ? "SystemFillColorSuccessBrush" : "SystemFillColorAttentionBrush"];
+        HeaderNotificationBadge.Visibility = Visibility.Visible;
+
+        _headerNotificationTimer?.Stop();
+        _headerNotificationTimer = DispatcherQueue.CreateTimer();
+        _headerNotificationTimer.Interval = TimeSpan.FromSeconds(3);
+        _headerNotificationTimer.IsRepeating = false;
+        _headerNotificationTimer.Tick += (_, _) =>
+        {
+            _headerNotificationTimer?.Stop();
+            HeaderNotificationBadge.Visibility = Visibility.Collapsed;
+        };
+        _headerNotificationTimer.Start();
+    }
+
+    private void EscapeAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (SelectedCount > 0)
+        {
+            ClearSelection();
+            args.Handled = true;
+            Focus(FocusState.Programmatic);
+        }
+    }
+
+    private void Page_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == Windows.System.VirtualKey.Escape && SelectedCount > 0)
+        {
+            ClearSelection();
+            e.Handled = true;
+            Focus(FocusState.Programmatic);
+        }
+    }
+
+    private void Grid_PreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == Windows.System.VirtualKey.Escape && SelectedCount > 0)
+        {
+            ClearSelection();
+            e.Handled = true;
+            Focus(FocusState.Programmatic);
+        }
+    }
+
+    private void OnGridPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == Windows.System.VirtualKey.Escape && SelectedCount > 0)
+        {
+            ClearSelection();
+            e.Handled = true;
+            Focus(FocusState.Programmatic);
+        }
+    }
+
+    private void Page_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == Windows.System.VirtualKey.Escape && SelectedCount > 0)
+        {
+            ClearSelection();
+            e.Handled = true;
+            Focus(FocusState.Programmatic);
+        }
+    }
+
+    private void OnLibraryPageLoaded(object sender, RoutedEventArgs e)
+    {
+        if (XamlRoot?.Content is UIElement rootContent)
+        {
+            rootContent.AddHandler(UIElement.PreviewKeyDownEvent, new KeyEventHandler(OnRootPreviewKeyDown), handledEventsToo: true);
+        }
+    }
+
+    private void OnLibraryPageUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (XamlRoot?.Content is UIElement rootContent)
+        {
+            rootContent.RemoveHandler(UIElement.PreviewKeyDownEvent, new KeyEventHandler(OnRootPreviewKeyDown));
+        }
+        Deactivate();
+    }
+
+    private void OnRootPreviewKeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == Windows.System.VirtualKey.Escape && SelectedCount > 0)
+        {
+            ClearSelection();
+            e.Handled = true;
+            Focus(FocusState.Programmatic);
+        }
+    }
+
+    #endregion
 }

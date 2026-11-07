@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -188,6 +188,12 @@ public interface ITvLibraryUiActions
     /// </summary>
     int? FindEpisodeForMediaFile(int mediaFileId);
 
+    /// <summary>
+    /// The TV show a registered media file belongs to, or null when the file is not an episode file.
+    /// Check Library uses it to navigate to the show's details page.
+    /// </summary>
+    int? FindShowForMediaFile(int mediaFileId);
+
     IReadOnlyList<TvContinueWatchingItem> ListContinueWatching(int limit = 20);
 }
 
@@ -250,4 +256,6 @@ public interface IReconciliationUiActions
     LibraryHealthProgress CheckLibrary(
         Action<LibraryHealthProgress>? progress = null, 
         Func<bool>? isCancelled = null);
+
+    int PruneDeadMissingFiles() => 0;
 }

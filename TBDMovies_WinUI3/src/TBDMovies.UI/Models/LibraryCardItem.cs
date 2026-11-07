@@ -43,6 +43,83 @@ public sealed record LibraryCardItem : INotifyPropertyChanged
         }
     }
 
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected != value)
+            {
+                _isSelected = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+                NotifySelectionVisuals();
+            }
+        }
+    }
+
+    private bool _isSelectionModeActive;
+    public bool IsSelectionModeActive
+    {
+        get => _isSelectionModeActive;
+        set
+        {
+            if (_isSelectionModeActive != value)
+            {
+                _isSelectionModeActive = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelectionModeActive)));
+                NotifySelectionVisuals();
+            }
+        }
+    }
+
+    private bool _isHovered;
+    public bool IsHovered
+    {
+        get => _isHovered;
+        set
+        {
+            if (_isHovered != value)
+            {
+                _isHovered = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsHovered)));
+                NotifySelectionVisuals();
+            }
+        }
+    }
+
+    private void NotifySelectionVisuals()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionIndicatorVisibility)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionCircleBackground)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionCircleBorderBrush)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionCheckmarkVisibility)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionCircleOpacity)));
+    }
+
+    private static readonly Brush SelectedBg = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 0, 120, 212));
+    private static readonly Brush SelectedBorder = new SolidColorBrush(Microsoft.UI.Colors.White);
+    private static readonly Brush UnselectedActiveBg = new SolidColorBrush(Windows.UI.Color.FromArgb(140, 0, 0, 0));
+    private static readonly Brush UnselectedActiveBorder = new SolidColorBrush(Windows.UI.Color.FromArgb(200, 255, 255, 255));
+    private static readonly Brush HoverBg = new SolidColorBrush(Windows.UI.Color.FromArgb(100, 0, 0, 0));
+    private static readonly Brush HoverBorder = new SolidColorBrush(Windows.UI.Color.FromArgb(160, 255, 255, 255));
+    private static readonly Brush TransparentBrush = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+
+    public Visibility SelectionIndicatorVisibility =>
+        (IsSelected || IsSelectionModeActive || IsHovered) ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility SelectionCheckmarkVisibility =>
+        IsSelected ? Visibility.Visible : Visibility.Collapsed;
+
+    public Brush SelectionCircleBackground =>
+        IsSelected ? SelectedBg : (IsSelectionModeActive ? UnselectedActiveBg : (IsHovered ? HoverBg : TransparentBrush));
+
+    public Brush SelectionCircleBorderBrush =>
+        IsSelected ? SelectedBorder : (IsSelectionModeActive ? UnselectedActiveBorder : (IsHovered ? HoverBorder : TransparentBrush));
+
+    public double SelectionCircleOpacity =>
+        IsSelected ? 1.0 : (IsSelectionModeActive ? 0.75 : (IsHovered ? 0.85 : 0.0));
+
     public bool IsShow => Show is not null;
 
     public int Id => Movie?.Id ?? Show?.Id ?? 0;

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.IO;
 using TBDMovies.Application.Contracts;
 using TBDMovies.Application.Dto;
 using TBDMovies.Application.External;
@@ -18,19 +19,22 @@ public sealed class ReconciliationService : IReconciliationUiActions
     private readonly ConcurrentDictionary<string, PreparedRelink> _relinks = new(StringComparer.Ordinal);
 
     private readonly ICatalogUnitOfWorkFactory? _uowFactory;
+    private readonly ITvEpisodeRepository? _tvEpisodes;
 
     public ReconciliationService(
         IMediaFileRepository mediaFiles,
         IAvailabilityInspector inspector,
         IMovieRepository? movies = null,
         Func<DateTimeOffset>? clock = null,
-        ICatalogUnitOfWorkFactory? uowFactory = null)
+        ICatalogUnitOfWorkFactory? uowFactory = null,
+        ITvEpisodeRepository? tvEpisodes = null)
     {
         _mediaFiles = mediaFiles;
         _inspector = inspector;
         _movies = movies;
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
         _uowFactory = uowFactory;
+        _tvEpisodes = tvEpisodes;
     }
 
     public LibraryReconciliationProgress ReconcileLibraryFiles(
@@ -153,12 +157,54 @@ public sealed class ReconciliationService : IReconciliationUiActions
             }
 
             CommitBatch();
+            PruneDeadMissingFiles();
         }
         finally
         {
             batchUow?.Dispose();
         }
         return new LibraryReconciliationProgress(checkedCount, missingCount, 0, errors, null, storageUnavailableCount);
+    }
+
+    public int PruneDeadMissingFiles()
+    {
+        if (_uowFactory != null)
+        {
+            using var uow = _uowFactory.Begin();
+            var pruned = PruneDeadMissingFilesCore(uow.MediaFiles, uow.TvEpisodes);
+            uow.Commit();
+            return pruned;
+        }
+        return PruneDeadMissingFilesCore(_mediaFiles, _tvEpisodes);
+    }
+
+    private static int PruneDeadMissingFilesCore(IMediaFileRepository mediaFiles, ITvEpisodeRepository? tvEpisodes)
+    {
+        var missingFiles = mediaFiles.ListMissing();
+        var pruned = 0;
+        foreach (var missingFile in missingFiles)
+        {
+            if (tvEpisodes != null && tvEpisodes.GetEpisodeIdForMediaFile(missingFile.Id) is int episodeId)
+            {
+                var epFiles = tvEpisodes.ListMediaFiles(episodeId);
+                if (epFiles.Any(f => f.Id != missingFile.Id && (f.Status == MediaFileStatus.Present || File.Exists(f.CurrentPath))))
+                {
+                    tvEpisodes.UnlinkMediaFile(missingFile.Id);
+                    mediaFiles.Delete(missingFile.Id);
+                    pruned++;
+                }
+            }
+            else if (missingFile.MovieId is int movieId)
+            {
+                var movieFiles = mediaFiles.GetByMovieId(movieId);
+                if (movieFiles.Any(f => f.Id != missingFile.Id && (f.Status == MediaFileStatus.Present || File.Exists(f.CurrentPath))))
+                {
+                    mediaFiles.Delete(missingFile.Id);
+                    pruned++;
+                }
+            }
+        }
+        return pruned;
     }
 
     /// <summary>The storage root used to share one availability probe across every file on it.</summary>

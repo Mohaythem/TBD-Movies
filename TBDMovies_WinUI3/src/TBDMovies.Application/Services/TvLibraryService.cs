@@ -151,6 +151,16 @@ public sealed class TvLibraryService(
 
     public int? FindEpisodeForMediaFile(int mediaFileId) => episodes.GetEpisodeIdForMediaFile(mediaFileId);
 
+    public int? FindShowForMediaFile(int mediaFileId)
+    {
+        var episodeId = episodes.GetEpisodeIdForMediaFile(mediaFileId);
+        if (episodeId is null) return null;
+        var episode = episodes.GetById(episodeId.Value);
+        if (episode is null) return null;
+        var season = seasons.GetById(episode.SeasonId);
+        return season?.ShowId;
+    }
+
     public IReadOnlyList<TvContinueWatchingItem> ListContinueWatching(int limit = 20)
     {
         if (limit <= 0) throw new ArgumentOutOfRangeException(nameof(limit));

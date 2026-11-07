@@ -5,6 +5,8 @@ using TBDMovies.Application.Services;
 using TBDMovies.Application.Trakt;
 using TBDMovies.UI.Models;
 using TBDMovies.UI.Services;
+using TBDMovies.Domain.Media;
+using TBDMovies.Domain.Library.Movies;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -48,6 +50,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
     private IReadOnlyList<SeasonTabItem> _seasonTabs = [];
     private readonly TitleInteractionController _titleController;
     private DispatcherTimer? _pathCopiedTimer;
+    private (int SeasonNumber, EpisodeRecord? Episode) _nextMissingEpisode;
 
     public TVShowDetailsPage()
     {
@@ -228,15 +231,48 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
 
         ProgressValueText.Text = _show.ProgressLine;
         var next = _show.NextPlayableEpisode;
-        PlayNextButton.IsEnabled = next is not null;
-        PlayNextEpisodeText.Text = next is null
-            ? string.Empty
-            : LocalizationService.Digits(LocalizationService.Format(
+        if (next is not null)
+        {
+            _nextMissingEpisode = default;
+            PlayNextButton.IsEnabled = true;
+            PlayNextGlyph.Glyph = "\uE768";
+            PlayNextText.Text = LocalizationService.Text("PlayNextEpisode");
+            PlayNextEpisodeText.Text = LocalizationService.Digits(LocalizationService.Format(
                 "HomeContinueEpisodeFormat",
                 next.SeasonNumber,
                 next.EpisodeNumber,
                 next.Episode.Title));
-        PlayNextEpisodeText.Visibility = next is null ? Visibility.Collapsed : Visibility.Visible;
+            PlayNextEpisodeText.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            var missingEp = _show.Seasons
+                .SelectMany(s => s.Episodes.Select(e => (SeasonNumber: s.Number, Episode: (EpisodeRecord?)e)))
+                .FirstOrDefault(pair => pair.Episode is not null && (pair.Episode.IsFileMissing || (!pair.Episode.HasLocalFile && SafeEpisodeFiles(pair.Episode.Id).Any(f => f.Status == MediaFileStatus.Missing || !File.Exists(f.CurrentPath)))));
+
+            if (missingEp.Episode is not null)
+            {
+                _nextMissingEpisode = missingEp;
+                PlayNextButton.IsEnabled = true;
+                PlayNextGlyph.Glyph = "\uE71B";
+                PlayNextText.Text = LocalizationService.Text("Relink");
+                PlayNextEpisodeText.Text = LocalizationService.Digits(LocalizationService.Format(
+                    "HomeContinueEpisodeFormat",
+                    missingEp.SeasonNumber,
+                    missingEp.Episode.Number,
+                    missingEp.Episode.Title));
+                PlayNextEpisodeText.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                _nextMissingEpisode = default;
+                PlayNextButton.IsEnabled = false;
+                PlayNextGlyph.Glyph = "\uE768";
+                PlayNextText.Text = LocalizationService.Text("PlayNextEpisode");
+                PlayNextEpisodeText.Text = string.Empty;
+                PlayNextEpisodeText.Visibility = Visibility.Collapsed;
+            }
+        }
     }
 
     private void ReloadShowPersonalState()
@@ -568,9 +604,15 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         }
     }
 
-    /// <summary>Plays the first episode of the show that has a file on disk.</summary>
+    /// <summary>Plays the first episode of the show that has a file on disk, or relinks if missing.</summary>
     private async void PlayNextButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_nextMissingEpisode.Episode is not null)
+        {
+            await RelinkEpisodeAsync(_nextMissingEpisode.Episode.Id);
+            return;
+        }
+
         if (_show.NextPlayableEpisode is { } selection)
         {
             await PlayEpisodeAsync(selection.Episode);
@@ -581,8 +623,85 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
     {
         if (sender is Button { Tag: EpisodeDisplayRecord row })
         {
+            if (row.IsMissing)
+            {
+                await RelinkEpisodeAsync(row);
+                return;
+            }
             if (!row.CanOpenFile) return;
             await PlayEpisodeAsync(FindEpisode(row), row);
+        }
+    }
+
+    private async Task RelinkEpisodeAsync(EpisodeDisplayRecord row)
+    {
+        var episode = FindEpisode(row);
+        if (episode is null) return;
+        await RelinkEpisodeAsync(episode.Id);
+    }
+
+    private async Task RelinkEpisodeAsync(int episodeId)
+    {
+        var files = SafeEpisodeFiles(episodeId);
+        var missingFile = files.FirstOrDefault(f => f.Status == MediaFileStatus.Missing || !File.Exists(f.CurrentPath)) ?? files.FirstOrDefault();
+        if (missingFile is null) return;
+
+        var picker = new Windows.Storage.Pickers.FileOpenPicker();
+        foreach (var extension in MediaFormatPolicy.SupportedVideoExtensions)
+        {
+            picker.FileTypeFilter.Add(extension);
+        }
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, MainWindow.WindowHandle);
+
+        var picked = await picker.PickSingleFileAsync();
+        if (picked is null) return;
+
+        var candidatePath = picked.Path;
+
+        try
+        {
+            var prepared = await Task.Run(() => AppServices.Reconciliation.PrepareMediaRelink(
+                missingFile.Id, candidatePath));
+
+            var message = LocalizationService.Format(
+                "RelinkConfirmMessage",
+                missingFile.CurrentPath,
+                candidatePath,
+                new FileInfo(candidatePath).Length);
+
+            var dialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                RequestedTheme = ThemeService.ElementTheme,
+                FlowDirection = LocalizationService.FlowDirection,
+                Title = LocalizationService.Text("RelinkTitle"),
+                Content = message,
+                PrimaryButtonText = LocalizationService.Text("Confirm"),
+                CloseButtonText = LocalizationService.Text("Cancel"),
+                DefaultButton = ContentDialogButton.Primary,
+            };
+
+            var dialogResult = await ContentDialogCoordinator.ShowAsync(dialog);
+            if (dialogResult != ContentDialogResult.Primary)
+            {
+                AppServices.Reconciliation.DiscardMediaRelinkPreview(prepared.PreviewId);
+                return;
+            }
+
+            await Task.Run(() => AppServices.Reconciliation.ConfirmMediaRelink(prepared.PreviewId));
+
+            LoadShow(_show.Id);
+
+            await ShowMessageAsync(
+                LocalizationService.Text("Success"),
+                LocalizationService.Text("RelinkSuccess"));
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception)
+        {
+            await ShowMessageAsync(
+                LocalizationService.Text("Failed"),
+                LocalizationService.Text("RelinkFailedHelp"));
         }
     }
 
@@ -1150,7 +1269,8 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
             LocalizationService.Text("OpenFolder"),
             LocalizationService.Text("MoreOptions"),
             LocalizationService.Text("StorageUnavailable"),
-            LocalizationService.Text("UnmarkWatched"));
+            LocalizationService.Text("UnmarkWatched"),
+            LocalizationService.Text("Relink"));
 
         return
         [

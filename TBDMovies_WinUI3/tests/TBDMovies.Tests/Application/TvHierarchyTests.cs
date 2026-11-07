@@ -324,6 +324,7 @@ public sealed class TvHierarchyTests : IDisposable
 
         // The registration survives: the row, its link and its file record are all still there.
         Assert.Equal(lost.Episode.Id, tv.FindEpisodeForMediaFile(lost.MediaFile.Id));
+        Assert.Equal(kept.Show.Id, tv.FindShowForMediaFile(lost.MediaFile.Id));
         Assert.Single(tv.ListEpisodeFiles(lost.Episode.Id));
         Assert.NotNull(MediaFiles().GetById(lost.MediaFile.Id));
 
@@ -353,6 +354,7 @@ public sealed class TvHierarchyTests : IDisposable
         // The episode's file is not a movie file, and the movie's file is not an episode file.
         Assert.Null(MediaFiles().GetById(episode.MediaFile.Id)!.MovieId);
         Assert.Null(NewTvService().FindEpisodeForMediaFile(movie.MediaFile.Id));
+        Assert.Null(NewTvService().FindShowForMediaFile(movie.MediaFile.Id));
     }
 
     [Fact]
@@ -535,6 +537,65 @@ public sealed class TvHierarchyTests : IDisposable
 
         Assert.Equal(9.5, showDetails.Rating);
         Assert.Equal("/backdrops/bb.jpg", showDetails.BackdropReference);
+    }
+
+    [Fact]
+    public void Importing_new_file_for_episode_prunes_old_missing_file()
+    {
+        var import = NewImportService();
+        var oldPath = WriteMedia("Show.S01E01.720p.mkv");
+        var initial = import.RegisterEpisodeImport(Command(oldPath));
+
+        // Delete file on disk and mark missing
+        File.Delete(oldPath);
+        var reconciliation = new ReconciliationService(MediaFiles(), new AvailabilityInspector(), Movies(), uowFactory: _factory);
+        reconciliation.CheckLibrary();
+
+        Assert.Equal(MediaFileStatus.Missing, MediaFiles().GetById(initial.MediaFile.Id)!.Status);
+
+        // Import a new replacement file for the same episode
+        var newPath = WriteMedia("Show.S01E01.1080p.mkv");
+        var updated = import.RegisterEpisodeImport(Command(newPath));
+
+        // The new file is linked to the episode
+        var tv = NewTvService();
+        var files = tv.ListEpisodeFiles(initial.Episode.Id);
+        Assert.Single(files);
+        Assert.Equal(updated.MediaFile.Id, files[0].Id);
+
+        // The old missing file was pruned and deleted from media_files
+        Assert.Null(MediaFiles().GetById(initial.MediaFile.Id));
+    }
+
+    [Fact]
+    public void Prune_dead_missing_files_cleans_up_orphaned_missing_records_when_present_file_exists()
+    {
+        var import = NewImportService();
+        var oldPath = WriteMedia("Show.S01E02.720p.mkv");
+        var initial = import.RegisterEpisodeImport(Command(oldPath));
+        File.Delete(oldPath);
+
+        // Add a second present file directly for the same episode
+        var newPath = WriteMedia("Show.S01E02.1080p.mkv");
+        int secondFileId;
+        using (var work = _factory.Begin())
+        {
+            var facts = new VerifiedMediaFileFacts(newPath, 1024, ".mkv", null, null, null, DateTimeOffset.UtcNow);
+            var file = work.MediaFiles.Add(facts);
+            work.TvEpisodes.LinkMediaFile(initial.Episode.Id, file.Id, DateTimeOffset.UtcNow);
+            work.Commit();
+            secondFileId = file.Id;
+        }
+
+        var reconciliation = new ReconciliationService(MediaFiles(), new AvailabilityInspector(), Movies(), uowFactory: _factory);
+        reconciliation.CheckLibrary();
+
+        // Prune removes the dead missing file while keeping the present file
+        var tv = NewTvService();
+        var files = tv.ListEpisodeFiles(initial.Episode.Id);
+        Assert.Single(files);
+        Assert.Equal(secondFileId, files[0].Id);
+        Assert.Null(MediaFiles().GetById(initial.MediaFile.Id));
     }
 
     private static long Scalar(SqliteConnection connection, string sql)

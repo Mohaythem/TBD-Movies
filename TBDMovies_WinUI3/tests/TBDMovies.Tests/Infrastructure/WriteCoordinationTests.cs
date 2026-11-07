@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using System.IO;
@@ -102,7 +102,7 @@ public sealed class WriteCoordinationTests : IDisposable
     }
 
     [Fact]
-    public void HeldCatalogUnitOfWork_BlocksFileOperationWrite_UntilReleased()
+    public async Task HeldCatalogUnitOfWork_BlocksFileOperationWrite_UntilReleased()
     {
         var factory = new CatalogUnitOfWorkFactory(_connectionString);
         using var store = new FileOperationStore(_connectionString);
@@ -114,17 +114,17 @@ public sealed class WriteCoordinationTests : IDisposable
         var write = Task.Run(() => store.Create(plan, DateTimeOffset.UtcNow));
 
         // While the gate is held the journal write cannot proceed.
-        Assert.False(write.Wait(TimeSpan.FromMilliseconds(400)), "FileOperationStore bypassed the write gate");
+        await Assert.ThrowsAsync<TimeoutException>(() => write.WaitAsync(TimeSpan.FromMilliseconds(400)));
 
         uow.Commit();
         uow.Dispose(); // releases the gate
 
-        Assert.True(write.Wait(TimeSpan.FromSeconds(10)), "gate was not released to the waiting journal write");
+        await write.WaitAsync(TimeSpan.FromSeconds(10));
         Assert.NotNull(store.GetById(plan.OperationId));
     }
 
     [Fact]
-    public void FileOperationWrite_ThatThrows_ReleasesGate()
+    public async Task FileOperationWrite_ThatThrows_ReleasesGate()
     {
         using var store = new FileOperationStore(_connectionString);
         Assert.Throws<KeyNotFoundException>(() => store.CommitVerified("does-not-exist"));
@@ -134,11 +134,11 @@ public sealed class WriteCoordinationTests : IDisposable
             Guid.NewGuid().ToString("D"), OperationType.Move,
             Path.Combine(_directory, "s.mkv"), Path.Combine(_directory, "d.mkv"), null, null);
         var write = Task.Run(() => store.Create(plan, DateTimeOffset.UtcNow));
-        Assert.True(write.Wait(TimeSpan.FromSeconds(10)), "gate was not released after an exception");
+        await write.WaitAsync(TimeSpan.FromSeconds(10));
     }
 
     [Fact]
-    public void CommitVerified_UpdatesMediaFileUnderGate_WithoutSelfDeadlock()
+    public async Task CommitVerified_UpdatesMediaFileUnderGate_WithoutSelfDeadlock()
     {
         SeedMovieWithMediaFile(id: 1, path: Path.Combine(_directory, "old.mkv"));
         using var store = new FileOperationStore(_connectionString);
@@ -158,8 +158,8 @@ public sealed class WriteCoordinationTests : IDisposable
 
         // CommitVerified opens the gate then calls the nested (ungated) transition helper; a reentrant
         // acquisition would deadlock here.
-        Assert.True(run.Wait(TimeSpan.FromSeconds(10)), "CommitVerified self-deadlocked on the write gate");
-        Assert.Equal(OperationState.Committed, run.Result.State);
+        var committed = await run.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(OperationState.Committed, committed.State);
         Assert.Equal(destination, MediaFilePath(1));
     }
 

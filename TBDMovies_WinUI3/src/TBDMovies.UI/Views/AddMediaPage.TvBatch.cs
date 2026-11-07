@@ -154,7 +154,7 @@ public sealed partial class AddMediaPage
             var dialog = new ContentDialog
             {
                 XamlRoot = XamlRoot, RequestedTheme = ThemeService.ElementTheme, FlowDirection = LocalizationService.FlowDirection,
-                Title = LocalizationService.Text("TvBatchCorrect"), Content = content,
+                Title = LocalizationService.Text(singleFile ? "TvBatchCorrectFile" : "TvBatchCorrectionTitle") ?? LocalizationService.Text("TvBatchCorrect"), Content = content,
                 PrimaryButtonText = LocalizationService.Text("Save"), CloseButtonText = LocalizationService.Text("Cancel"),
                 DefaultButton = ContentDialogButton.Primary
             };

@@ -9,6 +9,7 @@ using TBDMovies.Domain.Library.Personal;
 using TBDMovies.UI.Models;
 using TBDMovies.UI.Controls;
 using TBDMovies.UI.Services;
+using TBDMovies.Domain.Media;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -259,7 +260,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         MediaFilesRepeater.ItemsSource = movie.Files;
         AllFilesPanel.Visibility = movie.MultiFileListVisibility;
         AllFilesHeadingText.Text = LocalizationService.Format("FilesCountFormat", movie.FileCount);
-        PlayButton.IsEnabled = hasFile && !_isOrganizing;
+        UpdatePlayButtonVisuals(hasFile && !_isOrganizing, !hasFile);
         OpenFolderButton.IsEnabled = hasFile && !_isOrganizing;
         OrganizeButton.IsEnabled = MoveMovieButton.IsEnabled = hasFile && !_isOrganizing;
         MatchButton.IsEnabled = !_isOrganizing && !_isMatching;
@@ -339,7 +340,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
                     _storageUnavailable ? "StorageUnavailable" : effectiveHasLocalFile ? "Present" : "Missing");
 
                 var canOpenFile = effectiveHasLocalFile && !_storageUnavailable && !_isOrganizing;
-                PlayButton.IsEnabled = canOpenFile;
+                UpdatePlayButtonVisuals(canOpenFile, !effectiveHasLocalFile);
                 OpenFolderButton.IsEnabled = canOpenFile;
                 OrganizeButton.IsEnabled = MoveMovieButton.IsEnabled = canOpenFile;
                 MissingBadge.Visibility = !effectiveHasLocalFile ? Visibility.Visible : Visibility.Collapsed;
@@ -363,7 +364,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
             ? Visibility.Collapsed
             : Visibility.Visible;
 
-        PlayText.Text = LocalizationService.Text("PlayMovie");
+        UpdatePlayButtonVisuals(PlayButton.IsEnabled, _isRelinkMode);
         OpenFolderText.Text = LocalizationService.Text("OpenFolder");
         AddToListText.Text = LocalizationService.Text("AddToList");
         OrganizeText.Text = LocalizationService.Text("OrganizationRename");
@@ -404,12 +405,111 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         UpdateMatchButtonVisuals();
     }
 
+    private bool _isRelinkMode;
+
+    private void UpdatePlayButtonVisuals(bool canOpenFile, bool isMissing)
+    {
+        _isRelinkMode = isMissing && !_storageUnavailable && !_isOrganizing && (_movie.MediaFileId is not null || _movie.Files.Count > 0);
+        if (_isRelinkMode)
+        {
+            PlayButton.IsEnabled = true;
+            PlayGlyph.Glyph = "\uE71B";
+            PlayText.Text = LocalizationService.Text("Relink");
+            ToolTipService.SetToolTip(PlayButton, LocalizationService.Text("RelinkTitle"));
+            PlayButton.SetValue(AutomationProperties.NameProperty, LocalizationService.Text("Relink"));
+        }
+        else
+        {
+            PlayButton.IsEnabled = canOpenFile;
+            PlayGlyph.Glyph = "\uE768";
+            PlayText.Text = LocalizationService.Text("PlayMovie");
+            ToolTipService.SetToolTip(PlayButton, LocalizationService.Text("PlayMovie"));
+            PlayButton.SetValue(AutomationProperties.NameProperty, LocalizationService.Text("PlayMovie"));
+        }
+    }
+
+    private async Task RelinkMovieFileAsync()
+    {
+        var mediaFileId = _movie.MediaFileId ?? _movie.Files.FirstOrDefault()?.MediaFileId;
+        if (mediaFileId is null)
+        {
+            return;
+        }
+
+        var picker = new Windows.Storage.Pickers.FileOpenPicker();
+        foreach (var extension in MediaFormatPolicy.SupportedVideoExtensions)
+        {
+            picker.FileTypeFilter.Add(extension);
+        }
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, MainWindow.WindowHandle);
+
+        var picked = await picker.PickSingleFileAsync();
+        if (picked is null)
+        {
+            return;
+        }
+
+        var candidatePath = picked.Path;
+
+        try
+        {
+            var prepared = await Task.Run(() => AppServices.Reconciliation.PrepareMediaRelink(
+                mediaFileId.Value, candidatePath));
+
+            var message = LocalizationService.Format(
+                "RelinkConfirmMessage",
+                _movie.FilePath ?? string.Empty,
+                candidatePath,
+                new FileInfo(candidatePath).Length);
+
+            var dialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                RequestedTheme = ThemeService.ElementTheme,
+                FlowDirection = LocalizationService.FlowDirection,
+                Title = LocalizationService.Text("RelinkTitle"),
+                Content = message,
+                PrimaryButtonText = LocalizationService.Text("Confirm"),
+                CloseButtonText = LocalizationService.Text("Cancel"),
+                DefaultButton = ContentDialogButton.Primary,
+            };
+
+            var dialogResult = await ContentDialogCoordinator.ShowAsync(dialog);
+            if (dialogResult != ContentDialogResult.Primary)
+            {
+                AppServices.Reconciliation.DiscardMediaRelinkPreview(prepared.PreviewId);
+                return;
+            }
+
+            await Task.Run(() => AppServices.Reconciliation.ConfirmMediaRelink(prepared.PreviewId));
+
+            LoadMovie(_movie.Id);
+
+            await ShowMessageAsync(
+                LocalizationService.Text("Success"),
+                LocalizationService.Text("RelinkSuccess"));
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception)
+        {
+            await ShowMessageAsync(
+                LocalizationService.Text("Failed"),
+                LocalizationService.Text("RelinkFailedHelp"));
+        }
+    }
+
     /// <summary>
     /// Hands the file to whatever the user has registered for it. ShellExecute is the only way to
     /// honour the user's default player, and UseShellExecute is required for that.
     /// </summary>
     private async void PlayButton_Click(object sender, RoutedEventArgs e)
     {
+        if (_isRelinkMode)
+        {
+            await RelinkMovieFileAsync();
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(_movie.FilePath) || !_movie.HasLocalFile)
         {
             PlayButton.IsEnabled = false;

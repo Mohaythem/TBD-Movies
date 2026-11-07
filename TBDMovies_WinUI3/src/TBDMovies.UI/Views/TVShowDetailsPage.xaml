@@ -293,7 +293,7 @@
                                                 <ColumnDefinition Width="Auto" />
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
-                                            <FontIcon FontSize="15" Glyph="&#xE768;" VerticalAlignment="Center" />
+                                            <FontIcon x:Name="PlayNextGlyph" FontSize="15" Glyph="&#xE768;" VerticalAlignment="Center" />
                                             <TextBlock x:Name="PlayNextText" Grid.Column="1" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
                                         </Grid>
                                     </Button>
@@ -543,18 +543,18 @@
                                             VerticalAlignment="Center"
                                             Visibility="{x:Bind HasActions}">
                                             <Button
-                                                AutomationProperties.Name="{x:Bind Labels.Play}"
+                                                AutomationProperties.Name="{x:Bind PlayOrRelinkLabel, Mode=OneWay}"
                                                 Click="EpisodePlay_Click"
-                                                IsEnabled="{x:Bind CanOpenFile, Mode=OneWay}"
+                                                IsEnabled="{x:Bind CanPlayOrRelink, Mode=OneWay}"
                                                 Style="{StaticResource TvDetailsAccentButtonStyle}"
                                                 Padding="12,6"
                                                 MinHeight="36"
                                                 CornerRadius="6"
                                                 Tag="{x:Bind}"
-                                                ToolTipService.ToolTip="{x:Bind Labels.Play}">
+                                                ToolTipService.ToolTip="{x:Bind PlayOrRelinkLabel, Mode=OneWay}">
                                                 <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                                    <FontIcon FontSize="12" Glyph="&#xE768;" />
-                                                    <TextBlock Text="{x:Bind Labels.Play}" FontSize="13" />
+                                                    <FontIcon FontSize="12" Glyph="{x:Bind PlayOrRelinkGlyph, Mode=OneWay}" />
+                                                    <TextBlock Text="{x:Bind PlayOrRelinkLabel, Mode=OneWay}" FontSize="13" />
                                                 </StackPanel>
                                             </Button>
                                             <Button

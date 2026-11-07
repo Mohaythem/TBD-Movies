@@ -261,6 +261,7 @@ internal static class AppServices
     /// file deliberately stays registered - it is a reported issue, never a deletion.
     /// </summary>
     public static IReadOnlyList<MediaFile> MissingMediaFiles() => Require(_mediaFiles).ListMissing();
+    public static IReadOnlyList<MediaFile> MediaFilesForMovie(int movieId) => Require(_mediaFiles).GetByMovieId(movieId);
 
     public static void MarkMediaFileMissing(int mediaFileId) =>
         Require(_mediaFiles).MarkMissing(mediaFileId, DateTimeOffset.UtcNow);
@@ -534,10 +535,10 @@ internal static class AppServices
                     matching: matching,
                     fileValidator: new ImportFileValidator());
                 var availabilityInspector = new AvailabilityInspector();
-                var reconciliation = new ReconciliationService(mediaFiles, availabilityInspector, movies, uowFactory: catalogFactory);
                 var tvShows = new UnitOfWorkTvShowRepository(catalogFactory);
                 var tvSeasons = new UnitOfWorkTvSeasonRepository(catalogFactory);
                 var tvEpisodes = new UnitOfWorkTvEpisodeRepository(catalogFactory);
+                var reconciliation = new ReconciliationService(mediaFiles, availabilityInspector, movies, uowFactory: catalogFactory, tvEpisodes: tvEpisodes);
                 var tv = new TvLibraryService(
                     tvShows,
                     tvSeasons,

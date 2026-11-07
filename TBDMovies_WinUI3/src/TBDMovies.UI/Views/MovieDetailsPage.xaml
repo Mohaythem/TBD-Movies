@@ -246,7 +246,7 @@
                             </Grid.RowDefinitions>
                             <Button x:Name="PlayButton" Click="PlayButton_Click" Style="{StaticResource DetailsAccentButtonStyle}" MinHeight="40" Grid.Row="0" Grid.Column="0">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <FontIcon Glyph="&#xE768;" FontSize="16" VerticalAlignment="Center" />
+                                    <FontIcon x:Name="PlayGlyph" Glyph="&#xE768;" FontSize="16" VerticalAlignment="Center" />
                                     <TextBlock x:Name="PlayText" VerticalAlignment="Center" />
                                 </StackPanel>
                             </Button>

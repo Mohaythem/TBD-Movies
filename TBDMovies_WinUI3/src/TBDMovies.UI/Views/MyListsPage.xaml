@@ -65,7 +65,7 @@
                     VerticalAlignment="Center"
                     Width="260"
                     QueryIcon="Find"
-                    CornerRadius="16"
+                    CornerRadius="8"
                     Style="{StaticResource PageSearchBoxStyle}"
                     TextChanged="SearchBox_TextChanged" />
             </Grid>
@@ -168,7 +168,7 @@
                     x:Name="NewListButton"
                     Click="NewListButton_Click"
                     Style="{StaticResource AccentControlButtonStyle}"
-                    CornerRadius="12"
+                    CornerRadius="8"
                     Height="32"
                     Padding="14,0,14,0"
                     VerticalAlignment="Center">
@@ -188,7 +188,7 @@
                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                 BorderThickness="1"
-                CornerRadius="10"
+                CornerRadius="8"
                 MinHeight="48"
                 Padding="12,8"
                 Margin="0,4,0,4">
@@ -202,7 +202,7 @@
                     <Border
                         Grid.Column="0"
                         Background="#ED2224"
-                        CornerRadius="12"
+                        CornerRadius="8"
                         Padding="10,4"
                         Margin="0,0,4,0"
                         VerticalAlignment="Center">
@@ -227,7 +227,7 @@
                                 x:Name="NewTraktListButton"
                                 Click="NewTraktListButton_Click"
                                 Style="{StaticResource AccentControlButtonStyle}"
-                                CornerRadius="12"
+                                CornerRadius="8"
                                 Height="28"
                                 Padding="10,0,10,0"
                                 Margin="4,0,0,0"
@@ -344,56 +344,128 @@
                 Style="{StaticResource MediaGridViewStyle}">
                 <GridView.ItemsPanel>
                     <ItemsPanelTemplate>
-                        <ItemsWrapGrid x:Name="ListItemsPanel" Orientation="Horizontal" SizeChanged="ListItemsPanel_SizeChanged" />
+                        <ItemsWrapGrid x:Name="ListItemsPanel" ItemWidth="{StaticResource MediaCardItemWidth}" ItemHeight="{StaticResource MediaCardItemHeight}" Orientation="Horizontal" />
                     </ItemsPanelTemplate>
                 </GridView.ItemsPanel>
             </GridView>
-            <GridView x:Name="ContinueGrid" Padding="32,12,32,48" ItemClick="ActivityGrid_ItemClick" ContextRequested="MediaGrid_ContextRequested"
-                      ItemContainerStyle="{StaticResource MediaHorizontalGridViewItemStyle}"
-                      Style="{StaticResource MediaGridViewStyle}" Visibility="Collapsed"
-                      ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollMode="Enabled">
-                <GridView.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid x:Name="ContinueWatchingItemsPanel" ItemWidth="{StaticResource LibraryHorizontalFallbackCellWidth}" ItemHeight="{StaticResource LibraryHorizontalCellHeight}" Orientation="Horizontal" SizeChanged="HorizontalItemsPanel_SizeChanged" /></ItemsPanelTemplate></GridView.ItemsPanel>
+
+            <GridView
+                x:Name="ContinueGrid"
+                Padding="32,12,32,48"
+                HorizontalAlignment="Stretch"
+                ItemClick="ActivityGrid_ItemClick"
+                ContextRequested="MediaGrid_ContextRequested"
+                Style="{StaticResource MediaGridViewStyle}"
+                Visibility="Collapsed"
+                ScrollViewer.VerticalScrollBarVisibility="Auto"
+                ScrollViewer.VerticalScrollMode="Enabled">
+                <GridView.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <ItemsWrapGrid x:Name="ContinueWatchingItemsPanel" ItemWidth="{StaticResource MediaCardItemWidth}" ItemHeight="{StaticResource MediaCardItemHeight}" Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </GridView.ItemsPanel>
                 <GridView.ItemTemplate>
                     <DataTemplate x:DataType="models:HomeActivityCard">
-                        <Border HorizontalAlignment="Stretch"
-                                CornerRadius="{ThemeResource ControlCornerRadius}">
-                            <Grid Background="{ThemeResource PosterMoviePlaceholderBrush}">
-                                <Image Source="{x:Bind ArtworkSource, Mode=OneWay}" Stretch="UniformToFill" />
-                                <Image Width="96" Height="144" Margin="12,8,12,0"
-                                       HorizontalAlignment="Right" VerticalAlignment="Top"
-                                       Source="{x:Bind PosterSource, Mode=OneWay}" Visibility="{x:Bind PosterVisibility, Mode=OneWay}"
-                                       Stretch="Uniform" />
-                                <Border Background="{ThemeResource LandscapeCardScrimBrush}" />
-                                <StackPanel Margin="14" VerticalAlignment="Bottom" Spacing="3">
-                                    <TextBlock Foreground="{ThemeResource LandscapeCardTextBrush}" Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Title}" MaxLines="2" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Foreground="{ThemeResource LandscapeCardSecondaryTextBrush}" Style="{StaticResource SecondaryCaptionTextStyle}" Text="{x:Bind SecondaryLine}" />
-                                    <TextBlock Foreground="{ThemeResource LandscapeCardSecondaryTextBrush}" Style="{StaticResource SecondaryCaptionTextStyle}" Text="{x:Bind TypeLabel}" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
+                        <StackPanel Spacing="8" HorizontalAlignment="Center">
+                            <Border
+                                Width="{StaticResource MediaCardPosterWidth}"
+                                Height="{StaticResource MediaCardPosterHeight}"
+                                HorizontalAlignment="Center"
+                                Style="{StaticResource PosterSurfaceStyle}">
+                                <Grid>
+                                    <FontIcon FontSize="36" Glyph="&#xE8B2;" Foreground="{ThemeResource PosterGlyphForegroundBrush}" />
+                                    <Image Source="{x:Bind PosterSource, Mode=OneWay}" Stretch="UniformToFill" />
+                                    <!-- Green Continue Watching Progress Bar along the bottom of the poster -->
+                                    <ProgressBar
+                                        VerticalAlignment="Bottom"
+                                        Height="4"
+                                        Value="60"
+                                        Maximum="100"
+                                        Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+                                        Background="Transparent"
+                                        CornerRadius="0,0,8,8" />
+                                </Grid>
+                            </Border>
+                            <StackPanel Margin="6,0,6,14" Spacing="2">
+                                <TextBlock
+                                    Height="{StaticResource MediaCardTitleHeight}"
+                                    MaxLines="2"
+                                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                                    Text="{x:Bind Title}"
+                                    TextTrimming="CharacterEllipsis"
+                                    TextWrapping="Wrap" />
+                                <TextBlock
+                                    Style="{StaticResource SecondaryCaptionTextStyle}"
+                                    Text="{x:Bind SecondaryLine}"
+                                    TextTrimming="CharacterEllipsis"
+                                    TextWrapping="NoWrap" />
+                            </StackPanel>
+                        </StackPanel>
                     </DataTemplate>
                 </GridView.ItemTemplate>
             </GridView>
-            <GridView x:Name="HistoryGrid" Padding="32,12,32,48" ItemClick="ActivityGrid_ItemClick" ContextRequested="MediaGrid_ContextRequested"
-                      ItemContainerStyle="{StaticResource MediaHorizontalGridViewItemStyle}"
-                      Style="{StaticResource MediaGridViewStyle}" Visibility="Collapsed"
-                      ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.VerticalScrollMode="Enabled">
-                <GridView.ItemsPanel><ItemsPanelTemplate><ItemsWrapGrid x:Name="HistoryItemsPanel" ItemWidth="{StaticResource LibraryHorizontalFallbackCellWidth}" ItemHeight="{StaticResource LibraryHorizontalCellHeight}" Orientation="Horizontal" SizeChanged="HorizontalItemsPanel_SizeChanged" /></ItemsPanelTemplate></GridView.ItemsPanel>
+
+            <GridView
+                x:Name="HistoryGrid"
+                Padding="32,12,32,48"
+                HorizontalAlignment="Stretch"
+                ItemClick="ActivityGrid_ItemClick"
+                ContextRequested="MediaGrid_ContextRequested"
+                Style="{StaticResource MediaGridViewStyle}"
+                Visibility="Collapsed"
+                ScrollViewer.VerticalScrollBarVisibility="Auto"
+                ScrollViewer.VerticalScrollMode="Enabled">
+                <GridView.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <ItemsWrapGrid x:Name="HistoryItemsPanel" ItemWidth="{StaticResource MediaCardItemWidth}" ItemHeight="{StaticResource MediaCardItemHeight}" Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </GridView.ItemsPanel>
                 <GridView.ItemTemplate>
                     <DataTemplate x:DataType="models:WatchHistoryCardRecord">
-                        <Border HorizontalAlignment="Stretch"
-                                CornerRadius="{ThemeResource ControlCornerRadius}">
-                            <Grid Background="{ThemeResource PosterMoviePlaceholderBrush}">
-                                <Image Source="{x:Bind ArtworkSource, Mode=OneWay}" Stretch="UniformToFill" />
-                                <Border Background="{ThemeResource LandscapeCardScrimBrush}" />
-                                <StackPanel Margin="14" VerticalAlignment="Bottom" Spacing="3">
-                                    <TextBlock Foreground="{ThemeResource LandscapeCardTextBrush}" Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Title}" MaxLines="2" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Foreground="{ThemeResource LandscapeCardSecondaryTextBrush}" Style="{StaticResource SecondaryCaptionTextStyle}" Text="{x:Bind Context}" />
-                                    <TextBlock Foreground="{ThemeResource LandscapeCardSecondaryTextBrush}" Style="{StaticResource TertiaryCaptionTextStyle}" Text="{x:Bind WatchedAt}" />
-                                    <TextBlock Foreground="{ThemeResource SystemFillColorCriticalBrush}" Style="{StaticResource TertiaryCaptionTextStyle}" Text="{x:Bind AvailabilityText}" Visibility="{x:Bind local:HomePage.UnavailableVisibility(IsAvailable)}" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
+                        <StackPanel Spacing="8" HorizontalAlignment="Center">
+                            <Border
+                                Width="{StaticResource MediaCardPosterWidth}"
+                                Height="{StaticResource MediaCardPosterHeight}"
+                                HorizontalAlignment="Center"
+                                Style="{StaticResource PosterSurfaceStyle}">
+                                <Grid>
+                                    <FontIcon FontSize="36" Glyph="&#xE8B2;" Foreground="{ThemeResource PosterGlyphForegroundBrush}" />
+                                    <Image Source="{x:Bind ArtworkSource, Mode=OneWay}" Stretch="UniformToFill" />
+                                    <Border
+                                        Margin="8"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Top"
+                                        Background="{ThemeResource LayerFillColorAltBrush}"
+                                        CornerRadius="{ThemeResource ControlCornerRadius}"
+                                        Padding="6,2"
+                                        Visibility="{x:Bind local:HomePage.UnavailableVisibility(IsAvailable)}">
+                                        <TextBlock
+                                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                            Style="{StaticResource CaptionTextBlockStyle}"
+                                            Text="{x:Bind AvailabilityText}" />
+                                    </Border>
+                                </Grid>
+                            </Border>
+                            <StackPanel Margin="6,0,6,14" Spacing="2">
+                                <TextBlock
+                                    Height="{StaticResource MediaCardTitleHeight}"
+                                    MaxLines="2"
+                                    Style="{StaticResource BodyStrongTextBlockStyle}"
+                                    Text="{x:Bind Title}"
+                                    TextTrimming="CharacterEllipsis"
+                                    TextWrapping="Wrap" />
+                                <TextBlock
+                                    Style="{StaticResource SecondaryCaptionTextStyle}"
+                                    Text="{x:Bind Context}"
+                                    TextTrimming="CharacterEllipsis"
+                                    TextWrapping="NoWrap" />
+                                <TextBlock
+                                    Style="{StaticResource TertiaryCaptionTextStyle}"
+                                    Text="{x:Bind WatchedAt}"
+                                    TextTrimming="CharacterEllipsis"
+                                    TextWrapping="NoWrap" />
+                            </StackPanel>
+                        </StackPanel>
                     </DataTemplate>
                 </GridView.ItemTemplate>
             </GridView>

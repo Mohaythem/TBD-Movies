@@ -33,10 +33,10 @@ public sealed class DetectedMediaDisplayRecord : INotifyPropertyChanged
     public string TvProvenance { get; }
     public int? ExistingShowId { get; private set; }
     public string? OriginalLocalTitle { get; }
-    public string TvGroupKey => Title + "|" + TvProvenance;
+    public string TvGroupKey => ExistingShowId is int id ? $"showid:{id}" : (Title ?? string.Empty).Trim();
     public bool IsTv => TvAnalysis is not null;
     // WinUI mirrors the leading margin with FlowDirection; do not swap the Thickness for RTL.
-    public Thickness ReviewIndent => IsTv ? new(68, 0, 0, 0) : new(0);
+    public Thickness ReviewIndent => IsTv ? new(64, 0, 0, 0) : new(0);
     public Visibility CorrectionVisibility => IsTv && Item.Classification != DiscoveryClassification.Error
         ? Visibility.Visible : Visibility.Collapsed;
     public string CorrectionLabel => LocalizationService.Text("TvBatchCorrectFile");
@@ -65,7 +65,6 @@ public sealed class DetectedMediaDisplayRecord : INotifyPropertyChanged
 
     public bool CanSelect => TvAnalysis is not null
         ? (TvAnalysis.CanImport || (TvAnalysis.IsResolved && !TvAnalysis.Warnings.Any(w => w.Code is
-            TvBatchWarningCode.AmbiguousPathProvenance or
             TvBatchWarningCode.DuplicateEpisodePosition or
             TvBatchWarningCode.UnsupportedMultiEpisode or
             TvBatchWarningCode.DiscoveryError or
@@ -378,7 +377,7 @@ public sealed class DetectedMediaDisplayRecord : INotifyPropertyChanged
         new[] { TypeLabel, Title, Details, FileName, PreviewTitle, PreviewYear }
             .Where(value => !string.IsNullOrWhiteSpace(value)));
 
-    public AddMediaReviewFacts ReviewFacts => new(CanSelect, Status, IsSelected, Item.FileSize is not null);
+    public AddMediaReviewFacts ReviewFacts => new(CanSelect, Status, IsSelected, Item.FileSize is not null, IsTv);
     public string IdentityLabel => string.Join(" · ", new[]
     {
         TypeLabel, Details, Item.ParsedMedia?.Year is null ? PreviewYear : string.Empty,

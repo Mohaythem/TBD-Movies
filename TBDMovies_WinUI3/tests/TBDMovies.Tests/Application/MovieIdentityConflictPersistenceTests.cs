@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.IO;
@@ -75,8 +75,8 @@ public sealed class MovieIdentityConflictPersistenceTests : IDisposable
         using var check = _factory.Begin();
         Assert.Equal("owner", check.Movies.GetById(ownerId)!.ExternalId);
         Assert.Null(check.Movies.GetById(offlineId)!.ExternalId);
-        Assert.Equal(1, check.MediaFiles.GetByMovieId(ownerId).Count);
-        Assert.Equal(1, check.MediaFiles.GetByMovieId(offlineId).Count);
+        Assert.Single(check.MediaFiles.GetByMovieId(ownerId));
+        Assert.Single(check.MediaFiles.GetByMovieId(offlineId));
     }
 
     private Dictionary<string, string> SnapshotTables() =>

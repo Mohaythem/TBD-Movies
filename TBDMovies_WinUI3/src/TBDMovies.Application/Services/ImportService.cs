@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -1108,6 +1109,16 @@ public class ImportService : IImportUiActions
             ? uow.MediaFiles.Add(fileFacts, movie.Id)
             : uow.MediaFiles.LinkToMovie(existingFile.Id, movie.Id);
 
+        // Prune any dead missing files for this movie now that a verified file is registered
+        var currentMovieFiles = uow.MediaFiles.GetByMovieId(movie.Id);
+        foreach (var oldFile in currentMovieFiles)
+        {
+            if (oldFile.Id != mediaFile.Id && (oldFile.Status == MediaFileStatus.Missing || (File.Exists(mediaFile.CurrentPath) && !File.Exists(oldFile.CurrentPath))))
+            {
+                uow.MediaFiles.Delete(oldFile.Id);
+            }
+        }
+
         return new MovieFileIngestionResult(movie, mediaFile);
     }
 
@@ -1309,6 +1320,17 @@ public class ImportService : IImportUiActions
 
         var mediaFile = existingFile ?? uow.MediaFiles.Add(facts);
         uow.TvEpisodes.LinkMediaFile(episode.Id, mediaFile.Id, now);
+
+        // Prune any old missing file for this episode now that a replacement is registered
+        var currentEpisodeFiles = uow.TvEpisodes.ListMediaFiles(episode.Id);
+        foreach (var oldFile in currentEpisodeFiles)
+        {
+            if (oldFile.Id != mediaFile.Id && (oldFile.Status == MediaFileStatus.Missing || (File.Exists(mediaFile.CurrentPath) && !File.Exists(oldFile.CurrentPath))))
+            {
+                uow.TvEpisodes.UnlinkMediaFile(oldFile.Id);
+                uow.MediaFiles.Delete(oldFile.Id);
+            }
+        }
 
         return new EpisodeFileIngestionResult(show, season, episode, mediaFile, AlreadyRegistered: false);
     }

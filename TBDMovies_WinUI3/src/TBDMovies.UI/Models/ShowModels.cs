@@ -463,6 +463,9 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsMissing)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasActions)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanOpenFile)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanPlayOrRelink)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PlayOrRelinkGlyph)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PlayOrRelinkLabel)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanMarkWatched)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(RowOpacity)));
             }
@@ -479,6 +482,7 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
                 _storageUnavailable = value;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StorageUnavailable)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanOpenFile)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanPlayOrRelink)));
             }
         }
     }
@@ -492,6 +496,9 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
     public bool IsMissing => _isFileMissing;
     public bool CanMarkWatched => _hasLocalFile || _isFileMissing;
     public bool CanOpenFile => _hasLocalFile && !_storageUnavailable && !_isFileMissing;
+    public bool CanPlayOrRelink => (CanOpenFile || _isFileMissing) && !_storageUnavailable;
+    public string PlayOrRelinkGlyph => _isFileMissing ? "\uE71B" : "\uE768";
+    public string PlayOrRelinkLabel => _isFileMissing ? (!string.IsNullOrWhiteSpace(Labels.Relink) ? Labels.Relink : "Relink") : Labels.Play;
     public bool HasActions => _hasLocalFile || _isFileMissing;
     public double RowOpacity => (_hasLocalFile || _isFileMissing) ? 1.0 : 0.8;
 }
@@ -505,7 +512,8 @@ public sealed record EpisodeActionLabels(
     string OpenFolder,
     string More,
     string StorageUnavailable = "",
-    string UnmarkWatched = "");
+    string UnmarkWatched = "",
+    string Relink = "");
 
 public sealed record StatCardRecord(string Label, string Value, string Glyph = "");
 

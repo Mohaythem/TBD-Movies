@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -131,6 +131,7 @@ public sealed class TraktDataClientTests
         private readonly Queue<Func<HttpRequestMessage, HttpResponseMessage>> _responses = new();
 
         public List<HttpRequestMessage> CapturedRequests { get; } = new();
+        public List<string> CapturedBodies { get; } = new();
 
         public void Enqueue(Func<HttpRequestMessage, HttpResponseMessage> responseFactory)
         {
@@ -142,18 +143,22 @@ public sealed class TraktDataClientTests
             _responses.Enqueue(_ => response);
         }
 
-        protected override Task<HttpResponseMessage> SendAsync(
+        protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             CapturedRequests.Add(request);
+            if (request.Content != null)
+            {
+                CapturedBodies.Add(await request.Content.ReadAsStringAsync(cancellationToken));
+            }
             if (_responses.Count == 0)
             {
                 throw new InvalidOperationException("No queued HTTP response for test request.");
             }
 
             var factory = _responses.Dequeue();
-            return Task.FromResult(factory(request));
+            return factory(request);
         }
     }
 
@@ -827,5 +832,75 @@ public sealed class TraktDataClientTests
         Assert.Equal(1, shows[0].Seasons[0].Number);
         Assert.Equal(2, shows[0].Seasons[0].Episodes.Count);
         Assert.Equal(2, shows[0].Seasons[0].Episodes[1].Plays);
+    }
+
+    [Fact]
+    public async Task AddMovieToList_UsesAllowlistedEndpointAndSingleMovieBody()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.Created)
+        {
+            Content = new StringContent("{\"added\":{\"movies\":[{}]},\"existing\":{\"movies\":[]},\"not_found\":{\"movies\":[]}}")
+        });
+        using var client = new HttpClient(handler);
+        using var trakt = new TraktDataClient(client);
+
+        await trakt.AddMovieToListAsync(42, 123, "client", "token");
+
+        var request = Assert.Single(handler.CapturedRequests);
+        Assert.Equal("https://api.trakt.tv/users/me/lists/42/items", request.RequestUri!.ToString());
+        Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+        Assert.Equal("token", request.Headers.Authorization.Parameter);
+        Assert.Equal("{\"movies\":[{\"ids\":{\"tmdb\":123}}]}", Assert.Single(handler.CapturedBodies));
+    }
+
+    [Fact]
+    public async Task AddMovieToList_DoesNotRetryMutationOnServerError()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("server detail that must not leak")
+        });
+        using var client = new HttpClient(handler);
+        using var trakt = new TraktDataClient(client);
+
+        var failure = await Assert.ThrowsAsync<TraktClientException>(() =>
+            trakt.AddMovieToListAsync(null, 123, "client", "token"));
+
+        Assert.Equal(TraktFailureKind.HttpError, failure.FailureKind);
+        Assert.Single(handler.CapturedRequests);
+        Assert.DoesNotContain("server detail", failure.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.Redirect)]
+    public async Task AddMovieToList_DoesNotRetryAnyFailure(HttpStatusCode code)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(code));
+        using var client = new HttpClient(handler);
+        using var trakt = new TraktDataClient(client);
+        await Assert.ThrowsAsync<TraktClientException>(() =>
+            trakt.AddMovieToListAsync(null, 123, "client", "token"));
+        Assert.Single(handler.CapturedRequests);
+    }
+
+    [Theory]
+    [InlineData(0L, 123L)]
+    [InlineData(-1L, 123L)]
+    [InlineData(1L, 0L)]
+    public async Task AddMovieToList_RejectsInvalidIdsBeforeSend(long listId, long tmdbId)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.Created));
+        using var client = new HttpClient(handler);
+        using var trakt = new TraktDataClient(client);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => trakt.AddMovieToListAsync(listId, tmdbId, "client", "token"));
+        Assert.Empty(handler.CapturedRequests);
     }
 }

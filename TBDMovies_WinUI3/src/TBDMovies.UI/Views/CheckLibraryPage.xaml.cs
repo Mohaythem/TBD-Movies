@@ -1,4 +1,6 @@
-﻿using TBDMovies.Application.Dto;
+using System.IO;
+using TBDMovies.Application.Dto;
+using TBDMovies.Domain.Library.Movies;
 using TBDMovies.Domain.Media;
 using TBDMovies.UI.Models;
 using TBDMovies.UI.Services;
@@ -68,6 +70,7 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
     /// is reviewed and rematched. Nothing on this page can change a movie's metadata directly.
     /// </summary>
     public event EventHandler<int>? MovieReviewRequested;
+    public event EventHandler<int>? ShowReviewRequested;
 
     /// <summary>Navigating here must not start a check; only the button does.</summary>
     public void Activate() => Refresh();
@@ -258,7 +261,7 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
                 Path.GetFileName(missing.CurrentPath),
                 LocalizationService.Text(
                     _missingEpisodeFiles.Contains(missing.Id) ? "IssueEpisodeFileMissing" : "IssueMovieMissing"),
-                LocalizationService.Text("OpenFolder"),
+                LocalizationService.Text("ViewAction"),
                 missing.Id,
                 LocalizationService.Text("Relink")));
         }
@@ -274,7 +277,22 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
     {
         try
         {
-            return AppServices.MissingMediaFiles();
+            AppServices.Reconciliation.PruneDeadMissingFiles();
+            var missing = AppServices.MissingMediaFiles();
+            return missing.Where(file =>
+            {
+                if (EpisodeForFile(file.Id) is int episodeId)
+                {
+                    var epFiles = AppServices.Tv.ListEpisodeFiles(episodeId);
+                    return !epFiles.Any(f => f.Id != file.Id && (f.Status == MediaFileStatus.Present || File.Exists(f.CurrentPath)));
+                }
+                else if (file.MovieId is int movieId)
+                {
+                    var movieFiles = AppServices.MediaFilesForMovie(movieId);
+                    return !movieFiles.Any(f => f.Id != file.Id && (f.Status == MediaFileStatus.Present || File.Exists(f.CurrentPath)));
+                }
+                return true;
+            }).ToList();
         }
         catch (Exception)
         {
@@ -487,6 +505,7 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
     /// </summary>
     private async void IssueAction_Click(object sender, RoutedEventArgs e)
     {
+        await Task.CompletedTask;
         if (sender is not Button { Tag: LibraryIssueDisplayRecord record })
         {
             return;
@@ -499,50 +518,28 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
             return;
         }
 
-        // Missing file: open the folder it used to live in, resolved by media-file id.
+        // Missing file: navigate to the item's details (Movie or TV Show), resolved by media-file id.
         if (record.MediaFileId is not int mediaFileId)
         {
             return;
         }
 
         var missing = _missing.FirstOrDefault(file => file.Id == mediaFileId);
-
         if (missing is null)
         {
             return;
         }
 
-        var folder = Path.GetDirectoryName(missing.CurrentPath);
-
-        if (string.IsNullOrEmpty(folder))
+        if (missing.MovieId is int movieTargetId)
         {
-            await ShowMessageAsync(LocalizationService.Text("IssuesHeading"), missing.CurrentPath);
+            MovieReviewRequested?.Invoke(this, movieTargetId);
             return;
         }
 
-        var request = _actionRequests.Begin();
-        try
+        var showId = AppServices.Tv.FindShowForMediaFile(mediaFileId);
+        if (showId is int validShowId)
         {
-            var result = await AppServices.MediaFileActions.OpenFolderAsync(folder, request.Token);
-            if (!request.IsCurrent) return;
-            switch (result.Status)
-            {
-                case TBDMovies.Domain.Library.Availability.AvailabilityInspectionStatus.Missing:
-                    await ShowMessageAsync(LocalizationService.Text("IssuesHeading"), missing.CurrentPath);
-                    break;
-                case TBDMovies.Domain.Library.Availability.AvailabilityInspectionStatus.StorageUnavailable:
-                    await ShowMessageAsync(LocalizationService.Text("Failed"), LocalizationService.Text("StorageUnavailable"));
-                    break;
-                case TBDMovies.Domain.Library.Availability.AvailabilityInspectionStatus.Error:
-                    await ShowMessageAsync(LocalizationService.Text("Failed"), LocalizationService.Text("Failed"));
-                    break;
-            }
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception error)
-        {
-            if (request.IsCurrent)
-                await ShowMessageAsync(LocalizationService.Text("Failed"), MetadataErrorText.For(error));
+            ShowReviewRequested?.Invoke(this, validShowId);
         }
     }
 

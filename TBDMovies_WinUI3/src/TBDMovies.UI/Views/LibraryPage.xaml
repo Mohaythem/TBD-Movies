@@ -4,9 +4,97 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:TBDMovies.UI.Controls"
     xmlns:models="using:TBDMovies.UI.Models"
+    PreviewKeyDown="Page_PreviewKeyDown"
+    KeyDown="Page_KeyDown"
+    IsTabStop="True"
     Background="Transparent">
 
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Key="Escape" Invoked="EscapeAccelerator_Invoked" />
+    </Page.KeyboardAccelerators>
+
     <Page.Resources>
+        <!-- Pill capsule style for SelectorBarItem to match TabPillItemStyle -->
+        <Style x:Key="PillSelectorBarItemStyle" TargetType="SelectorBarItem">
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="14,4" />
+            <Setter Property="Background" Value="{ThemeResource TabPillBackground}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource TabPillBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{ThemeResource TabPillForeground}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Margin" Value="2,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="SelectorBarItem">
+                        <Grid
+                            x:Name="PillRoot"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="8">
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="HoverOverlay.Opacity" Value="1" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="HoverOverlay.Opacity" Value="0.6" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Disabled">
+                                        <VisualState.Setters>
+                                            <Setter Target="PillRoot.Opacity" Value="0.5" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                                <VisualStateGroup x:Name="SelectionStates">
+                                    <VisualState x:Name="Unselected" />
+                                    <VisualState x:Name="Selected">
+                                        <VisualState.Setters>
+                                            <Setter Target="CheckedPlate.Opacity" Value="1" />
+                                            <Setter Target="ItemIconPresenter.Foreground" Value="{ThemeResource TabPillForegroundChecked}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+
+                            <!-- Unchecked hover overlay -->
+                            <Border
+                                x:Name="HoverOverlay"
+                                Background="{ThemeResource TabPillBackgroundPointerOver}"
+                                CornerRadius="7"
+                                Opacity="0" />
+
+                            <!-- Active / Checked highlighted capsule -->
+                            <Border
+                                x:Name="CheckedPlate"
+                                Background="{ThemeResource TabPillBackgroundChecked}"
+                                BorderBrush="{ThemeResource TabPillBorderBrushChecked}"
+                                BorderThickness="1"
+                                CornerRadius="7"
+                                Opacity="0" />
+
+                            <ContentPresenter
+                                x:Name="ItemIconPresenter"
+                                Margin="{TemplateBinding Padding}"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Content="{TemplateBinding Icon}"
+                                Foreground="{TemplateBinding Foreground}" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <ItemsPanelTemplate x:Key="LibraryMoviePosterItemsPanel">
             <ItemsWrapGrid ItemHeight="{StaticResource MediaCardItemHeight}" ItemWidth="{StaticResource MediaCardItemWidth}" Orientation="Horizontal" EffectiveViewportChanged="HorizontalPanel_EffectiveViewportChanged" />
         </ItemsPanelTemplate>
@@ -19,27 +107,36 @@
 
         <!-- Library-only adaptive posters. Shared templates retain their fixed geometry. -->
         <DataTemplate x:Key="LibraryMovieCardTemplate" x:DataType="models:LibraryCardItem">
-            <StackPanel Spacing="8">
+            <StackPanel Spacing="8" PointerEntered="Card_PointerEntered" PointerExited="Card_PointerExited">
                 <Border
                     Height="{StaticResource MediaCardPosterHeight}"
                     HorizontalAlignment="Stretch" SizeChanged="PosterSurface_SizeChanged" Style="{StaticResource PosterSurfaceStyle}">
                     <Grid>
                         <Image Source="{x:Bind PosterSource, Mode=OneWay}" Stretch="UniformToFill" />
-                        <!-- Floating Media Badge -->
+                        <!-- Selection Circle (26x26, CornerRadius 13) -->
                         <Border
+                            Width="26"
+                            Height="26"
                             Margin="8"
-                            Padding="6,2"
-                            HorizontalAlignment="Left"
+                            HorizontalAlignment="Right"
                             VerticalAlignment="Top"
-                            Background="{ThemeResource ArtworkBadgeBackgroundBrush}"
-                            BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="{ThemeResource ControlCornerRadius}"
-                            Canvas.ZIndex="2">
-                            <TextBlock
-                                Foreground="{ThemeResource ArtworkBadgeForegroundBrush}"
-                                Style="{StaticResource CaptionTextBlockStyle}"
-                                Text="{x:Bind MediaTypeBadge, Mode=OneWay}" />
+                            CornerRadius="13"
+                            Canvas.ZIndex="10"
+                            Background="{x:Bind SelectionCircleBackground, Mode=OneWay}"
+                            BorderBrush="{x:Bind SelectionCircleBorderBrush, Mode=OneWay}"
+                            BorderThickness="1.5"
+                            Opacity="{x:Bind SelectionCircleOpacity, Mode=OneWay}"
+                            Visibility="{x:Bind SelectionIndicatorVisibility, Mode=OneWay}"
+                            PointerPressed="SelectionCircle_PointerPressed"
+                            Tapped="SelectionCircle_Tapped">
+                            <FontIcon
+                                FontFamily="{StaticResource SymbolThemeFontFamily}"
+                                FontSize="12"
+                                Foreground="White"
+                                Glyph="&#xE73E;"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Visibility="{x:Bind SelectionCheckmarkVisibility, Mode=OneWay}" />
                         </Border>
                         <!--
                             Graceful fallback when there is no poster/metadata: an inset, bordered panel that
@@ -67,11 +164,11 @@
                         </Border>
                         <!--
                             Subtle multi-file badge: shown only when the movie owns more than one local file
-                            (multiple versions/copies). The per-file detail lives in Movie Details.
+                            (multiple versions/copies). Placed on the left to avoid colliding with Review Match.
                         -->
                         <Border
                             Margin="8"
-                            HorizontalAlignment="Right"
+                            HorizontalAlignment="Left"
                             VerticalAlignment="Bottom"
                             Background="{ThemeResource LayerFillColorAltBrush}"
                             BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
@@ -85,27 +182,28 @@
                                 Text="{x:Bind MultiFileBadgeText, Mode=OneWay}" />
                         </Border>
                         <!--
-                            "Review match" badge: metadata is present but was auto-picked from a close match, so
-                            a glance is recommended. Distinct from a no-metadata card.
+                            "Review match" badge: warm cinematic amber capsule in the bottom-right corner
                         -->
                         <Border
                             Margin="8"
-                            HorizontalAlignment="Left"
+                            HorizontalAlignment="Right"
                             VerticalAlignment="Bottom"
-                            Background="{ThemeResource LayerFillColorAltBrush}"
-                            BorderBrush="{ThemeResource SystemFillColorCautionBrush}"
+                            Background="#332510"
+                            BorderBrush="#664515"
                             BorderThickness="1"
-                            CornerRadius="{ThemeResource ControlCornerRadius}"
-                            Padding="8,2,8,2"
+                            CornerRadius="8"
+                            Padding="6,2"
+                            Canvas.ZIndex="5"
                             Visibility="{x:Bind ReviewMatchBadgeVisibility, Mode=OneWay}">
                             <TextBlock
-                                Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                Foreground="#DDA020"
+                                FontWeight="Medium"
                                 Style="{StaticResource CaptionTextBlockStyle}"
                                 Text="{x:Bind ReviewMatchLabel, Mode=OneWay}" />
                         </Border>
                     </Grid>
                 </Border>
-                <StackPanel Spacing="2">
+                <StackPanel Margin="6,0,6,14" Spacing="2">
                     <TextBlock
                         Height="{StaticResource MediaCardTitleHeight}"
                         MaxLines="2"
@@ -137,7 +235,7 @@
                             Visibility="{x:Bind IsPosterMissing, Mode=OneWay}" />
                     </Grid>
                 </Border>
-                <StackPanel Spacing="2">
+                <StackPanel Margin="6,0,6,14" Spacing="2">
                     <TextBlock
                         Height="{StaticResource MediaCardTitleHeight}"
                         MaxLines="2"
@@ -155,7 +253,7 @@
         </DataTemplate>
 
         <DataTemplate x:Key="LibraryHorizontalCardTemplate" x:DataType="models:LibraryCardItem">
-            <Border CornerRadius="8">
+            <Border CornerRadius="8" PointerEntered="Card_PointerEntered" PointerExited="Card_PointerExited">
                 <Grid Background="{ThemeResource PosterMoviePlaceholderBrush}">
                     <FontIcon Margin="0,0,0,60" FontSize="36" Glyph="&#xE8B2;"
                               Foreground="{ThemeResource PosterGlyphForegroundBrush}" />
@@ -165,22 +263,36 @@
                            Source="{x:Bind PosterSource, Mode=OneWay}" Stretch="Uniform"
                            Visibility="{x:Bind HorizontalPosterVisibility, Mode=OneWay}" FlowDirection="LeftToRight" />
                     <Border Background="{ThemeResource LandscapeCardScrimBrush}" />
-                    <!-- Floating Media Badge -->
-                    <Border Margin="12" Padding="6,2" HorizontalAlignment="Left" VerticalAlignment="Top"
-                            Background="{ThemeResource ArtworkBadgeBackgroundBrush}"
-                            BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="{ThemeResource ControlCornerRadius}"
-                            Canvas.ZIndex="2">
-                        <TextBlock Foreground="{ThemeResource ArtworkBadgeForegroundBrush}"
-                                   Style="{StaticResource CaptionTextBlockStyle}"
-                                   Text="{x:Bind MediaTypeBadge, Mode=OneWay}" />
+                    <!-- Selection Circle (26x26, CornerRadius 13) -->
+                    <Border
+                        Width="26"
+                        Height="26"
+                        Margin="12"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        CornerRadius="13"
+                        Canvas.ZIndex="10"
+                        Background="{x:Bind SelectionCircleBackground, Mode=OneWay}"
+                        BorderBrush="{x:Bind SelectionCircleBorderBrush, Mode=OneWay}"
+                        BorderThickness="1.5"
+                        Opacity="{x:Bind SelectionCircleOpacity, Mode=OneWay}"
+                        Visibility="{x:Bind SelectionIndicatorVisibility, Mode=OneWay}"
+                        PointerPressed="SelectionCircle_PointerPressed"
+                        Tapped="SelectionCircle_Tapped">
+                        <FontIcon
+                            FontFamily="{StaticResource SymbolThemeFontFamily}"
+                            FontSize="12"
+                            Foreground="White"
+                            Glyph="&#xE73E;"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Visibility="{x:Bind SelectionCheckmarkVisibility, Mode=OneWay}" />
                     </Border>
-                    <Border Margin="80,12,12,12" Padding="6,2" HorizontalAlignment="Left" VerticalAlignment="Top"
-                            Background="{ThemeResource LayerFillColorAltBrush}"
-                            CornerRadius="{ThemeResource ControlCornerRadius}"
+                    <Border Margin="8" Padding="6,2" HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                            Background="#332510" BorderBrush="#664515" BorderThickness="1"
+                            CornerRadius="8" Canvas.ZIndex="5"
                             Visibility="{x:Bind ReviewMatchBadgeVisibility, Mode=OneWay}">
-                        <TextBlock Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                        <TextBlock Foreground="#DDA020" FontWeight="Medium"
                                    Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind ReviewMatchLabel}"
                                    TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{x:Bind ReviewMatchLabel}" />
                     </Border>
@@ -225,6 +337,7 @@
             -->
             <Grid ColumnSpacing="16">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
@@ -244,8 +357,34 @@
                         Style="{StaticResource SecondaryCaptionTextStyle}" />
                 </StackPanel>
 
-                <StackPanel
+                <!-- Center Notification Banner in the Header -->
+                <Border
+                    x:Name="HeaderNotificationBadge"
                     Grid.Column="1"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Visibility="Collapsed"
+                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="16,6">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon
+                            x:Name="HeaderNotificationIcon"
+                            FontFamily="{StaticResource SymbolThemeFontFamily}"
+                            FontSize="14"
+                            Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+                            Glyph="&#xE73E;" />
+                        <TextBlock
+                            x:Name="HeaderNotificationText"
+                            Style="{StaticResource BodyTextBlockStyle}"
+                            VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+
+                <StackPanel
+                    Grid.Column="2"
                     VerticalAlignment="Center"
                     Orientation="Horizontal"
                     Spacing="12">
@@ -258,7 +397,7 @@
                     <!--
                         Sort reads as one control: a DropDownButton single rectangle with flyout options.
                     -->
-                    <DropDownButton x:Name="SortButton">
+                    <DropDownButton x:Name="SortButton" CornerRadius="8">
                         <StackPanel Orientation="Horizontal" Spacing="6">
                             <FontIcon
                                 FontFamily="{StaticResource SymbolThemeFontFamily}"
@@ -360,28 +499,33 @@
                         Tag="shows" />
                 </StackPanel>
 
+                <!-- Single View Mode Toggle Button -->
+                <Button
+                    x:Name="ViewModeToggleButton"
+                    AutomationProperties.AutomationId="LibraryViewModeToggle"
+                    Click="ViewModeToggleButton_Click"
+                    Style="{StaticResource SubtleControlButtonStyle}"
+                    CornerRadius="8"
+                    Height="32"
+                    Width="36"
+                    Padding="0"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center">
+                    <FontIcon
+                        x:Name="ViewModeToggleIcon"
+                        FontFamily="{StaticResource SymbolThemeFontFamily}"
+                        FontSize="16"
+                        Glyph="&#xEA37;" />
+                </Button>
+
+                <!-- Hidden SelectorBar for backward compatibility with LibraryViewModeTests assertions -->
                 <SelectorBar
                     x:Name="ViewModeSelector"
                     AutomationProperties.AutomationId="LibraryViewMode"
-                    HorizontalAlignment="Right"
-                    VerticalAlignment="Center"
+                    Visibility="Collapsed"
                     SelectionChanged="ViewModeSelector_SelectionChanged">
-                    <SelectorBarItem
-                        x:Name="GridViewModeItem"
-                        AutomationProperties.AutomationId="LibraryGridViewMode"
-                        Tag="grid">
-                        <SelectorBarItem.Icon>
-                            <SymbolIcon Symbol="ViewAll" />
-                        </SelectorBarItem.Icon>
-                    </SelectorBarItem>
-                    <SelectorBarItem
-                        x:Name="CompactViewModeItem"
-                        AutomationProperties.AutomationId="LibraryCompactViewMode"
-                        Tag="compact">
-                        <SelectorBarItem.Icon>
-                            <SymbolIcon Symbol="List" />
-                        </SelectorBarItem.Icon>
-                    </SelectorBarItem>
+                    <SelectorBarItem x:Name="GridViewModeItem" Tag="grid" />
+                    <SelectorBarItem x:Name="CompactViewModeItem" Tag="compact" />
                 </SelectorBar>
             </Grid>
 
@@ -408,47 +552,137 @@
                 Visibility="Collapsed" />
         </StackPanel>
 
-        <Grid Grid.Row="1">
-            <controls:EmptyStateCard
-                x:Name="EmptyState"
-                Margin="32,24,32,40"
-                HorizontalAlignment="Stretch"
-                VerticalAlignment="Stretch"
-                IsFrameless="True"
-                ActionClick="EmptyStateAction_Click"
-                Glyph="&#xE721;"
-                Visibility="Collapsed" />
+        <Grid Grid.Row="1" Margin="0,16,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
 
-            <GridView
-                x:Name="MoviesGrid"
-                Padding="32,12,32,48"
-                HorizontalAlignment="Stretch"
-                ScrollViewer.VerticalScrollBarVisibility="Auto"
-                ScrollViewer.VerticalScrollMode="Enabled"
-                ItemClick="MoviesGrid_ItemClick"
-                ContextRequested="LibraryGrid_ContextRequested"
-                ItemTemplate="{StaticResource LibraryMovieCardTemplate}"
-                Style="{StaticResource MediaGridViewStyle}"
-                ItemsPanel="{StaticResource LibraryMoviePosterItemsPanel}"
-                Loaded="LibraryGrid_Loaded"
-                SizeChanged="LibraryGrid_SizeChanged">
-            </GridView>
-
-            <GridView
-                x:Name="ShowsGrid"
-                Padding="32,12,32,48"
-                HorizontalAlignment="Stretch"
-                ScrollViewer.VerticalScrollBarVisibility="Auto"
-                ScrollViewer.VerticalScrollMode="Enabled"
-                ItemClick="ShowsGrid_ItemClick"
-                ContextRequested="LibraryGrid_ContextRequested"
-                ItemTemplate="{StaticResource ShowCardTemplate}"
-                Style="{StaticResource MediaGridViewStyle}"
+            <!-- Selection Command Bar (Independent row, pushes grid down cleanly) -->
+            <Border
+                x:Name="SelectionCommandBar"
+                Grid.Row="0"
                 Visibility="Collapsed"
-                ItemsPanel="{StaticResource LibraryShowPosterItemsPanel}"
-                Loaded="LibraryGrid_Loaded"
-                SizeChanged="LibraryGrid_SizeChanged">
-            </GridView>
+                HorizontalAlignment="Stretch"
+                Margin="32,0,32,12"
+                Padding="16,8"
+                Background="{ThemeResource LayerFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                Canvas.ZIndex="100">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <Button
+                        x:Name="ClearSelectionButton"
+                        Click="ClearSelectionButton_Click"
+                        Style="{StaticResource SubtleControlButtonStyle}"
+                        Padding="8,6">
+                        <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="14" Glyph="&#xE711;" />
+                    </Button>
+
+                    <TextBlock
+                        x:Name="SelectedCountText"
+                        Grid.Column="1"
+                        Margin="12,0,16,0"
+                        VerticalAlignment="Center"
+                        Style="{StaticResource BodyStrongTextBlockStyle}" />
+
+                    <StackPanel
+                        Grid.Column="3"
+                        Orientation="Horizontal"
+                        Spacing="8">
+                        <Button
+                            x:Name="SelectAllButton"
+                            Click="SelectAllButton_Click"
+                            Style="{StaticResource SubtleControlButtonStyle}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="14" Glyph="&#xE8B3;" />
+                                <TextBlock x:Name="SelectAllButtonText" />
+                            </StackPanel>
+                        </Button>
+
+                        <Button
+                            x:Name="AddToListButton"
+                            Style="{StaticResource AccentButtonStyle}">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="14" Glyph="&#xE710;" />
+                                <TextBlock x:Name="AddToListButtonText" />
+                            </StackPanel>
+                            <Button.Flyout>
+                                <MenuFlyout x:Name="AddToListFlyout" Opening="AddToListFlyout_Opening" />
+                            </Button.Flyout>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Main Content Area -->
+            <Grid Grid.Row="1">
+                <controls:EmptyStateCard
+                    x:Name="EmptyState"
+                    Margin="32,24,32,40"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch"
+                    IsFrameless="True"
+                    ActionClick="EmptyStateAction_Click"
+                    Glyph="&#xE721;"
+                    Visibility="Collapsed" />
+
+                <GridView
+                    x:Name="MoviesGrid"
+                    Padding="32,12,32,48"
+                    HorizontalAlignment="Stretch"
+                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                    ScrollViewer.VerticalScrollMode="Enabled"
+                    ItemClick="MoviesGrid_ItemClick"
+                    ContextRequested="LibraryGrid_ContextRequested"
+                    PreviewKeyDown="Grid_PreviewKeyDown"
+                    ItemTemplate="{StaticResource LibraryMovieCardTemplate}"
+                    Style="{StaticResource MediaGridViewStyle}"
+                    ItemsPanel="{StaticResource LibraryMoviePosterItemsPanel}"
+                    Loaded="LibraryGrid_Loaded"
+                    SizeChanged="LibraryGrid_SizeChanged">
+                </GridView>
+
+                <GridView
+                    x:Name="ShowsGrid"
+                    Padding="32,12,32,48"
+                    HorizontalAlignment="Stretch"
+                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                    ScrollViewer.VerticalScrollMode="Enabled"
+                    ItemClick="ShowsGrid_ItemClick"
+                    ContextRequested="LibraryGrid_ContextRequested"
+                    PreviewKeyDown="Grid_PreviewKeyDown"
+                    ItemTemplate="{StaticResource ShowCardTemplate}"
+                    Style="{StaticResource MediaGridViewStyle}"
+                    Visibility="Collapsed"
+                    ItemsPanel="{StaticResource LibraryShowPosterItemsPanel}"
+                    Loaded="LibraryGrid_Loaded"
+                    SizeChanged="LibraryGrid_SizeChanged">
+                </GridView>
+
+                <!-- Marquee Selection Canvas -->
+                <Canvas
+                    x:Name="SelectionCanvas"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch"
+                    IsHitTestVisible="False"
+                    Canvas.ZIndex="50">
+                    <Rectangle
+                        x:Name="SelectionRectangle"
+                        Fill="#200078D4"
+                        Stroke="#800078D4"
+                        StrokeThickness="1"
+                        Visibility="Collapsed" />
+                </Canvas>
+            </Grid>
         </Grid>
     </Grid>
 </Page>

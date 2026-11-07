@@ -1,4 +1,4 @@
-﻿using TBDMovies.Application.Dto;
+using TBDMovies.Application.Dto;
 using TBDMovies.Application.Services;
 using TBDMovies.Domain.Media.Discovery;
 using TBDMovies.FileSystem.Discovery;
@@ -131,14 +131,26 @@ public sealed class TvBatchAnalysisTests : IDisposable
     }
 
     [Fact]
-    public void Separate_folders_with_same_title_keep_separate_groups_and_consistent_review_guards()
+    public void Separate_folders_with_same_title_unite_under_single_series_and_allow_import()
     {
         FileAt("Edition A/Show/Season 01/Show.S01E01.mkv");
         FileAt("Edition B/Show/Season 01/Show.S01E02.mkv");
         var result = Scan();
-        Assert.Equal(2, result.Series.Count);
-        Assert.All(result.AllFiles, f => Assert.False(f.CanImport));
-        Assert.All(result.AllFiles, f => Assert.True(f.WithCorrection("Show", 1, f.EpisodeNumber).CanImport));
+        var series = Assert.Single(result.Series);
+        Assert.Equal("Show", series.Title);
+        Assert.All(result.AllFiles, f => Assert.True(f.CanImport));
+    }
+
+    [Fact]
+    public void Multi_season_in_separate_folders_unites_under_single_series_with_can_import()
+    {
+        FileAt("Inside Job/Season 1/Inside.Job.S01E01.mkv");
+        FileAt("Inside Job/Season 2/Inside.Job.S02E01.mkv");
+        var result = Scan();
+        var series = Assert.Single(result.Series);
+        Assert.Equal("Inside Job", series.Title);
+        Assert.Equal(2, series.Seasons.Count);
+        Assert.All(result.AllFiles, f => Assert.True(f.CanImport));
     }
 
     [Fact]

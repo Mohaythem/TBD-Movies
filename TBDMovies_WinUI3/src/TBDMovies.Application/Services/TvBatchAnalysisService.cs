@@ -341,52 +341,40 @@ public sealed class TvBatchAnalysisService : ITvBatchAnalysisService
     {
         var batchWarnings = new List<TvBatchWarning>();
 
-        // Group files by (NormalizedTitle, PathProvenanceKey)
+        // Group files by NormalizedTitle so multi-folder seasons unite under a single series candidate
         var groups = tvFiles
-            .GroupBy(t => (
-                NormalizedTitle: NormalizeKey(t.Candidate.Title!),
-                ProvenanceKey: t.ShowFolderPath ?? Path.GetDirectoryName(Path.GetFullPath(t.Candidate.OriginalItem.Path)) ?? rootPath))
+            .GroupBy(t => NormalizeKey(t.Candidate.Title!))
             .ToList();
-
-        // Check if the same normalized series title appears in distinct folder paths
-        var normalizedTitleGroups = groups
-            .GroupBy(g => g.Key.NormalizedTitle)
-            .ToList();
-
-        var ambiguousTitleKeys = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var titleGroup in normalizedTitleGroups)
-        {
-            if (titleGroup.Count() > 1)
-            {
-                ambiguousTitleKeys.Add(titleGroup.Key);
-                var paths = string.Join(", ", titleGroup.Select(g => $"'{g.Key.ProvenanceKey}'"));
-                var ambiguousWarning = new TvBatchWarning(
-                    TvBatchWarningCode.AmbiguousPathProvenance,
-                    $"Same normalized series name '{titleGroup.Key}' found in separate folders: {paths}.");
-                batchWarnings.Add(ambiguousWarning);
-            }
-        }
 
         var resultSeries = new List<TvSeriesCandidate>();
 
-        foreach (var group in groups.OrderBy(g => g.First().Candidate.Title, StringComparer.OrdinalIgnoreCase).ThenBy(g => g.Key.ProvenanceKey, StringComparer.OrdinalIgnoreCase))
+        foreach (var group in groups.OrderBy(g => g.First().Candidate.Title, StringComparer.OrdinalIgnoreCase))
         {
             var displayTitle = group.First().Candidate.Title!;
-            var normalizedTitle = group.Key.NormalizedTitle;
-            var pathProvenance = group.Key.ProvenanceKey;
+            var normalizedTitle = group.Key;
+
+            var distinctFolders = group
+                .Select(t => t.ShowFolderPath ?? Path.GetDirectoryName(Path.GetFullPath(t.Candidate.OriginalItem.Path)) ?? rootPath)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var pathProvenance = distinctFolders.FirstOrDefault() ?? rootPath;
+            var isAmbiguous = distinctFolders.Count > 1;
 
             var seriesWarnings = new List<TvBatchWarning>();
-            var isAmbiguous = ambiguousTitleKeys.Contains(normalizedTitle);
             if (isAmbiguous)
             {
-                seriesWarnings.Add(new TvBatchWarning(
+                var paths = string.Join(", ", distinctFolders.Select(p => $"'{p}'"));
+                var ambiguousWarning = new TvBatchWarning(
                     TvBatchWarningCode.AmbiguousPathProvenance,
-                    $"Series '{displayTitle}' is present in multiple distinct folder paths."));
+                    $"Series '{displayTitle}' is present in multiple distinct folder paths: {paths}.");
+                seriesWarnings.Add(ambiguousWarning);
+                batchWarnings.Add(ambiguousWarning);
             }
 
             var filesInGroup = group.Select(t => t.Candidate).ToList();
 
-            // If ambiguous path provenance, attach warning to files and gate import
+            // If ambiguous path provenance, attach warning to files without blocking import of non-colliding episodes
             if (isAmbiguous)
             {
                 for (var i = 0; i < filesInGroup.Count; i++)
@@ -400,7 +388,7 @@ public sealed class TvBatchAnalysisService : ITvBatchAnalysisService
                     {
                         Warnings = updatedWarnings,
                         RequiresReview = true,
-                        CanImport = false
+                        CanImport = file.CanImport
                     };
                 }
             }

@@ -163,6 +163,7 @@ public sealed partial class MainWindow : Window
         {
             _checkLibraryPage = new CheckLibraryPage();
             _checkLibraryPage.MovieReviewRequested += OpenMovieForReview;
+            _checkLibraryPage.ShowReviewRequested += OpenShowForReview;
             HostLazyPage(_checkLibraryPage);
         }
         return _checkLibraryPage;
@@ -376,6 +377,15 @@ public sealed partial class MainWindow : Window
         Navigate("details");
     }
 
+    private void OpenShowForReview(object? sender, int showId)
+    {
+        _detailsReturnDestination = "check";
+        var detailsPage = GetShowDetailsPage();
+        detailsPage.SetReturnDestination("check");
+        detailsPage.LoadShow(showId);
+        Navigate("show");
+    }
+
     private string ReturnDestinationFor(object? sender) => sender switch
     {
         _ when ReferenceEquals(sender, _homePage) => "home",
@@ -406,6 +416,13 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private void EscAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
+        if (_currentPage is LibraryPage { SelectedCount: > 0 } libraryPage)
+        {
+            libraryPage.ClearSelection();
+            args.Handled = true;
+            return;
+        }
+
         // Dismiss temporary navigation before applying the existing page Back rule.
         if (_navigationPane.ShouldDismissOverlay(ShellNavigation.IsPaneOpen))
         {

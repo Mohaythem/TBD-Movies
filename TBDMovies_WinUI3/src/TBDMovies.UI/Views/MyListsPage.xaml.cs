@@ -439,7 +439,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             : item.Year is int year ? LocalizationService.Digits(year.ToString(CultureInfo.InvariantCulture)) : string.Empty,
         LocalizationService.Digits(item.WatchedAt.ToLocalTime().ToString("d", LocalizationService.Culture)), item.IsAvailable,
         item.IsAvailable ? string.Empty : LocalizationService.Text("Unavailable"),
-        [item.BackdropReference, item.ArtworkReference, item.PosterReference]);
+        [item.PosterReference, item.ArtworkReference, item.BackdropReference]);
 
     private void ActivityGrid_ItemClick(object sender, ItemClickEventArgs e)
     {
@@ -673,7 +673,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         var remove = resolved is not null && (destinationKey is "watch-later" or "favorites" || destinationKey.StartsWith("custom:", StringComparison.Ordinal))
             ? new Action(() => RemoveFromSelectedList(resolved!, destinationKey))
             : null;
-        MediaCardContextMenu.ShowForContext(grid, e, horizontalMovies: grid == ContinueGrid || grid == HistoryGrid,
+        MediaCardContextMenu.ShowForContext(grid, e, horizontalMovies: false,
             onChanged: () => { Invalidate(); Refresh(); }, removeFromList: remove);
     }
 
