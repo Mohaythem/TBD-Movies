@@ -1,11 +1,15 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using TBDMovies.Application.Subtitles;
+using TBDMovies.Domain.Core.Safety;
+using TBDMovies.FileSystem.Safety;
 
 namespace TBDMovies.FileSystem.Subtitles;
 
@@ -13,8 +17,26 @@ namespace TBDMovies.FileSystem.Subtitles;
 /// Service for extracting subtitle archives, normalizing Arabic and other encodings to UTF-8 without BOM,
 /// and atomically saving subtitles directly beside target media files.
 /// </summary>
-public sealed class SubtitleDownloadService : ISubtitleDownloadService
+public sealed partial class SubtitleDownloadService : ISubtitleDownloadService
 {
+    public const int MaxArchiveBytes = 25 * 1024 * 1024;
+    public const int MaxSubtitleBytes = 10 * 1024 * 1024;
+    public const int MaxArchiveEntries = 200;
+
+    private static readonly string[] PreferredSubtitleExtensions = [".srt", ".ass", ".ssa", ".vtt", ".sub"];
+
+    private static readonly HashSet<string> AllowedExtensions = new(PreferredSubtitleExtensions, StringComparer.OrdinalIgnoreCase);
+
+    private static readonly HashSet<string> ReservedDosNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+    };
+
+    [GeneratedRegex("^[a-z0-9]{2,8}(?:[-_][a-z0-9]{2,8})?$", RegexOptions.CultureInvariant)]
+    private static partial Regex SafeLanguageCodeRegex();
+
     static SubtitleDownloadService()
     {
         try
@@ -36,24 +58,49 @@ public sealed class SubtitleDownloadService : ISubtitleDownloadService
         ArgumentNullException.ThrowIfNull(archiveBytes);
         ArgumentException.ThrowIfNullOrWhiteSpace(mediaFilePath);
 
+        if (!Path.IsPathFullyQualified(mediaFilePath))
+        {
+            throw new UnsafePathException("Target media file path must be an absolute path.");
+        }
+
         ct.ThrowIfCancellationRequested();
+
+        var canonicalMediaPath = Path.GetFullPath(mediaFilePath);
+        PathPolicy.AssertNoReparseComponents(canonicalMediaPath);
+
+        var targetDir = Path.GetDirectoryName(canonicalMediaPath);
+        if (string.IsNullOrWhiteSpace(targetDir) || !Directory.Exists(targetDir))
+        {
+            throw new DirectoryNotFoundException("Target media directory does not exist.");
+        }
+
+        PathPolicy.AssertNoReparseComponents(targetDir);
 
         var (rawContentBytes, extension) = ExtractSubtitleEntry(archiveBytes);
         var normalizedBytes = NormalizeEncoding(rawContentBytes, languageCode);
-        var targetPath = GenerateSubtitlePath(mediaFilePath, languageCode, extension);
+        var targetPath = GenerateSubtitlePath(canonicalMediaPath, languageCode, extension);
+        var canonicalTargetPath = Path.GetFullPath(targetPath);
 
-        var targetDir = Path.GetDirectoryName(targetPath);
-        if (!string.IsNullOrEmpty(targetDir))
+        var pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var resolvedTargetDir = Path.GetDirectoryName(canonicalTargetPath);
+        if (string.IsNullOrWhiteSpace(resolvedTargetDir) ||
+            !string.Equals(
+                Path.TrimEndingDirectorySeparator(resolvedTargetDir),
+                Path.TrimEndingDirectorySeparator(targetDir),
+                pathComparison))
         {
-            Directory.CreateDirectory(targetDir);
+            throw new UnsafePathException("Subtitle destination escaped target media directory.");
         }
 
-        var tempPath = Path.Combine(targetDir ?? string.Empty, $"{Path.GetFileName(targetPath)}.{Guid.NewGuid():N}.tmp");
+        PathPolicy.AssertNoReparseComponents(canonicalTargetPath);
+
+        var tempPath = Path.Combine(targetDir, $"{Path.GetFileName(canonicalTargetPath)}.{Guid.NewGuid():N}.tmp");
         try
         {
             await File.WriteAllBytesAsync(tempPath, normalizedBytes, ct).ConfigureAwait(false);
-            File.Move(tempPath, targetPath, overwrite: true);
-            return targetPath;
+            PathPolicy.AssertNoReparseComponents(canonicalTargetPath);
+            File.Move(tempPath, canonicalTargetPath, overwrite: true);
+            return canonicalTargetPath;
         }
         finally
         {
@@ -72,44 +119,67 @@ public sealed class SubtitleDownloadService : ISubtitleDownloadService
     }
 
     /// <summary>
-    /// Extracts the best subtitle entry (.srt or .ass) from the provided zip archive bytes.
-    /// If the bytes are not a zip archive, treats them as raw subtitle bytes.
+    /// Extracts the best supported subtitle entry (.srt, .ass, .ssa, .vtt, .sub) from the provided zip archive bytes
+    /// with strict archive and uncompressed size caps. If the bytes are not a zip archive, treats them as raw subtitle bytes.
     /// </summary>
     public static (byte[] ContentBytes, string Extension) ExtractSubtitleEntry(byte[] archiveBytes)
     {
         ArgumentNullException.ThrowIfNull(archiveBytes);
 
+        if (archiveBytes.Length > MaxArchiveBytes)
+        {
+            throw new InvalidDataException($"Subtitle archive exceeds maximum allowed size of {MaxArchiveBytes} bytes.");
+        }
+
         if (IsZipArchive(archiveBytes))
         {
-            using var ms = new MemoryStream(archiveBytes);
+            using var ms = new MemoryStream(archiveBytes, writable: false);
             using var archive = new ZipArchive(ms, ZipArchiveMode.Read);
+
+            if (archive.Entries.Count > MaxArchiveEntries)
+            {
+                throw new InvalidDataException($"Subtitle archive contains {archive.Entries.Count} entries, exceeding the maximum of {MaxArchiveEntries}.");
+            }
 
             var candidateEntries = archive.Entries
                 .Where(e => !e.FullName.StartsWith("__MACOSX", StringComparison.OrdinalIgnoreCase) &&
                             !string.IsNullOrWhiteSpace(e.Name))
                 .ToList();
 
-            var entry = candidateEntries.FirstOrDefault(e => e.Name.EndsWith(".srt", StringComparison.OrdinalIgnoreCase))
-                     ?? candidateEntries.FirstOrDefault(e => e.Name.EndsWith(".ass", StringComparison.OrdinalIgnoreCase))
-                     ?? candidateEntries.FirstOrDefault(e => e.Name.EndsWith(".vtt", StringComparison.OrdinalIgnoreCase))
-                     ?? candidateEntries.FirstOrDefault();
+            ZipArchiveEntry? entry = null;
+            foreach (var allowedExt in PreferredSubtitleExtensions)
+            {
+                entry = candidateEntries.FirstOrDefault(e => e.Name.EndsWith(allowedExt, StringComparison.OrdinalIgnoreCase));
+                if (entry is not null)
+                {
+                    break;
+                }
+            }
 
             if (entry is null)
             {
-                throw new InvalidOperationException("No subtitle entry found in the downloaded archive.");
+                throw new InvalidOperationException("No supported subtitle entry (.srt, .ass, .ssa, .vtt, .sub) found in the downloaded archive.");
+            }
+
+            if (entry.Length > MaxSubtitleBytes)
+            {
+                throw new InvalidDataException($"Subtitle entry exceeds maximum allowed uncompressed size of {MaxSubtitleBytes} bytes.");
+            }
+
+            var ext = Path.GetExtension(entry.Name).ToLowerInvariant();
+            if (!AllowedExtensions.Contains(ext))
+            {
+                throw new InvalidOperationException($"Unsupported subtitle extension '{ext}'.");
             }
 
             using var entryStream = entry.Open();
-            using var entryMs = new MemoryStream();
-            entryStream.CopyTo(entryMs);
+            var contentBytes = ReadBoundedBytes(entryStream, MaxSubtitleBytes);
+            return (contentBytes, ext);
+        }
 
-            var ext = Path.GetExtension(entry.Name);
-            if (string.IsNullOrWhiteSpace(ext))
-            {
-                ext = ".srt";
-            }
-
-            return (entryMs.ToArray(), ext);
+        if (archiveBytes.Length > MaxSubtitleBytes)
+        {
+            throw new InvalidDataException($"Subtitle content exceeds maximum allowed size of {MaxSubtitleBytes} bytes.");
         }
 
         return (archiveBytes, ".srt");
@@ -123,14 +193,19 @@ public sealed class SubtitleDownloadService : ISubtitleDownloadService
     {
         ArgumentNullException.ThrowIfNull(contentBytes);
 
+        if (contentBytes.Length > MaxSubtitleBytes)
+        {
+            throw new InvalidDataException($"Subtitle content exceeds maximum allowed size of {MaxSubtitleBytes} bytes.");
+        }
+
         if (contentBytes.Length == 0)
         {
             return [];
         }
 
-        bool isArabic = string.Equals(languageCode, "ar", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(languageCode, "ara", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(languageCode, "arabic", StringComparison.OrdinalIgnoreCase);
+        bool isArabic = string.Equals(languageCode?.Trim(), "ar", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(languageCode?.Trim(), "ara", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(languageCode?.Trim(), "arabic", StringComparison.OrdinalIgnoreCase);
 
         var utf8Strict = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
         string text;
@@ -161,28 +236,75 @@ public sealed class SubtitleDownloadService : ISubtitleDownloadService
     }
 
     /// <summary>
-    /// Generates a standardized subtitle file path: {videoBaseName}.{lang}.srt
+    /// Generates a standardized subtitle file path: {videoBaseName}.{lang}.{ext}
     /// </summary>
     public static string GenerateSubtitlePath(string mediaFilePath, string languageCode, string extension = ".srt")
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(mediaFilePath);
 
-        var dir = Path.GetDirectoryName(mediaFilePath) ?? string.Empty;
-        var videoBaseName = Path.GetFileNameWithoutExtension(mediaFilePath);
-        var langCode = NormalizeLanguageCode(languageCode);
-
-        var ext = extension.Trim();
+        var ext = (extension ?? ".srt").Trim().ToLowerInvariant();
         if (!ext.StartsWith('.'))
         {
             ext = $".{ext}";
         }
 
-        return Path.Combine(dir, $"{videoBaseName}.{langCode}{ext}");
+        if (!AllowedExtensions.Contains(ext))
+        {
+            throw new ArgumentException($"Unsupported subtitle extension '{extension}'.", nameof(extension));
+        }
+
+        var langCode = NormalizeLanguageCode(languageCode);
+
+        // Preserve directory separator style of the input path so cross-platform path formatting tests
+        // (including Windows drive paths run on Linux) produce exact beside-file paths without mangling.
+        var lastBackslash = mediaFilePath.LastIndexOf('\\');
+        var lastSlash = mediaFilePath.LastIndexOf('/');
+        var lastSep = Math.Max(lastBackslash, lastSlash);
+
+        string dir;
+        string fileName;
+        char separator;
+        if (lastSep >= 0)
+        {
+            separator = mediaFilePath[lastSep];
+            dir = mediaFilePath[..lastSep];
+            fileName = mediaFilePath[(lastSep + 1)..];
+        }
+        else
+        {
+            separator = Path.DirectorySeparatorChar;
+            dir = string.Empty;
+            fileName = mediaFilePath;
+        }
+
+        var videoBaseName = Path.GetFileNameWithoutExtension(fileName);
+        if (string.IsNullOrWhiteSpace(videoBaseName))
+        {
+            throw new ArgumentException("Media file path must include a valid file name.", nameof(mediaFilePath));
+        }
+
+        var subtitleFileName = $"{videoBaseName}.{langCode}{ext}";
+        if (lastSep == 0)
+        {
+            return $"{separator}{subtitleFileName}";
+        }
+
+        if (string.IsNullOrEmpty(dir))
+        {
+            return subtitleFileName;
+        }
+
+        return $"{dir}{separator}{subtitleFileName}";
     }
 
-    private static string NormalizeLanguageCode(string rawLang)
+    public static string NormalizeLanguageCode(string? rawLang)
     {
-        var lower = rawLang?.Trim().ToLowerInvariant() ?? "sub";
+        if (string.IsNullOrWhiteSpace(rawLang))
+        {
+            return "sub";
+        }
+
+        var lower = rawLang.Trim().ToLowerInvariant();
         if (lower is "ar" or "ara" or "arabic")
         {
             return "ar";
@@ -191,7 +313,34 @@ public sealed class SubtitleDownloadService : ISubtitleDownloadService
         {
             return "en";
         }
-        return lower;
+
+        if (lower.Length <= 15 &&
+            SafeLanguageCodeRegex().IsMatch(lower) &&
+            !ReservedDosNames.Contains(lower))
+        {
+            return lower;
+        }
+
+        return "sub";
+    }
+
+    private static byte[] ReadBoundedBytes(Stream stream, int maxBytes)
+    {
+        using var output = new MemoryStream();
+        var buffer = new byte[16 * 1024];
+        var totalRead = 0;
+        int read;
+        while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            totalRead += read;
+            if (totalRead > maxBytes)
+            {
+                throw new InvalidDataException($"Extracted subtitle exceeds maximum allowed size of {maxBytes} bytes.");
+            }
+            output.Write(buffer, 0, read);
+        }
+
+        return output.ToArray();
     }
 
     private static bool IsZipArchive(byte[] bytes)

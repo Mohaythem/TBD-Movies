@@ -1,4 +1,5 @@
 using TBDMovies.Application.External;
+using TBDMovies.Application.Subtitles;
 
 namespace TBDMovies.UI.Services;
 
@@ -16,11 +17,24 @@ public static class MetadataErrorKey
         {
             OperationCanceledException => "MetadataCancelled",
             MetadataServiceException metadata => For(metadata.Kind),
+            SubtitleServiceException subtitle => For(subtitle.Kind),
             System.Net.Http.HttpRequestException => For(MetadataFailureKind.Network),
             TimeoutException => For(MetadataFailureKind.Timeout),
             _ => "MetadataUnexpectedError",
         };
     }
+
+    public static string For(SubtitleFailureKind kind) => kind switch
+    {
+        SubtitleFailureKind.NotConfigured => "SubDlKeyRequired",
+        SubtitleFailureKind.Authentication => "SubDlInvalidKey",
+        SubtitleFailureKind.RateLimited => For(MetadataFailureKind.RateLimited),
+        SubtitleFailureKind.Network => For(MetadataFailureKind.Network),
+        SubtitleFailureKind.Timeout => For(MetadataFailureKind.Timeout),
+        SubtitleFailureKind.Api => For(MetadataFailureKind.Api),
+        SubtitleFailureKind.InvalidResponse => For(MetadataFailureKind.InvalidResponse),
+        _ => "MetadataUnexpectedError",
+    };
 
     public static string For(ConnectionTestResult result) => result.Success
         ? "TmdbConnectionSuccess"

@@ -195,4 +195,110 @@ public sealed class SubtitleDownloadServiceTests : IDisposable
         var savedText = Encoding.UTF8.GetString(savedBytes);
         Assert.Equal(arabicText, savedText);
     }
+
+    [Fact]
+    public void ExtractSubtitleEntry_ZipContainingOnlyExecutableOrScript_ThrowsInsteadOfExtracting()
+    {
+        using var ms = new MemoryStream();
+        using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, true))
+        {
+            var exeEntry = archive.CreateEntry("payload.exe");
+            using (var writer = new StreamWriter(exeEntry.Open()))
+            {
+                writer.Write("MZ-malicious");
+            }
+
+            var batEntry = archive.CreateEntry("install.bat");
+            using (var writer = new StreamWriter(batEntry.Open()))
+            {
+                writer.Write("@echo off");
+            }
+        }
+
+        var zipBytes = ms.ToArray();
+        Assert.Throws<InvalidOperationException>(() => SubtitleDownloadService.ExtractSubtitleEntry(zipBytes));
+    }
+
+    [Theory]
+    [InlineData("ar/../../../AppData/Roaming/Startup/evil", "sub")]
+    [InlineData(@"..\..\evil", "sub")]
+    [InlineData("con", "sub")]
+    [InlineData("aux", "sub")]
+    [InlineData("pt-br", "pt-br")]
+    [InlineData("fr", "fr")]
+    public void GenerateSubtitlePath_SanitizesLanguageTraversalAndRejectsExecutableExtension(
+        string untrustedLang,
+        string expectedLangSegment)
+    {
+        var path = SubtitleDownloadService.GenerateSubtitlePath(
+            @"D:\Movies\Heat (1995)\Heat.mkv",
+            untrustedLang,
+            ".srt");
+
+        Assert.Equal($@"D:\Movies\Heat (1995)\Heat.{expectedLangSegment}.srt", path);
+        Assert.Throws<ArgumentException>(() =>
+            SubtitleDownloadService.GenerateSubtitlePath(@"D:\Movies\Heat (1995)\Heat.mkv", "en", ".exe"));
+    }
+
+    [Fact]
+    public async Task SaveSubtitleAsync_WithTraversalLanguage_StaysInsideMediaDirectory()
+    {
+        var mediaFile = Path.Combine(_testRoot, "Heat (1995).mkv");
+        await File.WriteAllTextAsync(mediaFile, "dummy media");
+        var rawSubtitle = Encoding.UTF8.GetBytes("1\n00:00:01,000 --> 00:00:02,000\nSafe");
+
+        var savedPath = await _service.SaveSubtitleAsync(rawSubtitle, mediaFile, "../outside/evil");
+
+        Assert.Equal(Path.Combine(_testRoot, "Heat (1995).sub.srt"), savedPath);
+        Assert.True(File.Exists(savedPath));
+    }
+
+    [Fact]
+    public void ExtractSubtitleEntry_ExceedingMaxArchiveEntries_ThrowsInvalidDataException()
+    {
+        using var ms = new MemoryStream();
+        using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, true))
+        {
+            for (var i = 0; i <= SubtitleDownloadService.MaxArchiveEntries; i++)
+            {
+                _ = archive.CreateEntry($"sub_{i}.srt");
+            }
+        }
+
+        var zipBytes = ms.ToArray();
+        Assert.Throws<InvalidDataException>(() => SubtitleDownloadService.ExtractSubtitleEntry(zipBytes));
+    }
+
+    [Fact]
+    public void ExtractSubtitleEntry_CompressedEntryExceedingMaxSubtitleBytes_ThrowsInvalidDataException()
+    {
+        using var ms = new MemoryStream();
+        using (var archive = new ZipArchive(ms, ZipArchiveMode.Create, true))
+        {
+            var entry = archive.CreateEntry("bomb.srt", CompressionLevel.SmallestSize);
+            using var stream = entry.Open();
+            var chunk = new byte[64 * 1024];
+            Array.Fill(chunk, (byte)'A');
+            var remaining = SubtitleDownloadService.MaxSubtitleBytes + 1024;
+            while (remaining > 0)
+            {
+                var toWrite = Math.Min(chunk.Length, remaining);
+                stream.Write(chunk, 0, toWrite);
+                remaining -= toWrite;
+            }
+        }
+
+        var zipBytes = ms.ToArray();
+        Assert.True(zipBytes.Length < SubtitleDownloadService.MaxArchiveBytes);
+        Assert.Throws<InvalidDataException>(() => SubtitleDownloadService.ExtractSubtitleEntry(zipBytes));
+    }
+
+    [Fact]
+    public async Task SaveSubtitleAsync_RelativeMediaFilePath_ThrowsUnsafePathException()
+    {
+        var rawSubtitle = Encoding.UTF8.GetBytes("1\n00:00:01,000 --> 00:00:02,000\nTest");
+        await Assert.ThrowsAsync<TBDMovies.FileSystem.Safety.UnsafePathException>(() =>
+            _service.SaveSubtitleAsync(rawSubtitle, @"relative\Heat.mkv", "en"));
+        Assert.Equal("/movie.en.srt", SubtitleDownloadService.GenerateSubtitlePath("/movie.mkv", "en", ".srt"));
+    }
 }

@@ -39,6 +39,8 @@ public sealed class SubtitleDialog : ContentDialog
     private IReadOnlyList<RemoteSubtitleCandidate> _allCandidates = [];
     private CancellationTokenSource? _searchCts;
     private CancellationTokenSource? _downloadCts;
+    private bool _isDownloading;
+    private bool _isClosing;
 
     public bool DownloadedSuccess { get; private set; }
 
@@ -191,10 +193,9 @@ public sealed class SubtitleDialog : ContentDialog
         Loaded += async (_, _) => await StartSearchAsync();
         Closing += (_, _) =>
         {
-            _searchCts?.Cancel();
-            _searchCts?.Dispose();
-            _downloadCts?.Cancel();
-            _downloadCts?.Dispose();
+            _isClosing = true;
+            CancelAndDispose(ref _searchCts);
+            CancelAndDispose(ref _downloadCts);
         };
     }
 
@@ -257,53 +258,87 @@ public sealed class SubtitleDialog : ContentDialog
         _candidateList.Visibility = Visibility.Collapsed;
         _infoBar.IsOpen = false;
 
-        _searchCts = new CancellationTokenSource();
-        var ct = _searchCts.Token;
+        CancelAndDispose(ref _searchCts);
+        var searchCts = new CancellationTokenSource();
+        _searchCts = searchCts;
+        var ct = searchCts.Token;
 
         try
         {
             string? imdbId = null;
-            if (!string.IsNullOrWhiteSpace(_externalId))
+            var rawExternalId = _externalId?.Trim();
+            var isLocalPlaceholder = string.IsNullOrWhiteSpace(rawExternalId) ||
+                                     rawExternalId.StartsWith("local:", StringComparison.OrdinalIgnoreCase);
+
+            if (!isLocalPlaceholder && rawExternalId is not null)
             {
-                if (_externalId.StartsWith("tt", StringComparison.OrdinalIgnoreCase))
+                if (rawExternalId.StartsWith("tt", StringComparison.OrdinalIgnoreCase))
                 {
-                    imdbId = _externalId;
+                    imdbId = rawExternalId;
                 }
                 else if (AppServices.TmdbClient.IsConfigured)
                 {
-                    imdbId = await AppServices.TmdbClient.GetImdbIdAsync(_mediaType, _externalId, _season, _episode, ct).ConfigureAwait(true);
+                    try
+                    {
+                        // SubDL expects the series-level IMDb ID (with season_number & episode_number parameters),
+                        // not an episode-level IMDb ID. If TMDB fails transiently, fall back to TMDB numeric ID.
+                        imdbId = await AppServices.TmdbClient.GetImdbIdAsync(
+                            _mediaType,
+                            rawExternalId,
+                            season: null,
+                            episode: null,
+                            ct).ConfigureAwait(true);
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        imdbId = null;
+                    }
                 }
             }
 
-            var queryId = imdbId ?? _externalId ?? string.Empty;
-            var candidates = await Task.Run(async () =>
+            var queryId = imdbId
+                ?? (!isLocalPlaceholder ? rawExternalId : null)
+                ?? NormalizeSearchTitle(_displayTitle, _mediaType);
+
+            var candidates = await AppServices.SubtitleClient.SearchAsync(
+                queryId,
+                _mediaType,
+                _season,
+                _episode,
+                "ar,en",
+                ct).ConfigureAwait(true);
+
+            if (_isClosing || ct.IsCancellationRequested)
             {
-                return await AppServices.SubtitleClient.SearchAsync(
-                    queryId,
-                    _mediaType,
-                    _season,
-                    _episode,
-                    "ar,en",
-                    ct).ConfigureAwait(false);
-            }, ct).ConfigureAwait(true);
+                return;
+            }
 
             _allCandidates = candidates ?? [];
             _loadingPanel.Visibility = Visibility.Collapsed;
 
             ApplyFilter();
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (_isClosing || ct.IsCancellationRequested)
         {
-            // Dialog was closed during search
+            // Dialog was closed or search superseded
         }
         catch (Exception ex)
         {
+            if (_isClosing)
+            {
+                return;
+            }
+
             _loadingPanel.Visibility = Visibility.Collapsed;
             _emptyPanel.Visibility = Visibility.Collapsed;
             _candidateList.Visibility = Visibility.Collapsed;
 
             _infoBar.Severity = InfoBarSeverity.Error;
-            _infoBar.Message = ex.Message;
+            _infoBar.Message = MetadataErrorText.For(ex);
             _infoBar.IsOpen = true;
         }
     }
@@ -375,6 +410,9 @@ public sealed class SubtitleDialog : ContentDialog
 
         // Language badge
         bool isArabic = string.Equals(candidate.LanguageCode, "ar", StringComparison.OrdinalIgnoreCase);
+        var badgeCode = string.IsNullOrWhiteSpace(candidate.LanguageCode)
+            ? "SUB"
+            : candidate.LanguageCode.Trim().ToUpperInvariant();
         var langBorder = new Border
         {
             CornerRadius = new CornerRadius(4),
@@ -389,7 +427,7 @@ public sealed class SubtitleDialog : ContentDialog
         };
         var langText = new TextBlock
         {
-            Text = $"[ {(isArabic ? "AR" : "EN")} ]",
+            Text = $"[ {badgeCode} ]",
             FontSize = 11,
             FontWeight = FontWeights.SemiBold,
             Foreground = isArabic
@@ -500,13 +538,23 @@ public sealed class SubtitleDialog : ContentDialog
 
         downloadBtn.Click += async (_, _) =>
         {
+            if (_isDownloading || _isClosing)
+            {
+                return;
+            }
+
+            _isDownloading = true;
+            _candidateList.IsEnabled = false;
+            _infoBar.IsOpen = false;
             downloadBtn.IsEnabled = false;
             downloadBtn.Visibility = Visibility.Collapsed;
             downloadRing.Visibility = Visibility.Visible;
             downloadRing.IsActive = true;
 
-            _downloadCts = new CancellationTokenSource();
-            var ct = _downloadCts.Token;
+            CancelAndDispose(ref _downloadCts);
+            var downloadCts = new CancellationTokenSource();
+            _downloadCts = downloadCts;
+            var ct = downloadCts.Token;
 
             try
             {
@@ -516,20 +564,41 @@ public sealed class SubtitleDialog : ContentDialog
                 DownloadedSuccess = true;
                 Hide();
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (_isClosing || ct.IsCancellationRequested)
             {
-                // Download was cancelled
+                // Dialog closed or download cancelled
             }
             catch (Exception ex)
             {
-                downloadBtn.IsEnabled = true;
-                downloadBtn.Visibility = Visibility.Visible;
-                downloadRing.IsActive = false;
-                downloadRing.Visibility = Visibility.Collapsed;
+                if (!_isClosing)
+                {
+                    _infoBar.Severity = InfoBarSeverity.Error;
+                    _infoBar.Message = ex is SubtitleServiceException or System.Net.Http.HttpRequestException or TimeoutException
+                        ? MetadataErrorText.For(ex)
+                        : LocalizationService.Text("SubtitlesDownloadFailed");
+                    _infoBar.IsOpen = true;
+                }
+            }
+            finally
+            {
+                _isDownloading = false;
+                if (ReferenceEquals(_downloadCts, downloadCts))
+                {
+                    CancelAndDispose(ref _downloadCts);
+                }
+                else
+                {
+                    downloadCts.Dispose();
+                }
 
-                _infoBar.Severity = InfoBarSeverity.Error;
-                _infoBar.Message = LocalizationService.Text("SubtitlesDownloadFailed") + " (" + ex.Message + ")";
-                _infoBar.IsOpen = true;
+                if (!_isClosing && !DownloadedSuccess)
+                {
+                    _candidateList.IsEnabled = true;
+                    downloadBtn.IsEnabled = true;
+                    downloadBtn.Visibility = Visibility.Visible;
+                    downloadRing.IsActive = false;
+                    downloadRing.Visibility = Visibility.Collapsed;
+                }
             }
         };
 
@@ -541,6 +610,38 @@ public sealed class SubtitleDialog : ContentDialog
 
         border.Child = grid;
         return border;
+    }
+
+    private static string NormalizeSearchTitle(string displayTitle, string mediaType)
+    {
+        if (string.IsNullOrWhiteSpace(displayTitle))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = displayTitle.Trim();
+        if (string.Equals(mediaType, "tv", StringComparison.OrdinalIgnoreCase))
+        {
+            var dashIdx = trimmed.LastIndexOf(" - S", StringComparison.OrdinalIgnoreCase);
+            if (dashIdx > 0)
+            {
+                return trimmed[..dashIdx].Trim();
+            }
+        }
+
+        return trimmed;
+    }
+
+    private static void CancelAndDispose(ref CancellationTokenSource? cts)
+    {
+        var current = Interlocked.Exchange(ref cts, null);
+        if (current is null)
+        {
+            return;
+        }
+
+        try { current.Cancel(); } catch { }
+        current.Dispose();
     }
 
     /// <summary>
