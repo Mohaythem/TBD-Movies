@@ -25,6 +25,8 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
     /// </summary>
     private readonly bool _isReady;
     private bool _isActivated;
+    private Exception? _readError;
+    private bool _showingReadErrorInfo;
 
     public OperationsLogPage()
     {
@@ -38,6 +40,7 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
     public void Activate()
     {
         _isActivated = true;
+        _showingReadErrorInfo = false;
         CopiedInfoBar.IsOpen = false;
         Refresh();
     }
@@ -52,10 +55,15 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
         FilterAllItem.Content = LocalizationService.Text("All");
         FilterSuccessItem.Content = LocalizationService.Text("Success");
         FilterAttentionItem.Content = LocalizationService.Text("NeedsAttention");
-        CopiedInfoBar.Severity = InfoBarSeverity.Informational;
-        CopiedInfoBar.Message = LocalizationService.Text("LogCopied");
+        if (!CopiedInfoBar.IsOpen)
+        {
+            CopiedInfoBar.Severity = InfoBarSeverity.Informational;
+            CopiedInfoBar.Message = LocalizationService.Text("LogCopied");
+        }
         EmptyState.Title = LocalizationService.Text("NoEntries");
         EmptyState.Message = LocalizationService.Text("NoEntriesHelp");
+        EmptyState.ActionText = string.Empty;
+        EmptyState.IsActionVisible = false;
         Refresh();
     }
 
@@ -73,9 +81,33 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
 
         var entries = BuildEntries();
         OperationsRepeater.ItemsSource = entries;
-        EntriesCountText.Text = LocalizationService.Format(
-            entries.Count == 1 ? "EntryFormat" : "EntriesFormat",
-            entries.Count);
+
+        if (_readError is { } error)
+        {
+            var errorMessage = MetadataErrorText.For(error);
+            EntriesCountText.Text = string.Empty;
+            EmptyState.Title = LocalizationService.Text("Failed");
+            EmptyState.Message = errorMessage;
+            EmptyState.ActionText = LocalizationService.Text("Retry");
+            EmptyState.IsActionVisible = true;
+            ShowInfo(errorMessage, InfoBarSeverity.Error);
+            _showingReadErrorInfo = true;
+        }
+        else
+        {
+            EntriesCountText.Text = LocalizationService.Format(
+                entries.Count == 1 ? "EntryFormat" : "EntriesFormat",
+                entries.Count);
+            EmptyState.Title = LocalizationService.Text("NoEntries");
+            EmptyState.Message = LocalizationService.Text("NoEntriesHelp");
+            EmptyState.ActionText = string.Empty;
+            EmptyState.IsActionVisible = false;
+            if (_showingReadErrorInfo)
+            {
+                CopiedInfoBar.IsOpen = false;
+                _showingReadErrorInfo = false;
+            }
+        }
 
         var isEmpty = entries.Count == 0;
         LogSurface.Visibility = isEmpty ? Visibility.Collapsed : Visibility.Visible;
@@ -112,18 +144,22 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
     {
         if (!_isActivated)
         {
+            _readError = null;
             _visible = [];
             return [];
         }
 
         IReadOnlyList<OperationHistoryItem> items;
+        _readError = null;
 
         try
         {
             items = AppServices.History.ListOperationHistory(new OperationHistoryQuery(Limit: 200));
         }
-        catch (Exception)
+        catch (Exception error)
         {
+            _readError = error;
+            System.Diagnostics.Debug.WriteLine($"[OperationsLogPage] Failed to load operation history: {error.Message}");
             items = [];
         }
 
@@ -184,6 +220,7 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
         var package = new DataPackage { RequestedOperation = DataPackageOperation.Copy };
         package.SetText(BuildLogText());
         Clipboard.SetContent(package);
+        _showingReadErrorInfo = false;
         ShowInfo(LocalizationService.Text("LogCopied"), InfoBarSeverity.Informational);
     }
 
@@ -196,6 +233,7 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
     {
         var folder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         var path = Path.Combine(folder, "tbd-movies-operations-log.txt");
+        _showingReadErrorInfo = false;
 
         try
         {
@@ -214,6 +252,8 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
         CopiedInfoBar.Message = message;
         CopiedInfoBar.IsOpen = true;
     }
+
+    private void EmptyState_ActionClick(object sender, RoutedEventArgs e) => Refresh();
 
     private void BackButton_Click(object sender, RoutedEventArgs e) => BackRequested?.Invoke(this, EventArgs.Empty);
 }

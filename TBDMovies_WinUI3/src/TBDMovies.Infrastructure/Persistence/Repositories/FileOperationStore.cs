@@ -1,4 +1,4 @@
-﻿using TBDMovies.Application.Repositories;
+using TBDMovies.Application.Repositories;
 using TBDMovies.Domain.Core.Operations;
 using Microsoft.Data.Sqlite;
 
@@ -6,9 +6,9 @@ namespace TBDMovies.Infrastructure.Persistence.Repositories;
 
 public sealed class FileOperationStore : IFileOperationStore, IDisposable
 {
-    private readonly SqliteConnection _connection;
+    private readonly SqliteConnection? _injectedConnection;
+    private readonly object? _injectedConnectionGate;
     private readonly string _connectionString;
-    private readonly bool _ownsConnection;
     private readonly Func<DateTimeOffset> _clock;
 
     private static readonly IReadOnlyDictionary<OperationState, HashSet<OperationState>> AllowedTransitions =
@@ -25,42 +25,56 @@ public sealed class FileOperationStore : IFileOperationStore, IDisposable
 
     public FileOperationStore(SqliteConnection connection, Func<DateTimeOffset>? clock = null)
     {
-        _connection = connection ?? throw new ArgumentNullException(nameof(connection));
-        if (_connection.State != System.Data.ConnectionState.Open) _connection.Open();
-        _connectionString = _connection.ConnectionString;
-        using var command = _connection.CreateCommand();
-        command.CommandText = "PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL;";
-        command.ExecuteNonQuery();
+        _injectedConnection = connection ?? throw new ArgumentNullException(nameof(connection));
+        _injectedConnectionGate = new object();
+        lock (_injectedConnectionGate)
+        {
+            if (_injectedConnection.State != System.Data.ConnectionState.Open) _injectedConnection.Open();
+            _connectionString = _injectedConnection.ConnectionString;
+            using var command = _injectedConnection.CreateCommand();
+            command.CommandText = "PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 10000;";
+            command.ExecuteNonQuery();
+        }
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
 
     public FileOperationStore(string connectionString, Func<DateTimeOffset>? clock = null)
     {
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new ArgumentException("Connection string is required.", nameof(connectionString));
+
         _connectionString = connectionString;
-        _connection = SqliteConnections.Open(connectionString);
-        _ownsConnection = true;
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
 
-    public FileOperationRecord? GetById(string id) => GetById(id, null);
+    public FileOperationRecord? GetById(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id)) throw new ArgumentException("Operation ID is required.", nameof(id));
+        return WithReadConnection(connection => GetById(connection, id, transaction: null));
+    }
 
     public IReadOnlyList<FileOperationRecord> ListHistory(int limit = 50, int offset = 0)
     {
         if (limit <= 0) throw new ArgumentOutOfRangeException(nameof(limit));
         if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset));
-        using var command = _connection.CreateCommand();
-        command.CommandText = "SELECT * FROM file_operations ORDER BY datetime(created_at) DESC, id DESC LIMIT $limit OFFSET $offset;";
-        command.Parameters.AddWithValue("$limit", limit);
-        command.Parameters.AddWithValue("$offset", offset);
-        return ReadMany(command);
+
+        return WithReadConnection(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT * FROM file_operations ORDER BY datetime(created_at) DESC, id DESC LIMIT $limit OFFSET $offset;";
+            command.Parameters.AddWithValue("$limit", limit);
+            command.Parameters.AddWithValue("$offset", offset);
+            return ReadMany(command);
+        });
     }
 
-    public IReadOnlyList<FileOperationRecord> ListNonterminal()
-    {
-        using var command = _connection.CreateCommand();
-        command.CommandText = "SELECT * FROM file_operations WHERE state NOT IN ('COMMITTED', 'FAILED') ORDER BY datetime(created_at), id;";
-        return ReadMany(command);
-    }
+    public IReadOnlyList<FileOperationRecord> ListNonterminal() =>
+        WithReadConnection(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT * FROM file_operations WHERE state NOT IN ('COMMITTED', 'FAILED') ORDER BY datetime(created_at), id;";
+            return ReadMany(command);
+        });
 
     public FileOperationRecord Create(FileOperationPlan plan, DateTimeOffset now)
     {
@@ -68,97 +82,148 @@ public sealed class FileOperationStore : IFileOperationStore, IDisposable
         // Serialize this journal write with every other writer to library.db (catalog, personal,
         // maintenance). The gate is the outermost scope so it is released only after the transaction
         // has committed or rolled back; the critical section is a single fast INSERT, no filesystem work.
-        using var gate = DatabaseWriteGate.Enter(_connectionString);
-        using var transaction = _connection.BeginTransaction(deferred: false);
-        if (plan.ReversesOperationId is not null)
+        return WithWriteTransaction((connection, transaction) =>
         {
-            using var check = _connection.CreateCommand();
-            check.Transaction = transaction;
-            check.CommandText = "SELECT id FROM file_operations WHERE reverses_operation_id = $reversed LIMIT 1;";
-            check.Parameters.AddWithValue("$reversed", plan.ReversesOperationId);
-            if (check.ExecuteScalar() is not null)
-                throw new InvalidOperationException($"Operation {plan.ReversesOperationId} already has a reverse journal.");
-        }
+            if (plan.ReversesOperationId is not null)
+            {
+                using var check = connection.CreateCommand();
+                check.Transaction = transaction;
+                check.CommandText = "SELECT id FROM file_operations WHERE reverses_operation_id = $reversed LIMIT 1;";
+                check.Parameters.AddWithValue("$reversed", plan.ReversesOperationId);
+                if (check.ExecuteScalar() is not null)
+                    throw new InvalidOperationException($"Operation {plan.ReversesOperationId} already has a reverse journal.");
+            }
 
-        using var command = _connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO file_operations (
-                id, operation_type, source_path, destination_path, state,
-                media_file_id, reverses_operation_id, created_at, updated_at
-            ) VALUES (
-                $id, $type, $source, $destination, 'PLANNED',
-                $media, $reverses, $created, $updated
-            );
-            """;
-        command.Parameters.AddWithValue("$id", plan.OperationId);
-        command.Parameters.AddWithValue("$type", ToText(plan.OperationType));
-        command.Parameters.AddWithValue("$source", plan.Source);
-        command.Parameters.AddWithValue("$destination", plan.Destination);
-        command.Parameters.AddWithValue("$media", (object?)plan.MediaFileId ?? DBNull.Value);
-        command.Parameters.AddWithValue("$reverses", (object?)plan.ReversesOperationId ?? DBNull.Value);
-        command.Parameters.AddWithValue("$created", now.ToString("O"));
-        command.Parameters.AddWithValue("$updated", now.ToString("O"));
-        command.ExecuteNonQuery();
-        transaction.Commit();
-        return GetById(plan.OperationId)!;
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                INSERT INTO file_operations (
+                    id, operation_type, source_path, destination_path, state,
+                    media_file_id, reverses_operation_id, created_at, updated_at
+                ) VALUES (
+                    $id, $type, $source, $destination, 'PLANNED',
+                    $media, $reverses, $created, $updated
+                );
+                """;
+            command.Parameters.AddWithValue("$id", plan.OperationId);
+            command.Parameters.AddWithValue("$type", ToText(plan.OperationType));
+            command.Parameters.AddWithValue("$source", plan.Source);
+            command.Parameters.AddWithValue("$destination", plan.Destination);
+            command.Parameters.AddWithValue("$media", (object?)plan.MediaFileId ?? DBNull.Value);
+            command.Parameters.AddWithValue("$reverses", (object?)plan.ReversesOperationId ?? DBNull.Value);
+            command.Parameters.AddWithValue("$created", now.ToString("O"));
+            command.Parameters.AddWithValue("$updated", now.ToString("O"));
+            command.ExecuteNonQuery();
+            return GetById(connection, plan.OperationId, transaction)!;
+        });
     }
 
     public FileOperationRecord Transition(string id, OperationState newState, OperationUpdate? update = null)
     {
-        using var gate = DatabaseWriteGate.Enter(_connectionString);
-        using var transaction = _connection.BeginTransaction(deferred: false);
-        var result = Transition(id, newState, update ?? new OperationUpdate(), transaction);
-        transaction.Commit();
-        return result;
+        if (string.IsNullOrWhiteSpace(id)) throw new ArgumentException("Operation ID is required.", nameof(id));
+        return WithWriteTransaction((connection, transaction) =>
+            Transition(connection, id, newState, update ?? new OperationUpdate(), transaction));
     }
 
     public FileOperationRecord CommitVerified(string id)
     {
+        if (string.IsNullOrWhiteSpace(id)) throw new ArgumentException("Operation ID is required.", nameof(id));
         // CommitVerified also updates media_files, so it must serialize with catalog writers to that
         // same table; the gate covers the whole transaction and is released after commit/rollback.
-        using var gate = DatabaseWriteGate.Enter(_connectionString);
-        using var transaction = _connection.BeginTransaction(deferred: false);
-        var current = GetById(id, transaction) ?? throw new KeyNotFoundException($"Operation {id} was not found.");
-        if (current.State != OperationState.FsVerified)
-            throw new InvalidOperationException($"Expected FsVerified, got {current.State}.");
-        if (current.MediaFileId is not null)
+        return WithWriteTransaction((connection, transaction) =>
         {
-            using var updatePath = _connection.CreateCommand();
-            updatePath.Transaction = transaction;
-            updatePath.CommandText = """
-                UPDATE media_files
-                   SET current_path = $path, path_key = $key, status = 'PRESENT', last_seen_at = $updated
-                 WHERE id = $id;
-                """;
-            updatePath.Parameters.AddWithValue("$path", current.Destination);
-            updatePath.Parameters.AddWithValue("$key", MediaFileRepository.PathKey(current.Destination));
-            updatePath.Parameters.AddWithValue("$updated", _clock().ToString("O"));
-            updatePath.Parameters.AddWithValue("$id", current.MediaFileId.Value);
-            if (updatePath.ExecuteNonQuery() != 1)
-                throw new KeyNotFoundException($"Media file {current.MediaFileId.Value} was not found.");
-        }
-        var committed = Transition(id, OperationState.Committed, new OperationUpdate(), transaction);
-        transaction.Commit();
-        return committed;
+            var current = GetById(connection, id, transaction) ?? throw new KeyNotFoundException($"Operation {id} was not found.");
+            if (current.State != OperationState.FsVerified)
+                throw new InvalidOperationException($"Expected FsVerified, got {current.State}.");
+            if (current.MediaFileId is not null)
+            {
+                using var updatePath = connection.CreateCommand();
+                updatePath.Transaction = transaction;
+                updatePath.CommandText = """
+                    UPDATE media_files
+                       SET current_path = $path, path_key = $key, status = 'PRESENT', last_seen_at = $updated
+                     WHERE id = $id;
+                    """;
+                updatePath.Parameters.AddWithValue("$path", current.Destination);
+                updatePath.Parameters.AddWithValue("$key", MediaFileRepository.PathKey(current.Destination));
+                updatePath.Parameters.AddWithValue("$updated", _clock().ToString("O"));
+                updatePath.Parameters.AddWithValue("$id", current.MediaFileId.Value);
+                if (updatePath.ExecuteNonQuery() != 1)
+                    throw new KeyNotFoundException($"Media file {current.MediaFileId.Value} was not found.");
+            }
+            return Transition(connection, id, OperationState.Committed, new OperationUpdate(), transaction);
+        });
     }
 
     public void Dispose()
     {
-        if (_ownsConnection) _connection.Dispose();
+        // Connection-string instances use short-lived pooled connections per call; injected connections
+        // remain owned by the caller.
+    }
+
+    private T WithReadConnection<T>(Func<SqliteConnection, T> action)
+    {
+        if (_injectedConnection is not null)
+        {
+            lock (_injectedConnectionGate!)
+            {
+                return action(_injectedConnection);
+            }
+        }
+
+        using var connection = SqliteConnections.Open(_connectionString);
+        return action(connection);
+    }
+
+    private T WithWriteTransaction<T>(Func<SqliteConnection, SqliteTransaction, T> action)
+    {
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        if (_injectedConnection is not null)
+        {
+            lock (_injectedConnectionGate!)
+            {
+                using var injectedTransaction = _injectedConnection.BeginTransaction(deferred: false);
+                try
+                {
+                    var injectedResult = action(_injectedConnection, injectedTransaction);
+                    injectedTransaction.Commit();
+                    return injectedResult;
+                }
+                catch
+                {
+                    try { injectedTransaction.Rollback(); } catch { }
+                    throw;
+                }
+            }
+        }
+
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var transaction = connection.BeginTransaction(deferred: false);
+        try
+        {
+            var result = action(connection, transaction);
+            transaction.Commit();
+            return result;
+        }
+        catch
+        {
+            try { transaction.Rollback(); } catch { }
+            throw;
+        }
     }
 
     private FileOperationRecord Transition(
+        SqliteConnection connection,
         string id,
         OperationState newState,
         OperationUpdate update,
         SqliteTransaction transaction)
     {
-        var current = GetById(id, transaction) ?? throw new KeyNotFoundException($"Operation {id} was not found.");
+        var current = GetById(connection, id, transaction) ?? throw new KeyNotFoundException($"Operation {id} was not found.");
         if (!AllowedTransitions[current.State].Contains(newState))
             throw new InvalidOperationException($"Invalid transition: {current.State} -> {newState}.");
 
-        using var command = _connection.CreateCommand();
+        using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
             UPDATE file_operations
@@ -189,13 +254,13 @@ public sealed class FileOperationStore : IFileOperationStore, IDisposable
         command.Parameters.AddWithValue("$oldState", ToText(current.State));
         if (command.ExecuteNonQuery() != 1)
             throw new InvalidOperationException($"Concurrent state change for {id}.");
-        return GetById(id, transaction)!;
+        return GetById(connection, id, transaction)!;
     }
 
-    private FileOperationRecord? GetById(string id, SqliteTransaction? transaction)
+    private static FileOperationRecord? GetById(SqliteConnection connection, string id, SqliteTransaction? transaction)
     {
         if (string.IsNullOrWhiteSpace(id)) throw new ArgumentException("Operation ID is required.", nameof(id));
-        using var command = _connection.CreateCommand();
+        using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = "SELECT * FROM file_operations WHERE id = $id;";
         command.Parameters.AddWithValue("$id", id);

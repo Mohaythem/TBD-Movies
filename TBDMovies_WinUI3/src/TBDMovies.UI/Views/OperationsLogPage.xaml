@@ -1,4 +1,4 @@
-﻿<Page
+<Page
     x:Class="TBDMovies.UI.Views.OperationsLogPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -110,6 +110,7 @@
 
                 <controls:EmptyStateCard
                     x:Name="EmptyState"
+                    ActionClick="EmptyState_ActionClick"
                     Glyph="&#xE9D9;"
                     Visibility="Collapsed" />
 

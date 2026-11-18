@@ -687,11 +687,10 @@ internal static class AppServices
     }
 
     /// <summary>
-    /// Closes everything this root owns. Called when the shell window closes: the journal store holds
-    /// the only long-lived SQLite connection, and while it is open SQLite cannot truncate the
-    /// write-ahead log, so the database file stays a stub with a growing -wal beside it. Clearing the
-    /// connection pool afterwards releases the per-call connections too, which is what actually lets
-    /// the last close check-point and remove the -wal and -shm files.
+    /// Closes everything this root owns. Called when the shell window closes: all repositories (including
+    /// the file-operation journal store) use short-lived pooled SQLite connections, so clearing the
+    /// connection pool releases every per-call handle and lets the final close checkpoint and remove the
+    /// -wal and -shm files cleanly.
     /// </summary>
     public static void Shutdown()
     {

@@ -163,6 +163,169 @@ public sealed class WriteCoordinationTests : IDisposable
         Assert.Equal(destination, MediaFilePath(1));
     }
 
+    [Fact]
+    public async Task ConcurrentReadersAndWriters_OnSharedFileOperationStore_NeverCollideOrThrow()
+    {
+        using var store = new FileOperationStore(_connectionString);
+        const int operationCount = 100;
+        var failures = new ConcurrentQueue<Exception>();
+        var createdIds = new ConcurrentBag<string>();
+        using var start = new Barrier(4);
+        var writersDone = 0;
+
+        var writer = Task.Run(() =>
+        {
+            start.SignalAndWait();
+            try
+            {
+                for (var i = 0; i < operationCount; i++)
+                {
+                    var id = Guid.NewGuid().ToString("D");
+                    var plan = new FileOperationPlan(
+                        id,
+                        OperationType.Move,
+                        Path.Combine(_directory, $"src-{i}.mkv"),
+                        Path.Combine(_directory, $"dst-{i}.mkv"),
+                        null,
+                        null);
+                    store.Create(plan, DateTimeOffset.UtcNow);
+                    createdIds.Add(id);
+                    store.Transition(id, OperationState.Validated);
+                    store.Transition(id, OperationState.Executing);
+                    store.Transition(id, OperationState.FsVerified);
+                    store.CommitVerified(id);
+                }
+            }
+            catch (Exception ex)
+            {
+                failures.Enqueue(ex);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref writersDone, 1);
+            }
+        });
+
+        Task SpawnReader(Action readAction) => Task.Run(() =>
+        {
+            start.SignalAndWait();
+            try
+            {
+                while (Volatile.Read(ref writersDone) == 0)
+                {
+                    readAction();
+                }
+                readAction();
+            }
+            catch (Exception ex)
+            {
+                failures.Enqueue(ex);
+            }
+        });
+
+        var historyReader = SpawnReader(() => _ = store.ListHistory(50));
+        var nonterminalReader = SpawnReader(() => _ = store.ListNonterminal());
+        var byIdReader = SpawnReader(() =>
+        {
+            if (createdIds.TryPeek(out var sampleId))
+            {
+                _ = store.GetById(sampleId);
+            }
+        });
+
+        await Task.WhenAll(writer, historyReader, nonterminalReader, byIdReader);
+
+        Assert.True(failures.IsEmpty,
+            "Concurrent reads and writes on a single FileOperationStore must never collide: " +
+            string.Join(" | ", failures.Select(f => $"{f.GetType().Name}: {f.Message}")));
+
+        var allHistory = store.ListHistory(int.MaxValue);
+        Assert.Equal(operationCount, allHistory.Count);
+        Assert.All(allHistory, record => Assert.Equal(OperationState.Committed, record.State));
+        Assert.Empty(store.ListNonterminal());
+    }
+
+    [Fact]
+    public async Task InjectedConnectionConstructor_SerializesConcurrentReadsAndWrites()
+    {
+        using var injectedConnection = new SqliteConnection(_connectionString);
+        injectedConnection.Open();
+        using var store = new FileOperationStore(injectedConnection);
+
+        const int operationCount = 50;
+        var failures = new ConcurrentQueue<Exception>();
+        using var start = new Barrier(3);
+        var writersDone = 0;
+
+        var writer = Task.Run(() =>
+        {
+            start.SignalAndWait();
+            try
+            {
+                for (var i = 0; i < operationCount; i++)
+                {
+                    var id = Guid.NewGuid().ToString("D");
+                    var plan = new FileOperationPlan(
+                        id,
+                        OperationType.Rename,
+                        Path.Combine(_directory, $"in-src-{i}.mkv"),
+                        Path.Combine(_directory, $"in-dst-{i}.mkv"),
+                        null,
+                        null);
+                    store.Create(plan, DateTimeOffset.UtcNow);
+                    store.Transition(id, OperationState.Validated);
+                }
+            }
+            catch (Exception ex)
+            {
+                failures.Enqueue(ex);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref writersDone, 1);
+            }
+        });
+
+        var reader1 = Task.Run(() =>
+        {
+            start.SignalAndWait();
+            try
+            {
+                while (Volatile.Read(ref writersDone) == 0)
+                {
+                    _ = store.ListHistory(25);
+                }
+            }
+            catch (Exception ex)
+            {
+                failures.Enqueue(ex);
+            }
+        });
+
+        var reader2 = Task.Run(() =>
+        {
+            start.SignalAndWait();
+            try
+            {
+                while (Volatile.Read(ref writersDone) == 0)
+                {
+                    _ = store.ListNonterminal();
+                }
+            }
+            catch (Exception ex)
+            {
+                failures.Enqueue(ex);
+            }
+        });
+
+        await Task.WhenAll(writer, reader1, reader2);
+
+        Assert.True(failures.IsEmpty,
+            "Injected SqliteConnection constructor must synchronize concurrent reads and writes: " +
+            string.Join(" | ", failures.Select(f => $"{f.GetType().Name}: {f.Message}")));
+        Assert.Equal(operationCount, store.ListNonterminal().Count);
+    }
+
     private int CreateMovie(CatalogUnitOfWorkFactory factory, string externalId, string title)
     {
         using var work = factory.Begin();
