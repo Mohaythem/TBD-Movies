@@ -4,12 +4,6 @@ using Microsoft.UI.Xaml;
 
 namespace TBDMovies.UI.Services;
 
-public enum UiLanguage
-{
-    English,
-    Arabic,
-}
-
 public static class LocalizationService
 {
     private static readonly IReadOnlyDictionary<string, string> English = new Dictionary<string, string>

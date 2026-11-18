@@ -2,17 +2,6 @@ using Microsoft.UI.Xaml;
 
 namespace TBDMovies.UI.Services;
 
-/// <summary>
-/// Application themes: Dark (Slate navy #18222D palette) and Light.
-/// Slate is aliased to Dark for backwards compatibility.
-/// </summary>
-public enum AppTheme
-{
-    Dark,
-    Light,
-    Slate = Dark, // backwards compatibility alias so any legacy references or stored values cleanly resolve
-}
-
 public static class ThemeService
 {
     public static AppTheme CurrentTheme { get; private set; } = AppTheme.Dark;

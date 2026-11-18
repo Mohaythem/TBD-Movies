@@ -346,90 +346,8 @@ internal static class AppServices
     /// read-only connection without waiting for the full composition root or acquiring Gate lock.
     /// Falls back safely to defaults (Dark, English) if database is missing, corrupted, or not yet migrated.
     /// </summary>
-    public static (AppTheme Theme, UiLanguage Language) RestorePreferencesFast()
-    {
-        try
-        {
-            var dbPath = Path.Combine(DataFolder, "library.db");
-            if (!File.Exists(dbPath))
-            {
-                return (AppTheme.Dark, UiLanguage.English);
-            }
-
-            var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
-            {
-                DataSource = dbPath,
-                Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadOnly,
-                DefaultTimeout = 1 // fail-fast, never hang UI thread
-            };
-
-            using var conn = new Microsoft.Data.Sqlite.SqliteConnection(builder.ToString());
-            conn.Open();
-
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT key, value FROM settings WHERE key IN ('ui_theme', 'ui_language');";
-            using var reader = cmd.ExecuteReader();
-
-            string? themeVal = null;
-            string? langVal = null;
-
-            while (reader.Read())
-            {
-                var key = reader.GetString(0);
-                var val = reader.IsDBNull(1) ? null : reader.GetString(1);
-                if (key == "ui_theme") themeVal = val;
-                else if (key == "ui_language") langVal = val;
-            }
-
-            var theme = themeVal switch
-            {
-                "Light" => AppTheme.Light,
-                _ => AppTheme.Dark
-            };
-
-            var lang = string.Equals(langVal, "Arabic", StringComparison.OrdinalIgnoreCase)
-                ? UiLanguage.Arabic
-                : UiLanguage.English;
-
-            return (theme, lang);
-        }
-        catch
-        {
-            // First-run, missing table, or locked file: always fail-safe to defaults
-            return (AppTheme.Dark, UiLanguage.English);
-        }
-    }
-
-    /// <summary>
-    /// The theme and language the user last chose, read back through the settings service so the shell
-    /// starts where they left it. An unavailable store answers with the defaults.
-    /// </summary>
-    public static (AppTheme Theme, UiLanguage Language) RestorePreferences()
-    {
-        try
-        {
-            if (!IsAvailable)
-            {
-                return (AppTheme.Dark, UiLanguage.English);
-            }
-
-            var theme = Settings.CurrentUiTheme() switch
-            {
-                TBDMovies.Domain.Configuration.UiTheme.Light => AppTheme.Light,
-                _ => AppTheme.Dark,
-            };
-
-            var language = Settings.CurrentUiLanguage() == TBDMovies.Domain.Configuration.UiLanguage.Arabic
-                ? UiLanguage.Arabic
-                : UiLanguage.English;
-
-            return (theme, language);
-        }
-        catch (Exception)
-        {
-            return (AppTheme.Dark, UiLanguage.English);
-        }
-    }
+    public static (AppTheme Theme, UiLanguage Language) RestorePreferencesFast() =>
+        StartupPreferences.RestoreFast(DataFolder);
 
     /// <summary>Stores the chosen theme. A settings failure must not undo the user's visible choice.</summary>
     public static void PersistTheme(AppTheme theme)
@@ -445,8 +363,12 @@ internal static class AppServices
                 });
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record(
+                "AppServices",
+                $"Failed to persist theme preference: {ex.GetType().Name}: {ex.Message}",
+                DataFolder);
         }
     }
 
@@ -462,8 +384,12 @@ internal static class AppServices
                     : TBDMovies.Domain.Configuration.UiLanguage.English);
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record(
+                "AppServices",
+                $"Failed to persist language preference: {ex.GetType().Name}: {ex.Message}",
+                DataFolder);
         }
     }
 

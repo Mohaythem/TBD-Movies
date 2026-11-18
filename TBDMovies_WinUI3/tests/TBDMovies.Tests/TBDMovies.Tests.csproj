@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.22621</TargetFramework>
@@ -30,6 +30,7 @@
     <Compile Include="..\..\src\TBDMovies.UI\Services\NavigationPaneState.cs" Link="UI\NavigationPaneState.cs" />
     <Compile Include="..\..\src\TBDMovies.UI\Services\MinimumWindowSize.cs" Link="UI\MinimumWindowSize.cs" />
     <Compile Include="..\..\src\TBDMovies.UI\Services\ArtworkViewerLayout.cs" Link="UI\ArtworkViewerLayout.cs" />
+    <Compile Include="..\..\src\TBDMovies.UI\Services\StartupPreferences.cs" Link="UI\StartupPreferences.cs" />
     <ProjectReference Include="..\..\src\TBDMovies.Domain\TBDMovies.Domain.csproj" />
     <ProjectReference Include="..\..\src\TBDMovies.Application\TBDMovies.Application.csproj" />
     <ProjectReference Include="..\..\src\TBDMovies.Infrastructure\TBDMovies.Infrastructure.csproj" />

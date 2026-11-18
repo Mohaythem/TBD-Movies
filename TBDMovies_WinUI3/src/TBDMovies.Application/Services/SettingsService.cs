@@ -977,11 +977,25 @@ public sealed class SettingsService : ISettingsUiActions
         }
     }
 
-    public UiLanguage CurrentUiLanguage() => (_settings?.Get("ui_language")) switch
+    public UiLanguage CurrentUiLanguage()
     {
-        "ar" => UiLanguage.Arabic,
-        _ => UiLanguage.English
-    };
+        var raw = _settings?.Get("ui_language");
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return UiLanguage.English;
+        }
+
+        var normalized = raw.Trim();
+        if (string.Equals(normalized, "ar", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "arabic", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("ar-", StringComparison.OrdinalIgnoreCase)
+            || normalized.StartsWith("ar_", StringComparison.OrdinalIgnoreCase))
+        {
+            return UiLanguage.Arabic;
+        }
+
+        return UiLanguage.English;
+    }
 
     public UiLanguage SetUiLanguage(UiLanguage language)
     {
@@ -990,11 +1004,11 @@ public sealed class SettingsService : ISettingsUiActions
         return language;
     }
 
-    public UiTheme CurrentUiTheme() => (_settings?.Get("ui_theme")) switch
+    public UiTheme CurrentUiTheme() => (_settings?.Get("ui_theme"))?.Trim().ToLowerInvariant() switch
     {
         "dark" or "charcoal" => UiTheme.Dark,
         "light" or "light_blue" => UiTheme.Light,
-        "slate" or "main" or "deep_ink" => UiTheme.Slate,
+        "slate" or "main" or "deep_ink" or "system" => UiTheme.Slate,
         _ => UiTheme.Slate
     };
 
