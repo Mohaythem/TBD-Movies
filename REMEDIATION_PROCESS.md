@@ -18,6 +18,8 @@
    توصيل `IOperationHistoryUiActions.UndoOperation` و `DatabaseSafetyBackup.RestoreFromBackup` بأزرار واضحة ومحمية برسالة تأكيد داخل `OperationsLogPage` و `SettingsPage`.
 4. **القرار الرابع — المزامنة التلقائية مع Google Drive (`الخيار أ`):**
    تحديث كلٍّ من `TBD-Movies-Audit.bundle` (`git bundle create --all`) و `TBD-Movies-Audit-Worktree.zip` في مكانهما (`gdrive mutate update`) داخل مجلد `TBD-Movies-Remediation` بعد إغلاق كل دفعة.
+5. **القرار الخامس — التحقق المستمر عبر GitHub Actions CI على فرع `codex` فقط (`الخيار أ`):**
+   دفع كل دفعة مختومة تلقائياً إلى فرع `refs/heads/codex` على GitHub (`git push origin HEAD:refs/heads/codex`) لتشغيل `.github/workflows/test.yml` على بيئة `windows-latest` الحقيقية (بناء الحل + بناء `TBDMovies.UI` `win-x64` + تشغيل كافة الاختبارات)، مع إبقاء فرع `main` ومستودع `/home/antigravity/Mohaythem/TBD-Movies` نظيفَين 100% دون أي مساس.
 
 ---
 
