@@ -108,5 +108,15 @@ public interface ITraktUiActions
     /// Pushes show addition/removal to Trakt watchlist.
     /// </summary>
     Task<bool> PushShowWatchlistAsync(long tmdbId, bool inWatchlist, CancellationToken ct = default);
+
+    /// <summary>
+    /// Pushes movie addition/removal to Trakt favorites (with offline queueing support).
+    /// </summary>
+    Task<bool> PushMovieFavoriteAsync(long tmdbId, bool isFavorite, CancellationToken ct = default);
+
+    /// <summary>
+    /// Pushes show addition/removal to Trakt favorites (with offline queueing support).
+    /// </summary>
+    Task<bool> PushShowFavoriteAsync(long tmdbId, bool isFavorite, CancellationToken ct = default);
 }
 

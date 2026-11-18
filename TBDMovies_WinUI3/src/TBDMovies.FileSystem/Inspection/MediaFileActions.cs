@@ -34,17 +34,30 @@ public sealed class MediaFileActions
             token.ThrowIfCancellationRequested();
             try
             {
-                if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
+                if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path) || HasAlternateDataStream(path))
                     return new FileActionResult(AvailabilityInspectionStatus.Error, "InvalidPath");
 
-                if (!selectFile && !directory && !MediaFormatPolicy.IsSupportedVideoPath(path))
+                string fullPath;
+                try
+                {
+                    fullPath = Path.GetFullPath(path).TrimEnd(' ', '.');
+                }
+                catch (Exception)
+                {
+                    return new FileActionResult(AvailabilityInspectionStatus.Error, "InvalidPath");
+                }
+
+                if (HasAlternateDataStream(fullPath))
+                    return new FileActionResult(AvailabilityInspectionStatus.Error, "InvalidPath");
+
+                if (!selectFile && !directory && !MediaFormatPolicy.IsSupportedVideoPath(fullPath))
                     return new FileActionResult(AvailabilityInspectionStatus.Error, "UnsupportedMediaType");
 
-                var status = directory ? InspectFolder(path, token) : _inspector.Inspect(path).Status;
+                var status = directory ? InspectFolder(fullPath, token) : _inspector.Inspect(fullPath).Status;
                 token.ThrowIfCancellationRequested();
                 if (status != AvailabilityInspectionStatus.Present) return new FileActionResult(status);
 
-                _launch(path, selectFile);
+                _launch(fullPath, selectFile);
                 return new FileActionResult(AvailabilityInspectionStatus.Present);
             }
             catch (OperationCanceledException) { throw; }
@@ -87,11 +100,71 @@ public sealed class MediaFileActions
         () => AvailabilityInspectionStatus.StorageUnavailable,
         () => token.IsCancellationRequested);
 
+    private static bool HasAlternateDataStream(string path)
+    {
+        int allowedDriveColonIndex = -1;
+        if (path.StartsWith(@"\\?\", StringComparison.Ordinal) && path.Length >= 6 && char.IsLetter(path[4]) && path[5] == ':')
+        {
+            allowedDriveColonIndex = 5;
+        }
+        else if (path.Length >= 2 && char.IsLetter(path[0]) && path[1] == ':')
+        {
+            allowedDriveColonIndex = 1;
+        }
+
+        int colonIndex = path.IndexOf(':');
+        while (colonIndex != -1)
+        {
+            if (colonIndex != allowedDriveColonIndex)
+            {
+                return true;
+            }
+            colonIndex = path.IndexOf(':', colonIndex + 1);
+        }
+
+        return false;
+    }
+
+    private static readonly string WindowsDirectory =
+        Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+
+    private static readonly string SystemExplorerPath =
+        string.IsNullOrWhiteSpace(WindowsDirectory) ? "explorer.exe" : Path.Combine(WindowsDirectory, "explorer.exe");
+
     private static void Launch(string path, bool selectFile)
     {
-        var start = selectFile
-            ? new ProcessStartInfo("explorer.exe") { Arguments = "/select,\"" + path.Replace("\"", "") + "\"", UseShellExecute = true }
-            : new ProcessStartInfo(path) { UseShellExecute = true };
+        var cleanPath = Path.GetFullPath(path).TrimEnd(' ', '.').Replace("\"", "");
+        ProcessStartInfo start;
+        if (selectFile)
+        {
+            start = new ProcessStartInfo(SystemExplorerPath)
+            {
+                Arguments = $"/select,\"{cleanPath}\"",
+                UseShellExecute = true,
+                WorkingDirectory = string.IsNullOrWhiteSpace(WindowsDirectory) ? string.Empty : WindowsDirectory
+            };
+        }
+        else if (Directory.Exists(cleanPath))
+        {
+            start = new ProcessStartInfo(SystemExplorerPath)
+            {
+                Arguments = $"\"{cleanPath}\"",
+                UseShellExecute = true,
+                WorkingDirectory = string.IsNullOrWhiteSpace(WindowsDirectory) ? string.Empty : WindowsDirectory
+            };
+        }
+        else
+        {
+            var workingDir = Path.GetDirectoryName(cleanPath);
+            start = new ProcessStartInfo(cleanPath)
+            {
+                UseShellExecute = true,
+                WorkingDirectory = !string.IsNullOrEmpty(workingDir) && Directory.Exists(workingDir)
+                    ? workingDir
+                    : (string.IsNullOrWhiteSpace(WindowsDirectory) ? string.Empty : WindowsDirectory)
+            };
+        }
+
         using var process = Process.Start(start);
     }
 }

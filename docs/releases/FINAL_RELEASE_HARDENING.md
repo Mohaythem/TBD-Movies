@@ -45,7 +45,7 @@ With authorized signing material, sign the app/payload first with SHA256 and an 
 - Installer: artifacts/release/0.10.0-rc.1/TBD MoviesSetup.exe
 - ZIP: artifacts/release/0.10.0-rc.1/TBD Movies-0.10.0-rc.1-win-x64.zip
 - Checksums: artifacts/release/0.10.0-rc.1/SHA256SUMS.txt
-- Release notes: packaging/RELEASE_NOTES_0.10.0-rc.1.md
+- Release notes: [RELEASE_NOTES_0.10.0-rc.1.md](RELEASE_NOTES_0.10.0-rc.1.md)
 - Exact original source/payload provenance:artifact BUILD_MANIFEST.json. Hardening evidence:artifacts/qa/final-hardening-20261013. A documentation-only hardening checkpoint does not replace the candidate's original source identity.
 
-Close existing TBD Movies instances before manual launch. For portable use extract the complete ZIP and run TBD Movies.UI.exe. Remove TBD Movies_TEST_DATA_ROOT from the launching shell to use the normal local user library. For installation follow the existing per-user Inno wizard; automated host installation is prohibited by this task. No tag, GitHub Release or binary upload is authorized. Broad Windows, real SMB/removable-drive and real-media playback acceptance limits remain open.
+Close existing TBD Movies instances before manual launch. For portable use extract the complete ZIP and run `TBD-Movies.exe` (historically `TBD Movies.UI.exe` in `0.10.0-rc.1`). Remove `TBDMOVIES_TEST_DATA_ROOT` from the launching shell to use the normal local user library. For installation follow the existing per-user Inno wizard; automated host installation is prohibited by this task. No tag, GitHub Release or binary upload is authorized. Broad Windows, real SMB/removable-drive and real-media playback acceptance limits remain open.

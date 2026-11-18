@@ -275,6 +275,39 @@ public sealed class DatabaseMigrationHardeningTests : IDisposable
         Assert.Equal(before, Snapshot());
     }
 
+    [Fact]
+    public void V22_To_V23_Migration_RelaxesPendingActionsConstraints_WithoutDataLoss()
+    {
+        new DatabaseMigrator(_cs).Migrate(22);
+        using (var db = Open())
+        {
+            Exec(db, "INSERT INTO custom_lists (id, display_name, created_at) VALUES (1, 'Test List', '2026-01-01');");
+            Exec(db, "INSERT INTO custom_list_pending_actions (id, list_id, media_kind, tmdb_id, action_type, created_at) VALUES (10, 1, 'MOVIE', 550, 'ADD', '2026-01-01');");
+
+            // Negative Baseline on v22: Verify v22 rejects CREATE_LIST with NULL media_kind/tmdb_id
+            Assert.Throws<SqliteException>(() =>
+                Exec(db, "INSERT INTO custom_list_pending_actions (list_id, media_kind, tmdb_id, action_type, created_at) VALUES (1, NULL, NULL, 'CREATE_LIST', '2026-01-01');"));
+        }
+
+        // Run migration to v23
+        new DatabaseMigrator(_cs).Migrate(23);
+
+        using var upgraded = Open();
+        Assert.Equal(23L, Scalar(upgraded, "PRAGMA user_version"));
+        Assert.Equal(10L, Scalar(upgraded, "SELECT id FROM custom_list_pending_actions WHERE id = 10"));
+        Assert.Equal("MOVIE", Scalar(upgraded, "SELECT media_kind FROM custom_list_pending_actions WHERE id = 10"));
+
+        // Positive verification on v23: CREATE_LIST with NULL media_kind/tmdb_id succeeds
+        Exec(upgraded, "INSERT INTO custom_list_pending_actions (list_id, media_kind, tmdb_id, action_type, created_at) VALUES (1, NULL, NULL, 'CREATE_LIST', '2026-01-02');");
+        Assert.Equal(2L, Scalar(upgraded, "SELECT COUNT(*) FROM custom_list_pending_actions"));
+
+        // Negative verification on v23: CHECK constraints still guard against invalid values
+        Assert.Throws<SqliteException>(() =>
+            Exec(upgraded, "INSERT INTO custom_list_pending_actions (list_id, media_kind, tmdb_id, action_type, created_at) VALUES (1, 'INVALID_KIND', 550, 'ADD', '2026-01-02');"));
+        Assert.Throws<SqliteException>(() =>
+            Exec(upgraded, "INSERT INTO custom_list_pending_actions (list_id, media_kind, tmdb_id, action_type, created_at) VALUES (1, 'MOVIE', 550, 'INVALID_ACTION', '2026-01-02');"));
+    }
+
     private SqliteConnection Open()
     {
         var db = new SqliteConnection(_cs);

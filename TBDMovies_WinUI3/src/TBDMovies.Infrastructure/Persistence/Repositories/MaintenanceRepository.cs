@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.Data.Sqlite;
 using TBDMovies.Application.Repositories;
 
@@ -48,7 +48,7 @@ public class LibraryMaintenanceRepository : ILibraryMaintenanceRepository
         var tables = new[]
         {
             "metadata_cache", "watch_events", "active_viewings", "movie_personal_state", "tv_show_personal_state",
-            "episode_media_files", "tv_episodes", "tv_seasons", "tv_shows",
+            "playback_progress", "episode_media_files", "tv_episodes", "tv_seasons", "tv_shows",
             "media_files", "movies",
         };
 

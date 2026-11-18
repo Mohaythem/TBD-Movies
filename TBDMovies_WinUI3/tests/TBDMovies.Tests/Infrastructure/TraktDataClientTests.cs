@@ -903,4 +903,240 @@ public sealed class TraktDataClientTests
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => trakt.AddMovieToListAsync(listId, tmdbId, "client", "token"));
         Assert.Empty(handler.CapturedRequests);
     }
+
+    [Fact]
+    public async Task GetResourceAsync_503ServiceUnavailable_RetriesAndSucceeds()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var delays = new List<TimeSpan>();
+        handler.Enqueue(_ =>
+        {
+            var res = new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+            res.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromSeconds(2));
+            return res;
+        });
+        handler.Enqueue(_ =>
+        {
+            var res = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("[]") };
+            res.Headers.Add("X-Pagination-Page", "1");
+            res.Headers.Add("X-Pagination-Limit", "250");
+            res.Headers.Add("X-Pagination-Page-Count", "1");
+            res.Headers.Add("X-Pagination-Item-Count", "0");
+            return res;
+        });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(
+            httpClient,
+            delayAsync: (delay, _) => { delays.Add(delay); return Task.CompletedTask; });
+
+        var snapshot = await client.GetResourceAsync(TraktResourceSpec.Watchlist(), TestClientId, TestAccessToken);
+
+        Assert.Equal(JsonValueKind.Array, snapshot.ValueKind);
+        Assert.Equal(2, handler.CapturedRequests.Count);
+        Assert.Single(delays);
+        Assert.InRange(delays[0].TotalSeconds, 2.0, 3.0);
+    }
+
+    [Fact]
+    public async Task GetResourceAsync_500InternalServerError_RetriesWithBackoffAndSucceeds()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var delays = new List<TimeSpan>();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError));
+        handler.Enqueue(_ =>
+        {
+            var res = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("[]") };
+            res.Headers.Add("X-Pagination-Page", "1");
+            res.Headers.Add("X-Pagination-Limit", "250");
+            res.Headers.Add("X-Pagination-Page-Count", "1");
+            res.Headers.Add("X-Pagination-Item-Count", "0");
+            return res;
+        });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(
+            httpClient,
+            delayAsync: (delay, _) => { delays.Add(delay); return Task.CompletedTask; });
+
+        var snapshot = await client.GetResourceAsync(TraktResourceSpec.Watchlist(), TestClientId, TestAccessToken);
+
+        Assert.Equal(JsonValueKind.Array, snapshot.ValueKind);
+        Assert.Equal(2, handler.CapturedRequests.Count);
+        Assert.Single(delays);
+        Assert.InRange(delays[0].TotalSeconds, 2.0, 3.0);
+    }
+
+    [Fact]
+    public async Task GetResourceAsync_503_RetriesExhausted_ThrowsHttpError()
+    {
+        var handler = new FakeHttpMessageHandler();
+        for (int i = 0; i < 4; i++)
+        {
+            handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable));
+        }
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(
+            httpClient,
+            delayAsync: (_, _) => Task.CompletedTask);
+
+        var ex = await Assert.ThrowsAsync<TraktClientException>(
+            () => client.GetResourceAsync(TraktResourceSpec.Watchlist(), TestClientId, TestAccessToken));
+
+        Assert.Equal(TraktFailureKind.HttpError, ex.FailureKind);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, ex.StatusCode);
+        Assert.Equal(4, handler.CapturedRequests.Count);
+    }
+
+    [Fact]
+    public async Task GetResourceAsync_TransientNetworkException_RetriesAndSucceeds()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var delays = new List<TimeSpan>();
+        handler.Enqueue(_ => throw new HttpRequestException("Simulated socket disconnect"));
+        handler.Enqueue(_ =>
+        {
+            var res = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("[]") };
+            res.Headers.Add("X-Pagination-Page", "1");
+            res.Headers.Add("X-Pagination-Limit", "250");
+            res.Headers.Add("X-Pagination-Page-Count", "1");
+            res.Headers.Add("X-Pagination-Item-Count", "0");
+            return res;
+        });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(
+            httpClient,
+            delayAsync: (delay, _) => { delays.Add(delay); return Task.CompletedTask; });
+
+        var snapshot = await client.GetResourceAsync(TraktResourceSpec.Watchlist(), TestClientId, TestAccessToken);
+
+        Assert.Equal(JsonValueKind.Array, snapshot.ValueKind);
+        Assert.Equal(2, handler.CapturedRequests.Count);
+        Assert.Single(delays);
+        Assert.InRange(delays[0].TotalSeconds, 2.0, 3.0);
+    }
+
+    [Fact]
+    public async Task GetResourceAsync_TransientNetworkException_RetriesExhausted_ThrowsNetwork()
+    {
+        var handler = new FakeHttpMessageHandler();
+        for (int i = 0; i < 4; i++)
+        {
+            handler.Enqueue(_ => throw new HttpRequestException("Persistent network loss"));
+        }
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(
+            httpClient,
+            delayAsync: (_, _) => Task.CompletedTask);
+
+        var ex = await Assert.ThrowsAsync<TraktClientException>(
+            () => client.GetResourceAsync(TraktResourceSpec.Watchlist(), TestClientId, TestAccessToken));
+
+        Assert.Equal(TraktFailureKind.Network, ex.FailureKind);
+        Assert.Equal(4, handler.CapturedRequests.Count);
+    }
+
+    [Fact]
+    public async Task GetResourceAsync_BadRequest400_ThrowsImmediatelyWithoutRetry()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.BadRequest));
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        var ex = await Assert.ThrowsAsync<TraktClientException>(
+            () => client.GetResourceAsync(TraktResourceSpec.Watchlist(), TestClientId, TestAccessToken));
+
+        Assert.Equal(TraktFailureKind.HttpError, ex.FailureKind);
+        Assert.Equal(HttpStatusCode.BadRequest, ex.StatusCode);
+        Assert.Single(handler.CapturedRequests);
+    }
+
+    [Fact]
+    public async Task GetResourceAsync_Forbidden403_ThrowsImmediatelyWithoutRetry()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.Forbidden));
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        var ex = await Assert.ThrowsAsync<TraktClientException>(
+            () => client.GetResourceAsync(TraktResourceSpec.Watchlist(), TestClientId, TestAccessToken));
+
+        Assert.Equal(TraktFailureKind.HttpError, ex.FailureKind);
+        Assert.Equal(HttpStatusCode.Forbidden, ex.StatusCode);
+        Assert.Single(handler.CapturedRequests);
+    }
+
+    [Fact]
+    public async Task AddFavoriteAsync_PostsToSyncFavorites_WithCorrectPayload()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"added\":{\"movies\":1}}") });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        var result = await client.AddFavoriteAsync(550, TraktMediaKind.Movie, TestAccessToken);
+
+        Assert.True(result.Success);
+        var req = Assert.Single(handler.CapturedRequests);
+        Assert.Equal(HttpMethod.Post, req.Method);
+        Assert.EndsWith("/sync/favorites", req.RequestUri!.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task RemoveFavoriteAsync_PostsToSyncFavoritesRemove_WithCorrectPayload()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"deleted\":{\"shows\":1}}") });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        var result = await client.RemoveFavoriteAsync(1396, TraktMediaKind.Show, TestAccessToken);
+
+        Assert.True(result.Success);
+        var req = Assert.Single(handler.CapturedRequests);
+        Assert.Equal(HttpMethod.Post, req.Method);
+        Assert.EndsWith("/sync/favorites/remove", req.RequestUri!.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task AddCollectionBatchAsync_PostsToSyncCollection_WithBatchedPayload()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"added\":{\"movies\":2,\"shows\":1}}") });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        var result = await client.AddCollectionBatchAsync(new long[] { 550, 680 }, new long[] { 1396 }, TestAccessToken);
+
+        Assert.True(result.Success);
+        var req = Assert.Single(handler.CapturedRequests);
+        Assert.Equal(HttpMethod.Post, req.Method);
+        Assert.EndsWith("/sync/collection", req.RequestUri!.AbsolutePath);
+    }
+
+    [Fact]
+    public async Task DeleteCustomListAsync_SendsHttpDeleteToUsersMeLists()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.NoContent));
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        await client.DeleteCustomListAsync(999, TestClientId, TestAccessToken);
+
+        var req = Assert.Single(handler.CapturedRequests);
+        Assert.Equal(HttpMethod.Delete, req.Method);
+        Assert.EndsWith("/users/me/lists/999", req.RequestUri!.AbsolutePath);
+    }
 }

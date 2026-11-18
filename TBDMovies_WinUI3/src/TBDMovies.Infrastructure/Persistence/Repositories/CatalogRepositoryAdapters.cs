@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TBDMovies.Application.Dto;
 using TBDMovies.Application.Repositories;
 using TBDMovies.Domain.Library.Movies;
 using TBDMovies.Domain.Library.Shows;
@@ -128,7 +129,8 @@ public sealed class UnitOfWorkMediaFileRepository(ICatalogUnitOfWorkFactory fact
 }
 
 /// <summary>Show half of the TV catalog; same one-call-one-transaction rule as the movie adapters.</summary>
-public sealed class UnitOfWorkTvShowRepository(ICatalogUnitOfWorkFactory factory) : ITvShowRepository, ITvShowSummaryReader
+public sealed class UnitOfWorkTvShowRepository(ICatalogUnitOfWorkFactory factory)
+    : ITvShowRepository, ITvShowSummaryReader, ITvContinueWatchingReader
 {
     public void RecordOpened(int id, DateTimeOffset openedAt) => Write<object?>(shows =>
     {
@@ -169,6 +171,9 @@ public sealed class UnitOfWorkTvShowRepository(ICatalogUnitOfWorkFactory factory
 
     public IReadOnlyList<TvShowSummary> ListSummaries() =>
         Read(shows => ((ITvShowSummaryReader)shows).ListSummaries());
+
+    public IReadOnlyList<TvContinueWatchingItem> ListContinueWatching(int limit) =>
+        Read(shows => ((ITvContinueWatchingReader)shows).ListContinueWatching(limit));
 
     public int CountAll() => Read(shows => shows.CountAll());
 

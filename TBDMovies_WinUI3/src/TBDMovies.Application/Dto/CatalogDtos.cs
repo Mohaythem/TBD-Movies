@@ -18,7 +18,14 @@ public record MovieListItem(int Id, string Title, int? Year, string? PosterRefer
 /// <paramref name="Name" /> only and never the id. <paramref name="ItemCount" /> is the list's size,
 /// counting movies and TV shows together.
 /// </summary>
-public record CustomList(int Id, string Name, int ItemCount);
+public record CustomList(
+    int Id,
+    string Name,
+    int ItemCount,
+    long? TraktListId = null,
+    string? TraktSlug = null,
+    string SyncStatus = "SYNCED",
+    string? LastSyncedAt = null);
 
 /// <summary>
 /// One member of a custom list for the UI: a movie or a TV show, with what a card needs to render and the
@@ -32,7 +39,9 @@ public record CustomListItem(
     string? PosterReference,
     bool IsMissing,
     string? CustomDisplayTitle = null,
-    string? CanonicalTitle = null);
+    string? CanonicalTitle = null,
+    int? TmdbId = null,
+    bool IsCloudOnly = false);
 
 public record MovieDetails(
     int Id,

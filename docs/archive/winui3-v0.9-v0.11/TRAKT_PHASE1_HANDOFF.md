@@ -14,7 +14,7 @@ The agent has not registered an API app, signed in, accessed normal-profile cred
 ## Data and matching behavior
 
 - Trakt uses a separate account-scoped cache. Import does not add movies/files to Library, populate local custom lists, or change local watch history or playback positions.
-- Protected Windows credential storage holds tokens separately from SQLite. QA profiles use credential targets derived from `TBD Movies_TEST_DATA_ROOT`.
+- Protected Windows credential storage holds tokens separately from SQLite. QA profiles use credential targets derived from `TBDMOVIES_TEST_DATA_ROOT`.
 - Disconnect removes the connection's protected credential. The last account's cached resources remain available offline. It does not revoke authorization on Trakt's website.
 - Exact compatible provider IDs and media type establish a match. Episode fallback requires exact parent-show IDs plus season/episode coordinates. Conflicting or ambiguous identities remain unmatched. Titles do not establish automatic matches.
 - Remote-only and unsupported rows remain visible. They have no fabricated local file path. A matched row can open existing local details.

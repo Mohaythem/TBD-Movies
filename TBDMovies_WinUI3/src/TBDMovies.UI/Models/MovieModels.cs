@@ -19,11 +19,13 @@ public sealed record MovieFileRecord(
     string AvailabilityKey = "UnknownMedia",
     int MediaFileId = 0,
     bool IsPrimary = false,
-    bool IsPresent = true)
+    bool IsPresent = true,
+    IReadOnlyList<SubtitleBadgeModel>? Subtitles = null)
 {
     public Visibility PrimaryBadgeVisibility => IsPrimary ? Visibility.Visible : Visibility.Collapsed;
     public Visibility SetPrimaryButtonVisibility => !IsPrimary ? Visibility.Visible : Visibility.Collapsed;
     public bool CanPlayOrOpen => IsPresent && AvailabilityKey != "Missing" && AvailabilityKey != "StorageUnavailable";
+    public Visibility SubtitlesVisibility => (Subtitles?.Count ?? 0) > 0 ? Visibility.Visible : Visibility.Collapsed;
 
     public string PrimaryLabel => LocalizationService.Text("PrimaryVersion");
     public string SetPrimaryLabel => LocalizationService.Text("SetAsPrimary");
@@ -260,6 +262,7 @@ public sealed record ListMediaItem : INotifyPropertyChanged
     public bool ShowLocalBadge { get; }
     public bool IsLocal { get; }
     public string LocalBadgeText { get; }
+    public int? TmdbId { get; }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -267,12 +270,14 @@ public sealed record ListMediaItem : INotifyPropertyChanged
         MovieRecord movie,
         bool showLocalBadge,
         bool isLocal,
-        string localBadgeText)
+        string localBadgeText,
+        int? tmdbId = null)
     {
         Movie = movie;
         ShowLocalBadge = showLocalBadge;
         IsLocal = isLocal;
         LocalBadgeText = localBadgeText;
+        TmdbId = tmdbId;
         movie.PropertyChanged += OnSourceChanged;
     }
 
@@ -280,12 +285,15 @@ public sealed record ListMediaItem : INotifyPropertyChanged
         TVShowRecord show,
         bool showLocalBadge,
         bool isLocal,
-        string localBadgeText)
+        string localBadgeText,
+        int? tmdbId = null)
     {
         Show = show;
         _showCard = new ShowCardItem(show, string.Empty);
         ShowLocalBadge = showLocalBadge;
         IsLocal = isLocal;
+        LocalBadgeText = localBadgeText;
+        TmdbId = tmdbId;
         LocalBadgeText = localBadgeText;
         _showCard.PropertyChanged += OnSourceChanged;
     }

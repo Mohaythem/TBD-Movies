@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
@@ -351,11 +351,28 @@ public sealed partial class TraktDataClient : ITraktDataClient, ITraktListWriter
             }
             catch (Exception ex)
             {
-                throw new TraktClientException(
-                    TraktFailureKind.Network,
-                    "Network error occurred while calling Trakt endpoint.",
-                    endpoint,
-                    innerException: ex);
+                if (attempt >= _options.MaxRateLimitRetries)
+                {
+                    throw new TraktClientException(
+                        TraktFailureKind.Network,
+                        $"Network error occurred while calling Trakt endpoint after {attempt} retries.",
+                        endpoint,
+                        innerException: ex);
+                }
+
+                var delay = CalculateRetryDelay(null, attempt);
+                if (delay > _options.MaxRateLimitDelayOrDefault)
+                {
+                    throw new TraktClientException(
+                        TraktFailureKind.Network,
+                        $"Network retry delay {delay.TotalSeconds:F1}s exceeded maximum allowable {_options.MaxRateLimitDelayOrDefault.TotalSeconds:F1}s.",
+                        endpoint,
+                        innerException: ex);
+                }
+
+                await _delayAsync(delay, cancellationToken);
+                attempt++;
+                continue;
             }
 
             // Immediately fail closed on redirects
@@ -411,7 +428,38 @@ public sealed partial class TraktDataClient : ITraktDataClient, ITraktListWriter
                 continue;
             }
 
-            // Other non-success HTTP codes
+            // Transient Server Errors: 5xx (500..599) and 408 Request Timeout
+            if ((int)response.StatusCode is >= 500 and <= 599 || response.StatusCode == HttpStatusCode.RequestTimeout)
+            {
+                var code = response.StatusCode;
+                if (attempt >= _options.MaxRateLimitRetries)
+                {
+                    response.Dispose();
+                    throw new TraktClientException(
+                        TraktFailureKind.HttpError,
+                        $"Trakt server error (HTTP {(int)code}) retry attempts exhausted ({attempt} retries).",
+                        endpoint,
+                        code);
+                }
+
+                var delay = CalculateRetryDelay(response.Headers.RetryAfter, attempt);
+                response.Dispose();
+
+                if (delay > _options.MaxRateLimitDelayOrDefault)
+                {
+                    throw new TraktClientException(
+                        TraktFailureKind.HttpError,
+                        $"Retry delay {delay.TotalSeconds:F1}s for HTTP {(int)code} exceeded maximum allowable {_options.MaxRateLimitDelayOrDefault.TotalSeconds:F1}s.",
+                        endpoint,
+                        code);
+                }
+
+                await _delayAsync(delay, cancellationToken);
+                attempt++;
+                continue;
+            }
+
+            // Other non-success HTTP codes (e.g. 400, 403, 404, etc.) - fail immediately without retry
             if (!response.IsSuccessStatusCode)
             {
                 var code = response.StatusCode;

@@ -46,7 +46,7 @@ public static class TmdbUrl
             return false;
         }
 
-        if (uri.Scheme is not ("http" or "https"))
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

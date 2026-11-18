@@ -29,7 +29,7 @@ public sealed class WindowsTmdbCredentialStoreTests
     }
 
     [Fact]
-    public void When_native_credential_deleted_recovers_from_settings_dpapi_backup()
+    public void Write_DoesNotPersistDpapiToSettings_ReliesExclusivelyOnNativeStore()
     {
         var profile = Path.Combine(Path.GetTempPath(), "TBDMovies-TmdbCredentialTest-" + Guid.NewGuid().ToString("N"));
         var settings = new TestSettingsRepo();
@@ -47,26 +47,13 @@ public sealed class WindowsTmdbCredentialStoreTests
             // Verify native credential has it
             Assert.Equal("super-secret-tmdb-token", bareStore.Read());
 
-            // Verify settings has DPAPI encrypted blob, not plaintext
-            var cipher = settings.Get("tmdb_credential_dpapi");
-            Assert.NotNull(cipher);
-            Assert.DoesNotContain("super-secret-tmdb-token", cipher);
+            // Verify settings NEVER has DPAPI encrypted blob
+            Assert.Null(settings.Get("tmdb_credential_dpapi"));
 
-            // Simulate Credential Manager deletion / loss
+            // Native store deletion means Read returns null (no DPAPI fallback)
             bareStore.Delete();
             Assert.Null(bareStore.Read());
-
-            // Calling Read() on storeWithSettings should recover from DPAPI and restore to native Credential Manager
-            var recovered = storeWithSettings.Read();
-            Assert.Equal("super-secret-tmdb-token", recovered);
-
-            // Native Credential Manager is now restored as well
-            Assert.Equal("super-secret-tmdb-token", bareStore.Read());
-
-            // Delete via storeWithSettings deletes both native and settings backup
-            storeWithSettings.Delete();
-            Assert.Null(bareStore.Read());
-            Assert.Null(settings.Get("tmdb_credential_dpapi"));
+            Assert.Null(storeWithSettings.Read());
         }
         finally
         {
@@ -75,37 +62,33 @@ public sealed class WindowsTmdbCredentialStoreTests
     }
 
     [Fact]
-    public void When_settings_has_legacy_no_entropy_dpapi_recovers_and_migrates_to_entropy()
+    public void MigrateLegacyDpapi_RestoresNativeCredentialAndDeletesSettingsRow()
     {
         var profile = Path.Combine(Path.GetTempPath(), "TBDMovies-TmdbCredentialTest-" + Guid.NewGuid().ToString("N"));
         var settings = new TestSettingsRepo();
-        var store = new WindowsTmdbCredentialStore(profile, settings);
+        var store = new WindowsTmdbCredentialStore(profile);
 
         try
         {
-            // Encrypt directly with DPAPI without entropy (simulating legacy stored credential)
+            store.Delete();
+            Assert.Null(store.Read());
+
+            // Simulate legacy DPAPI row in settings
             var raw = System.Text.Encoding.UTF8.GetBytes("legacy-non-entropy-token");
             var legacyCipherBytes = System.Security.Cryptography.ProtectedData.Protect(
                 raw, null, System.Security.Cryptography.DataProtectionScope.CurrentUser);
             var legacyCipher = Convert.ToBase64String(legacyCipherBytes);
             settings.Set("tmdb_credential_dpapi", legacyCipher, DateTimeOffset.UtcNow);
 
-            // Read should successfully recover token and re-encrypt with entropy
-            var recovered = store.Read();
-            Assert.Equal("legacy-non-entropy-token", recovered);
+            // Run migration
+            var migrated = WindowsTmdbCredentialStore.MigrateLegacyDpapi(settings, profile);
+            Assert.True(migrated);
 
-            // New cipher in settings should be re-encrypted (different from legacy non-entropy cipher)
-            var newCipher = settings.Get("tmdb_credential_dpapi");
-            Assert.NotNull(newCipher);
-            Assert.NotEqual(legacyCipher, newCipher);
+            // Native credential is now populated
+            Assert.Equal("legacy-non-entropy-token", store.Read());
 
-            // Deleting native credential and reading again should decrypt successfully with the new entropy
-            var bareStore = new WindowsTmdbCredentialStore(profile);
-            bareStore.Delete();
-            Assert.Null(bareStore.Read());
-
-            var secondRecovered = store.Read();
-            Assert.Equal("legacy-non-entropy-token", secondRecovered);
+            // Settings row is purged
+            Assert.Null(settings.Get("tmdb_credential_dpapi"));
         }
         finally
         {

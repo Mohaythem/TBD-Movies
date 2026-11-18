@@ -71,6 +71,70 @@
                     </Border>
                 </StackPanel>
 
+                <!--  Media Player  -->
+                <StackPanel Spacing="12">
+                    <TextBlock x:Name="MediaPlayerHeadingText" Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel Spacing="16">
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock x:Name="MediaPlayerLabelText" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock
+                                        x:Name="MediaPlayerHelpText"
+                                        Style="{StaticResource SecondaryCaptionTextStyle}"
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
+                                <ComboBox
+                                    x:Name="PlayerSelector"
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    SelectionChanged="PlayerSelector_SelectionChanged"
+                                    Style="{StaticResource NarrowSelectStyle}">
+                                    <ComboBoxItem x:Name="PlayerDefaultItem" Tag="default" />
+                                    <ComboBoxItem x:Name="PlayerVlcItem" Tag="vlc" />
+                                    <ComboBoxItem x:Name="PlayerMpcItem" Tag="mpc" />
+                                    <ComboBoxItem x:Name="PlayerMpvItem" Tag="mpv" />
+                                    <ComboBoxItem x:Name="PlayerCustomItem" Tag="custom" />
+                                </ComboBox>
+                            </Grid>
+
+                            <StackPanel x:Name="CustomPlayerPanel" Visibility="Collapsed" Spacing="12">
+                                <Border Style="{StaticResource HairlineDividerStyle}" />
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox
+                                        x:Name="CustomPlayerPathBox"
+                                        TextChanged="CustomPlayerPathBox_TextChanged"
+                                        PlaceholderText="C:\Path\To\Player.exe"
+                                        Style="{StaticResource FormInputTextBoxStyle}" />
+                                    <Button
+                                        x:Name="BrowseCustomPlayerButton"
+                                        Grid.Column="1"
+                                        Click="BrowseCustomPlayerButton_Click"
+                                        Style="{StaticResource SubtleControlButtonStyle}"
+                                        Content="Browse…" />
+                                </Grid>
+                                <TextBox
+                                    x:Name="CustomPlayerArgsBox"
+                                    TextChanged="CustomPlayerArgsBox_TextChanged"
+                                    PlaceholderText="&quot;{path}&quot; --start={seconds}"
+                                    Style="{StaticResource FormInputTextBoxStyle}" />
+                                <TextBlock
+                                    x:Name="CustomPlayerArgsHelpText"
+                                    Style="{StaticResource SecondaryCaptionTextStyle}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
                 <!--  Library folders  -->
                 <StackPanel Spacing="12">
                     <TextBlock x:Name="LibraryHeadingText" Style="{StaticResource SubtitleTextBlockStyle}" />
@@ -352,6 +416,44 @@
                                 <Button x:Name="TraktConnectButton" Click="TraktConnectButton_Click" Style="{StaticResource AccentControlButtonStyle}" />
                                 <Button x:Name="TraktSyncNowButton" Click="TraktSyncNowButton_Click" Style="{StaticResource SubtleControlButtonStyle}" />
                                 <Button x:Name="TraktDisconnectButton" Click="TraktDisconnectButton_Click" Style="{StaticResource DangerControlButtonStyle}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!--  Subtitles (SubDL)  -->
+                <StackPanel Spacing="12">
+                    <TextBlock x:Name="SubtitlesHeadingText" Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel Spacing="16">
+                            <StackPanel Spacing="4">
+                                <TextBlock x:Name="SubDlApiKeyLabelText" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock
+                                    x:Name="SubDlApiKeyHelpText"
+                                    Style="{StaticResource SecondaryCaptionTextStyle}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+
+                            <PasswordBox x:Name="SubDlApiKeyBox" PasswordRevealMode="Hidden" Style="{StaticResource FormInputPasswordBoxStyle}" />
+
+                            <InfoBar x:Name="SubDlFeedback" IsOpen="False" Severity="Success" IsClosable="True" />
+
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button
+                                    x:Name="SaveSubDlApiKeyButton"
+                                    Click="SaveSubDlApiKeyButton_Click"
+                                    Style="{StaticResource AccentControlButtonStyle}">
+                                    <TextBlock x:Name="SaveSubDlApiKeyButtonText" />
+                                </Button>
+                                <Button
+                                    x:Name="GetSubDlKeyButton"
+                                    Click="GetSubDlKeyButton_Click"
+                                    Style="{StaticResource TextActionButtonStyle}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <FontIcon Glyph="&#xE8A7;" FontSize="13" />
+                                        <TextBlock x:Name="GetSubDlKeyButtonText" />
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                         </StackPanel>
                     </Border>

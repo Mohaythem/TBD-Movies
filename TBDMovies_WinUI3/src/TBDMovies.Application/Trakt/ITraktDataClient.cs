@@ -75,5 +75,60 @@ public interface ITraktDataClient
         TraktMediaKind kind,
         string token,
         CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, 1));
+
+    /// <summary>
+    /// Adds a movie or show to the user's favorites via POST sync/favorites.
+    /// </summary>
+    Task<TraktSyncWriteResult> AddFavoriteAsync(
+        long tmdbId,
+        TraktMediaKind kind,
+        string token,
+        CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, 1));
+
+    /// <summary>
+    /// Removes a movie or show from the user's favorites via POST sync/favorites/remove.
+    /// </summary>
+    Task<TraktSyncWriteResult> RemoveFavoriteAsync(
+        long tmdbId,
+        TraktMediaKind kind,
+        string token,
+        CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, 1));
+
+    /// <summary>
+    /// Adds batch movies or shows to the user's collection via POST sync/collection.
+    /// </summary>
+    Task<TraktSyncWriteResult> AddCollectionBatchAsync(
+        IReadOnlyList<long>? movieTmdbIds,
+        IReadOnlyList<long>? showTmdbIds,
+        string token,
+        CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, (movieTmdbIds?.Count ?? 0) + (showTmdbIds?.Count ?? 0)));
+
+    /// <summary>
+    /// Starts scrobbling a movie or episode via POST scrobble/start.
+    /// </summary>
+    Task<TraktScrobbleResult> ScrobbleStartAsync(
+        TraktScrobblePayload payload,
+        string clientId,
+        string accessToken,
+        CancellationToken cancellationToken = default) => Task.FromResult(new TraktScrobbleResult(true, "start", payload.Progress));
+
+    /// <summary>
+    /// Pauses scrobbling a movie or episode via POST scrobble/pause.
+    /// </summary>
+    Task<TraktScrobbleResult> ScrobblePauseAsync(
+        TraktScrobblePayload payload,
+        string clientId,
+        string accessToken,
+        CancellationToken cancellationToken = default) => Task.FromResult(new TraktScrobbleResult(true, "pause", payload.Progress));
+
+    /// <summary>
+    /// Stops scrobbling a movie or episode via POST scrobble/stop.
+    /// Automatically scrobbles to history if progress >= 80%.
+    /// </summary>
+    Task<TraktScrobbleResult> ScrobbleStopAsync(
+        TraktScrobblePayload payload,
+        string clientId,
+        string accessToken,
+        CancellationToken cancellationToken = default) => Task.FromResult(new TraktScrobbleResult(true, payload.Progress >= 80.0 ? "scrobble" : "pause", payload.Progress));
 }
 

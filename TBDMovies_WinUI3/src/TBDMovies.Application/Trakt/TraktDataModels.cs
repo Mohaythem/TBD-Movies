@@ -118,6 +118,37 @@ public sealed record TraktHistoryItem(
     JsonElement RawElement);
 
 /// <summary>
+/// Entry within user favorites.
+/// </summary>
+public sealed record TraktSyncFavoriteItem(
+    string Type,
+    long? TmdbId,
+    string? Title,
+    int? Year,
+    DateTimeOffset? ListedAt,
+    JsonElement RawElement);
+
+/// <summary>
+/// Entry within user collection.
+/// </summary>
+public sealed record TraktSyncCollectionItem(
+    string Type,
+    long? TmdbId,
+    string? Title,
+    int? Year,
+    DateTimeOffset? CollectedAt,
+    JsonElement RawElement);
+
+/// <summary>
+/// Action in the offline favorites queue.
+/// </summary>
+public sealed record TraktPendingFavoriteAction(
+    string MediaKind,
+    int TmdbId,
+    string Action,
+    DateTimeOffset CreatedAt);
+
+/// <summary>
 /// Projections from raw JsonElement snapshots into strongly typed records.
 /// Never discards records and preserves raw element references for round-trips.
 /// </summary>
@@ -380,6 +411,68 @@ public static class TraktDataProjections
             }
 
             list.Add(new TraktHistoryItem(id, watchedAt, action, type, mediaTraktId, title, seasonNum, epNum, item));
+        }
+
+        return list;
+    }
+
+    public static IReadOnlyList<TraktSyncFavoriteItem> ParseFavorites(JsonElement root)
+    {
+        var list = new List<TraktSyncFavoriteItem>();
+        if (root.ValueKind != JsonValueKind.Array) return list;
+
+        foreach (var item in root.EnumerateArray())
+        {
+            var type = item.TryGetProperty("type", out var tProp) ? tProp.GetString() ?? "movie" : "movie";
+            var listedAt = TryGetDateTimeOffset(item, "listed_at");
+            long? tmdbId = null;
+            string? title = null;
+            int? year = null;
+
+            if (item.TryGetProperty(type, out var mediaObj) && mediaObj.ValueKind == JsonValueKind.Object)
+            {
+                if (mediaObj.TryGetProperty("title", out var titProp)) title = titProp.GetString();
+                if (mediaObj.TryGetProperty("year", out var yrProp) && yrProp.ValueKind == JsonValueKind.Number && yrProp.TryGetInt32(out var yrVal)) year = yrVal;
+                if (mediaObj.TryGetProperty("ids", out var idsObj) && idsObj.TryGetProperty("tmdb", out var tmProp) && tmProp.ValueKind == JsonValueKind.Number && tmProp.TryGetInt64(out var tmVal))
+                {
+                    tmdbId = tmVal;
+                }
+            }
+
+            list.Add(new TraktSyncFavoriteItem(type, tmdbId, title, year, listedAt, item));
+        }
+
+        return list;
+    }
+
+    public static IReadOnlyList<TraktSyncCollectionItem> ParseCollection(JsonElement root)
+    {
+        var list = new List<TraktSyncCollectionItem>();
+        if (root.ValueKind != JsonValueKind.Array) return list;
+
+        foreach (var item in root.EnumerateArray())
+        {
+            var type = item.TryGetProperty("type", out var tProp) ? tProp.GetString() : null;
+            if (string.IsNullOrEmpty(type))
+            {
+                type = item.TryGetProperty("movie", out _) ? "movie" : (item.TryGetProperty("show", out _) ? "show" : "movie");
+            }
+            var collectedAt = TryGetDateTimeOffset(item, "collected_at") ?? TryGetDateTimeOffset(item, "last_collected_at");
+            long? tmdbId = null;
+            string? title = null;
+            int? year = null;
+
+            if (item.TryGetProperty(type, out var mediaObj) && mediaObj.ValueKind == JsonValueKind.Object)
+            {
+                if (mediaObj.TryGetProperty("title", out var titProp)) title = titProp.GetString();
+                if (mediaObj.TryGetProperty("year", out var yrProp) && yrProp.ValueKind == JsonValueKind.Number && yrProp.TryGetInt32(out var yrVal)) year = yrVal;
+                if (mediaObj.TryGetProperty("ids", out var idsObj) && idsObj.TryGetProperty("tmdb", out var tmProp) && tmProp.ValueKind == JsonValueKind.Number && tmProp.TryGetInt64(out var tmVal))
+                {
+                    tmdbId = tmVal;
+                }
+            }
+
+            list.Add(new TraktSyncCollectionItem(type, tmdbId, title, year, collectedAt, item));
         }
 
         return list;

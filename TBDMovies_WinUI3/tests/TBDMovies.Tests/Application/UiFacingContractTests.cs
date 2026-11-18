@@ -229,5 +229,6 @@ public class UiFacingContractTests
         public void RenameCustomList(int listId, string name, DateTimeOffset now) { }
 
         public void DeleteCustomList(int listId) { }
+        public void DeleteCustomListCascade(int listId) { }
     }
 }

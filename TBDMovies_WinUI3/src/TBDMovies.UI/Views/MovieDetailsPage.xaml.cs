@@ -3,9 +3,11 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using TBDMovies.Application.Contracts;
+using TBDMovies.Application.Playback;
 using TBDMovies.Application.Services;
 using TBDMovies.Application.Trakt;
 using TBDMovies.Domain.Library.Personal;
+using TBDMovies.Domain.Playback;
 using TBDMovies.UI.Models;
 using TBDMovies.UI.Controls;
 using TBDMovies.UI.Services;
@@ -51,11 +53,13 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
     private readonly PostHandoffRequestLifetime _availabilityRequests = new();
     private readonly PostHandoffRequestLifetime _actionRequests = new();
     private readonly PostHandoffRequestLifetime _organizationRequests = new();
+    private readonly PostHandoffRequestLifetime _subtitleRequests = new();
     private readonly TitleInteractionController _titleController;
 
     private readonly Windows.UI.ViewManagement.AccessibilitySettings _accessibilitySettings = new();
     private readonly Windows.UI.ViewManagement.UISettings _uiSettings = new();
     private bool _watchingContrast;
+    private string _currentVisualState = string.Empty;
 
     public MovieDetailsPage()
     {
@@ -91,6 +95,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
             UpdateDetailsLayout();
             UpdateDetailsIcons();
             if (_scrollToTopOnLoad) { Root.ChangeView(null, 0, null, true); _scrollToTopOnLoad = false; }
+            AppServices.PlaybackTracking.PlaybackEnded += OnPlaybackEnded;
         };
         PosterImage.ImageFailed += (_, _) =>
         {
@@ -106,6 +111,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         };
         Unloaded += (_, _) =>
         {
+            AppServices.PlaybackTracking.PlaybackEnded -= OnPlaybackEnded;
             if (_watchingContrast) _uiSettings.ColorValuesChanged -= DetailsHighContrastChanged;
             _watchingContrast = false;
             Deactivate();
@@ -153,6 +159,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
 
     public event EventHandler? BackRequested;
     public event EventHandler? MediaPathChanged;
+    public int CurrentMovieId => _movie.Id;
 
     public void Deactivate()
     {
@@ -161,6 +168,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         _availabilityRequests.Cancel();
         _actionRequests.Cancel();
         _organizationRequests.Cancel();
+        _subtitleRequests.Cancel();
         _titleController.Dispose();
     }
 
@@ -210,6 +218,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         _posterRequests.Cancel();
         _availabilityRequests.Cancel();
         _actionRequests.Cancel();
+        _subtitleRequests.Cancel();
         SetMatchingState(false);
         _movie = movie;
         _preference = movie.Preference;
@@ -277,6 +286,93 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         UpdatePosterVisuals();
         ApplyLocalization();
         ProbeStorageAvailability(movie);
+        DiscoverSubtitlesAsync(movie);
+    }
+
+    private void DiscoverSubtitlesAsync(MovieRecord movie)
+    {
+        var request = _subtitleRequests.Begin();
+        MovieSubtitlesRepeater.ItemsSource = null;
+
+        if (!movie.HasLocalFile || string.IsNullOrWhiteSpace(movie.FilePath)) return;
+
+        var primaryPath = movie.FilePath;
+        var files = movie.Files.ToList();
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var primarySubs = AppServices.Subtitles.DetectSubtitles(primaryPath);
+                var primaryBadges = primarySubs.Select(SubtitleBadgeModel.FromDetectedSubtitle).ToList();
+
+                var fileSubMap = new Dictionary<string, IReadOnlyList<SubtitleBadgeModel>>(StringComparer.OrdinalIgnoreCase);
+                fileSubMap[primaryPath] = primaryBadges;
+
+                foreach (var f in files)
+                {
+                    if (request.Token.IsCancellationRequested) return;
+                    if (!string.IsNullOrWhiteSpace(f.FilePath) && !fileSubMap.ContainsKey(f.FilePath))
+                    {
+                        var subs = AppServices.Subtitles.DetectSubtitles(f.FilePath);
+                        fileSubMap[f.FilePath] = subs.Select(SubtitleBadgeModel.FromDetectedSubtitle).ToList();
+                    }
+                }
+
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (!request.IsCurrent || _movie.Id != movie.Id) return;
+
+                    MovieSubtitlesRepeater.ItemsSource = primaryBadges;
+
+                    if (files.Count > 1 && MediaFilesRepeater.ItemsSource is IEnumerable<MovieFileRecord> currentFiles)
+                    {
+                        MediaFilesRepeater.ItemsSource = currentFiles.Select(f =>
+                            f with { Subtitles = fileSubMap.GetValueOrDefault(f.FilePath) ?? [] }
+                        ).ToList();
+                    }
+                });
+            }
+            catch
+            {
+                // Subtitle detection is purely additive; failures must never block details
+            }
+        });
+    }
+
+    private async void DownloadMovieSubtitlesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(_movie.FilePath)) return;
+
+        var success = await SubtitleDialog.ShowAsync(
+            parent: this,
+            title: _movie.CanonicalTitle ?? _movie.Title,
+            targetMediaFilePath: _movie.FilePath,
+            externalId: _movie.ExternalId,
+            mediaType: "movie");
+
+        if (success)
+        {
+            DiscoverSubtitlesAsync(_movie);
+        }
+    }
+
+    private async void DownloadFileSubtitlesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: MovieFileRecord fileRecord } && !string.IsNullOrWhiteSpace(fileRecord.FilePath))
+        {
+            var success = await SubtitleDialog.ShowAsync(
+                parent: this,
+                title: _movie.CanonicalTitle ?? _movie.Title,
+                targetMediaFilePath: fileRecord.FilePath,
+                externalId: _movie.ExternalId,
+                mediaType: "movie");
+
+            if (success)
+            {
+                DiscoverSubtitlesAsync(_movie);
+            }
+        }
     }
 
     /// <summary>
@@ -407,24 +503,72 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
 
     private bool _isRelinkMode;
 
+    private void OnPlaybackEnded(object? sender, int mediaFileId)
+    {
+        var isOurFile = _movie.MediaFileId == mediaFileId || _movie.Files.Any(f => f.MediaFileId == mediaFileId);
+        if (isOurFile)
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                UpdatePlayButtonVisuals(PlayButton.IsEnabled, _isRelinkMode);
+            });
+        }
+    }
+
     private void UpdatePlayButtonVisuals(bool canOpenFile, bool isMissing)
     {
+        PlayFromBeginningMenuItem.Text = LocalizationService.Text("PlayFromBeginning");
+        ClearResumeMenuItem.Text = LocalizationService.Text("ClearResumePoint");
+
+        // Keep menu items visible in visual tree to eliminate empty flyout
+        PlayFromBeginningMenuItem.Visibility = Visibility.Visible;
+        ClearResumeMenuItem.Visibility = Visibility.Visible;
+
         _isRelinkMode = isMissing && !_storageUnavailable && !_isOrganizing && (_movie.MediaFileId is not null || _movie.Files.Count > 0);
         if (_isRelinkMode)
         {
             PlayButton.IsEnabled = true;
             PlayGlyph.Glyph = "\uE71B";
             PlayText.Text = LocalizationService.Text("Relink");
+            PosterProgressBar.Visibility = Visibility.Collapsed;
+            PlayFromBeginningMenuItem.IsEnabled = false;
+            ClearResumeMenuItem.IsEnabled = false;
             ToolTipService.SetToolTip(PlayButton, LocalizationService.Text("RelinkTitle"));
-            PlayButton.SetValue(AutomationProperties.NameProperty, LocalizationService.Text("Relink"));
+            PlayButton.SetValue(AutomationProperties.NameProperty, LocalizationService.Text("RelinkTitle"));
         }
         else
         {
             PlayButton.IsEnabled = canOpenFile;
-            PlayGlyph.Glyph = "\uE768";
-            PlayText.Text = LocalizationService.Text("PlayMovie");
-            ToolTipService.SetToolTip(PlayButton, LocalizationService.Text("PlayMovie"));
-            PlayButton.SetValue(AutomationProperties.NameProperty, LocalizationService.Text("PlayMovie"));
+            var mediaFileId = _movie.MediaFileId ?? _movie.Files.FirstOrDefault()?.MediaFileId;
+            var progress = mediaFileId.HasValue ? AppServices.PlaybackProgress.GetByMediaFileId(mediaFileId.Value) : null;
+            if (progress?.HasResumePosition != true && _movie.Id > 0)
+            {
+                progress = AppServices.PlaybackProgress.GetForMovie(_movie.Id);
+            }
+
+            if (progress?.HasResumePosition == true)
+            {
+                var resumeLabel = LocalizationService.Format("ResumeFrom", progress.FormattedResumeTime);
+                PlayGlyph.Glyph = "\uE768";
+                PlayText.Text = resumeLabel;
+                PosterProgressBar.Value = progress.ProgressPercentage;
+                PosterProgressBar.Visibility = Visibility.Visible;
+                PlayFromBeginningMenuItem.IsEnabled = canOpenFile;
+                ClearResumeMenuItem.IsEnabled = true;
+                ToolTipService.SetToolTip(PlayButton, resumeLabel);
+                PlayButton.SetValue(AutomationProperties.NameProperty, resumeLabel);
+            }
+            else
+            {
+                var playLabel = LocalizationService.Text("PlayMovie");
+                PlayGlyph.Glyph = "\uE768";
+                PlayText.Text = playLabel;
+                PosterProgressBar.Visibility = Visibility.Collapsed;
+                PlayFromBeginningMenuItem.IsEnabled = canOpenFile;
+                ClearResumeMenuItem.IsEnabled = false;
+                ToolTipService.SetToolTip(PlayButton, playLabel);
+                PlayButton.SetValue(AutomationProperties.NameProperty, playLabel);
+            }
         }
     }
 
@@ -502,7 +646,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
     /// Hands the file to whatever the user has registered for it. ShellExecute is the only way to
     /// honour the user's default player, and UseShellExecute is required for that.
     /// </summary>
-    private async void PlayButton_Click(object sender, RoutedEventArgs e)
+    private async void PlayButton_Click(SplitButton sender, SplitButtonClickEventArgs e)
     {
         if (_isRelinkMode)
         {
@@ -510,6 +654,30 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
             return;
         }
 
+        await PlayMovieAsync(resume: true);
+    }
+
+    private async void PlayFromBeginningMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        await PlayMovieAsync(resume: false);
+    }
+
+    private void ClearResumeMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        var mediaFileId = _movie.MediaFileId ?? _movie.Files.FirstOrDefault()?.MediaFileId;
+        if (mediaFileId.HasValue)
+        {
+            AppServices.PlaybackProgress.DeleteProgress(mediaFileId.Value);
+        }
+        if (_movie.Id > 0)
+        {
+            AppServices.PlaybackProgress.DeleteProgressForMovie(_movie.Id);
+        }
+        UpdatePlayButtonVisuals(PlayButton.IsEnabled, _isRelinkMode);
+    }
+
+    private async Task PlayMovieAsync(bool resume)
+    {
         if (string.IsNullOrWhiteSpace(_movie.FilePath) || !_movie.HasLocalFile)
         {
             PlayButton.IsEnabled = false;
@@ -517,17 +685,44 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
             return;
         }
 
+        var mediaFileId = _movie.MediaFileId ?? _movie.Files.FirstOrDefault()?.MediaFileId ?? 0;
+        double? durationSeconds = null;
+        if (!string.IsNullOrWhiteSpace(_movie.Runtime))
+        {
+            var digits = new string(_movie.Runtime.TakeWhile(char.IsDigit).ToArray());
+            if (int.TryParse(digits, out var minutes) && minutes > 0)
+            {
+                durationSeconds = minutes * 60.0;
+            }
+        }
+        int? tmdbId = int.TryParse(_movie.ExternalId, out var id) ? id : null;
+
+        var target = new PlaybackMediaTarget(
+            MediaFileId: mediaFileId,
+            FilePath: _movie.FilePath,
+            TotalDurationSeconds: durationSeconds,
+            IsMovie: true,
+            MovieId: _movie.Id,
+            MovieTmdbId: tmdbId,
+            MovieTitle: _movie.Title,
+            MovieYear: _movie.Year > 0 ? _movie.Year : null);
+
         var request = _actionRequests.Begin();
         try
         {
-            var result = await AppServices.PlayMediaFileAsync(_movie.FilePath, request.Token);
+            var started = await AppServices.PlaybackTracking.StartPlaybackAsync(target, resume, CancellationToken.None);
             if (!request.IsCurrent) return;
-            if (result.ErrorCode == "PlaybackActivityNotSaved")
+            if (!started)
             {
-                await ShowMessageAsync(LocalizationService.Text("Failed"), LocalizationService.Text("PlaybackActivityNotSaved"));
-                return;
+                var result = await AppServices.PlayMediaFileAsync(_movie.FilePath, request.Token);
+                if (!request.IsCurrent) return;
+                if (result.ErrorCode == "PlaybackActivityNotSaved")
+                {
+                    await ShowMessageAsync(LocalizationService.Text("Failed"), LocalizationService.Text("PlaybackActivityNotSaved"));
+                    return;
+                }
+                await PresentActionResultAsync(result.Status);
             }
-            await PresentActionResultAsync(result.Status);
         }
         catch (OperationCanceledException) { }
         catch (Exception error)
@@ -757,6 +952,23 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         }
 
         UpdatePreferenceVisuals();
+
+        var tmdbId = AppServices.GetMovieTmdbId(_movie.Id);
+        if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+        {
+            var isFav = _preference == "liked";
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await trakt.PushMovieFavoriteAsync(tmdbId.Value, isFav).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[MovieDetailsPage] PushMovieFavoriteAsync failed: {ex.Message}");
+                }
+            });
+        }
     }
 
     private void WatchlistButton_Click(object sender, RoutedEventArgs e)
@@ -1341,11 +1553,15 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
     private void UpdateDetailsLayout()
     {
         // Measure the page, not the window. Expanded navigation consumes content width.
-        var available = Math.Max(0, Root.ActualWidth - Root.Padding.Left - Root.Padding.Right);
-        MovieMetaText.MaxWidth = Math.Max(0, available >= 1500 ? available - 614.7 : available >= 900 ? available - 460 : available - 120);
-        OverviewText.MaxWidth = Math.Min(850, Math.Max(0, available >= 1500 ? available - 494.7 : available >= 900 ? available - 340 : available));
-        VisualStateManager.GoToState(this,
-            available >= 1500 ? "DetailsWideState" : available >= 900 ? "DetailsMediumState" : "DetailsCompactState", false);
+        // Use a constant baseline horizontal padding (32 + 32 = 64) to prevent visual state oscillation (hysteresis) across breakpoints.
+        const double BaseHorizontalPadding = 64.0;
+        var available = Math.Max(0, Root.ActualWidth - BaseHorizontalPadding);
+        var targetState = available >= 950 ? "DetailsWideState" : available >= 700 ? "DetailsMediumState" : "DetailsCompactState";
+        if (_currentVisualState != targetState)
+        {
+            _currentVisualState = targetState;
+            VisualStateManager.GoToState(this, targetState, false);
+        }
     }
 
     private bool HasExternalId()

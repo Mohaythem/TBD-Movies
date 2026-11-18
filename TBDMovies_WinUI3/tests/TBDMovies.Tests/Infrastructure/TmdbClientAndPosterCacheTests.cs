@@ -229,6 +229,41 @@ public class TmdbClientAndPosterCacheTests : IDisposable
     }
 
     [Fact]
+    public void TmdbClient_DefaultConstructor_ConfiguresSocketsHttpHandlerWithoutRedirects()
+    {
+        using var client = new TmdbClient(() => "token");
+        var clientField = typeof(TmdbClient).GetField("_httpClient", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var httpClient = Assert.IsType<HttpClient>(clientField?.GetValue(client));
+
+        var handlerField = typeof(HttpMessageInvoker).GetField("_handler", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var handler = handlerField?.GetValue(httpClient);
+
+        var socketsHandler = Assert.IsType<SocketsHttpHandler>(handler);
+        Assert.False(socketsHandler.AllowAutoRedirect);
+    }
+
+    [Fact]
+    public async Task TmdbClient_DoesNotFollowRedirects_RejectsWithFailure()
+    {
+        var requestCount = 0;
+        var handler = new MockHttpMessageHandler
+        {
+            Handler = request =>
+            {
+                requestCount++;
+                var response = new HttpResponseMessage(HttpStatusCode.MovedPermanently);
+                response.Headers.Location = new Uri("https://evil-harvest.com/steal");
+                return response;
+            }
+        };
+        using var client = new TmdbClient(() => "token", new HttpClient(handler));
+
+        var ex = await Assert.ThrowsAsync<MetadataServiceException>(() => client.GetMovieAsync("155"));
+        Assert.Equal(MetadataFailureKind.Api, ex.Kind);
+        Assert.Equal(1, requestCount); // Proves no automatic redirect follow occurred
+    }
+
+    [Fact]
     public async Task TmdbClient_SearchMoviesAsync_DistinguishesMalformedPayloadFromEmptyResults()
     {
         var handler = new MockHttpMessageHandler
@@ -473,6 +508,84 @@ public class TmdbClientAndPosterCacheTests : IDisposable
         Assert.Null(result);
         var files = Directory.GetFiles(_testCacheDir);
         Assert.Empty(files); // Neither target nor temp file remains
+    }
+
+    [Fact]
+    public async Task DiskPosterCache_RejectsOversizedPoster_ViaContentLengthHeader()
+    {
+        const long customMaxBytes = 1000;
+        var handler = new MockHttpMessageHandler
+        {
+            Handler = _ =>
+            {
+                var response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(new byte[100])
+                };
+                response.Content.Headers.ContentLength = customMaxBytes + 500;
+                return response;
+            }
+        };
+        var httpClient = new HttpClient(handler);
+        var cache = new DiskPosterCache(_testCacheDir, httpClient, maxPosterSizeBytes: customMaxBytes);
+
+        var result = await cache.EnsurePosterCachedAsync("TMDB", "/oversized_header.jpg");
+
+        Assert.Null(result);
+        var files = Directory.GetFiles(_testCacheDir);
+        Assert.Empty(files);
+    }
+
+    [Fact]
+    public async Task DiskPosterCache_AbortsOversizedPoster_DuringStreamingWithoutContentLength()
+    {
+        const long customMaxBytes = 1000;
+        var oversizedLength = customMaxBytes + 5000;
+        var streamContent = new StreamContent(new RepeatingByteStream(oversizedLength));
+        // Remove ContentLength to simulate chunked streaming
+        streamContent.Headers.ContentLength = null;
+
+        var handler = new MockHttpMessageHandler
+        {
+            Handler = _ => new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = streamContent
+            }
+        };
+        var httpClient = new HttpClient(handler);
+        var cache = new DiskPosterCache(_testCacheDir, httpClient, maxPosterSizeBytes: customMaxBytes);
+
+        var result = await cache.EnsurePosterCachedAsync("TMDB", "/oversized_stream.jpg");
+
+        Assert.Null(result);
+        var files = Directory.GetFiles(_testCacheDir);
+        Assert.Empty(files);
+    }
+
+    private sealed class RepeatingByteStream(long totalBytes) : Stream
+    {
+        private long _position;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => totalBytes;
+        public override long Position { get => _position; set => throw new NotSupportedException(); }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            var remaining = totalBytes - _position;
+            if (remaining <= 0) return 0;
+            var toRead = (int)Math.Min(count, remaining);
+            Array.Fill(buffer, (byte)0xFF, offset, toRead);
+            _position += toRead;
+            return toRead;
+        }
+
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     [Fact]

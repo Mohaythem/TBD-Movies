@@ -50,59 +50,41 @@ public sealed class WindowsTmdbCredentialStore : ITmdbCredentialStore
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(nativeToken))
-        {
-            if (_settings is not null)
-            {
-                try
-                {
-                    if (string.IsNullOrWhiteSpace(_settings.Get("tmdb_credential_dpapi")))
-                    {
-                        var cipher = EncryptDpapi(nativeToken);
-                        if (cipher is not null) _settings.Set("tmdb_credential_dpapi", cipher, DateTimeOffset.UtcNow);
-                    }
-                }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to backup native token to DPAPI: {ex.Message}"); }
-            }
-            return nativeToken;
-        }
+        return !string.IsNullOrWhiteSpace(nativeToken) ? nativeToken : null;
+    }
 
-        if (_settings is not null)
+    public static bool MigrateLegacyDpapi(ISettingsRepository settings, string? isolatedProfileRoot = null)
+    {
+        var cipher = settings.Get("tmdb_credential_dpapi");
+        if (string.IsNullOrWhiteSpace(cipher)) return false;
+
+        try
         {
-            try
+            var store = new WindowsTmdbCredentialStore(isolatedProfileRoot);
+            if (string.IsNullOrWhiteSpace(store.Read()))
             {
-                var cipher = _settings.Get("tmdb_credential_dpapi");
-                var recovered = DecryptDpapi(cipher, out var migratedFromLegacy);
+                var recovered = DecryptDpapi(cipher, out _);
                 if (!string.IsNullOrWhiteSpace(recovered))
                 {
-                    if (migratedFromLegacy)
-                    {
-                        try
-                        {
-                            var reencrypted = EncryptDpapi(recovered);
-                            if (reencrypted is not null)
-                            {
-                                _settings.Set("tmdb_credential_dpapi", reencrypted, DateTimeOffset.UtcNow);
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"Failed to migrate DPAPI credential to entropy: {ex.Message}");
-                        }
-                    }
-
-                    try { Write(recovered); }
-                    catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to restore native credential: {ex.Message}"); }
-                    return recovered;
+                    store.Write(recovered);
                 }
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to read DPAPI credential: {ex.Message}");
-            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to migrate legacy DPAPI TMDB credential: {ex.Message}");
         }
 
-        return null;
+        try
+        {
+            settings.Delete("tmdb_credential_dpapi");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to delete legacy DPAPI TMDB credential row: {ex.Message}");
+            return false;
+        }
     }
 
     private static string? TryReadTarget(string target)
@@ -160,16 +142,6 @@ public sealed class WindowsTmdbCredentialStore : ITmdbCredentialStore
                 UserName = "TBD Movies",
             };
             if (!CredWriteW(ref native, 0)) throw StorageError();
-
-            if (_settings is not null)
-            {
-                try
-                {
-                    var cipher = EncryptDpapi(credential);
-                    if (cipher is not null) _settings.Set("tmdb_credential_dpapi", cipher, DateTimeOffset.UtcNow);
-                }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to save DPAPI backup in settings: {ex.Message}"); }
-            }
         }
         finally
         {
@@ -184,11 +156,6 @@ public sealed class WindowsTmdbCredentialStore : ITmdbCredentialStore
 
     public void Delete()
     {
-        if (_settings is not null)
-        {
-            try { _settings.Delete("tmdb_credential_dpapi"); }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to delete DPAPI backup from settings: {ex.Message}"); }
-        }
         if (!CredDeleteW(_target, Generic, 0) && Marshal.GetLastWin32Error() != NotFound)
             throw StorageError();
         if (!string.IsNullOrWhiteSpace(_legacyTarget))

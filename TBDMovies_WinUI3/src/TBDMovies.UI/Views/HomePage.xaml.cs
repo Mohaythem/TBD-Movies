@@ -2,16 +2,18 @@ using System.Globalization;
 using TBDMovies.Application.Dto;
 using TBDMovies.Domain.Library.Availability;
 using TBDMovies.Domain.Library.Personal;
+using TBDMovies.Domain.Playback;
 using TBDMovies.UI.Models;
 using TBDMovies.UI.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 
 namespace TBDMovies.UI.Views;
 
 /// <summary>
-/// The landing page: library totals, what the user can continue watching, and the newest additions.
+/// The landing page: library totals, unified activity hub (continue watching & watch history), and the newest additions.
 /// <para>
 /// The movie totals, TV progression and persisted recent watch history all come from the local catalog.
 /// </para>
@@ -27,6 +29,10 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     private int _renderedContinueCount = -1;
     private int _renderedHistoryCount = -1;
     private int _renderedRecentCount = -1;
+    private long _lastLoadedCatalogRevision = -1;
+    private bool _activityDirty = false;
+    private bool _playbackTrackingSubscribed = false;
+    private bool _transitionsAttached = false;
 
     public HomePage()
     {
@@ -34,9 +40,27 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         RecentGrid.ItemContainerTransitions = [];
         this.SizeChanged += HomePage_SizeChanged;
         ContinueRowGrid.SizeChanged += HomePage_SizeChanged;
+        HistoryRowGrid.SizeChanged += HomePage_SizeChanged;
         RecentRowGrid.SizeChanged += RecentRowGrid_SizeChanged;
         ContextRequested += Home_ContextRequested;
         ApplyLocalization();
+    }
+
+    private void EnsurePlaybackTrackingSubscribed()
+    {
+        if (_playbackTrackingSubscribed || !AppServices.IsAvailable) return;
+        _playbackTrackingSubscribed = true;
+        AppServices.PlaybackTracking.PlaybackEnded += (_, _) =>
+        {
+            _activityDirty = true;
+            DispatcherQueue?.TryEnqueue(() =>
+            {
+                if (IsLoaded)
+                {
+                    RefreshActivityShelvesOnly();
+                }
+            });
+        };
     }
 
     public event EventHandler<MovieRecord>? MovieSelected;
@@ -49,6 +73,17 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
 
     public void Activate()
     {
+        EnsurePlaybackTrackingSubscribed();
+        var currentRev = AppServices.CatalogRevision;
+        if (_movies.Count > 0 && _lastLoadedCatalogRevision == currentRev)
+        {
+            if (_activityDirty)
+            {
+                RefreshActivityShelvesOnly();
+            }
+            return;
+        }
+
         _movies = LoadMovies();
         _shows = LoadShows();
         _history = LoadHistory();
@@ -61,6 +96,27 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         _renderedHistoryCount = -1;
         _renderedRecentCount = -1;
         UpdateActivityShelves();
+        _lastLoadedCatalogRevision = currentRev;
+        _activityDirty = false;
+
+        if (!_transitionsAttached && _movies.Count > 0)
+        {
+            _transitionsAttached = true;
+            RecentGrid.ItemContainerTransitions = [new AddDeleteThemeTransition()];
+        }
+    }
+
+    private void RefreshActivityShelvesOnly()
+    {
+        _history = LoadHistory();
+        _continueSource = BuildContinueWatching();
+        _historyCards = BuildHistoryCards();
+        UpdateContinueVisibility();
+        UpdateHistoryVisibility();
+        _renderedContinueCount = -1;
+        _renderedHistoryCount = -1;
+        UpdateActivityShelves();
+        _activityDirty = false;
     }
 
     public void Deactivate() => _playbackRequests.Cancel();
@@ -122,7 +178,7 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     {
         try
         {
-            return AppServices.ViewingActivity.ListRecentCompleted(20);
+            return AppServices.ViewingActivity.ListRecentCompleted(50);
         }
         catch (Exception)
         {
@@ -137,7 +193,28 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     {
         try
         {
-            return [.. AppServices.ViewingActivity.ListActive(20).Select(item => new HomeActivityCard(item))];
+            var items = AppServices.ViewingActivity.ListActive(20);
+            return [.. items.Select(item =>
+            {
+                PlaybackProgress? progress = null;
+                if (AppServices.IsAvailable)
+                {
+                    try
+                    {
+                        if (item.EpisodeId is int epId)
+                        {
+                            progress = AppServices.PlaybackProgress.GetForEpisode(epId);
+                        }
+                        else if (item.MovieId is int movieId)
+                        {
+                            progress = AppServices.PlaybackProgress.GetForMovie(movieId);
+                        }
+                    }
+                    catch { }
+                }
+
+                return new HomeActivityCard(item, progress);
+            })];
         }
         catch { return []; }
     }
@@ -231,7 +308,7 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     }
 
     private void Home_ContextRequested(UIElement sender, Microsoft.UI.Xaml.Input.ContextRequestedEventArgs e)
-        => MediaCardContextMenu.ShowForContext(this, e, onChanged: Activate);
+        => MediaCardContextMenu.ShowForContext(this, e, onChanged: () => { _activityDirty = true; });
 
     private void HomePage_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateActivityShelves();
 
@@ -313,15 +390,65 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
 
     private IReadOnlyList<StatCardRecord> BuildStats()
     {
-        var episodes = _shows.Sum(show => show.EpisodeCount);
         var onDisk = _shows.Sum(show => show.LocalEpisodeCount);
+
+        // 1. Calculate Total Watch Time from watch history & media runtimes
+        var movieMinutes = _movies
+            .Where(m => m.Watched)
+            .Sum(m => ParseRuntimeMinutes(m.Runtime, defaultMinutes: 100));
+
+        var episodeMinutes = _shows
+            .Sum(s => s.WatchedEpisodeCount * 45);
+
+        var totalMinutes = movieMinutes + episodeMinutes;
+        if (totalMinutes == 0 && _history.Count > 0)
+        {
+            totalMinutes = _history.Sum(h => h.MediaKind == WatchEventMediaKind.Movie ? 100 : 45);
+        }
+
+        var totalHours = (int)Math.Round((double)totalMinutes / 60.0);
+        if (totalHours == 0 && totalMinutes > 0)
+        {
+            totalHours = 1;
+        }
+
+        var watchTimeText = LocalizationService.Digits(
+            LocalizationService.Format("StatWatchTimeHours", LocalizationService.Number(totalHours)));
+
+        // 2. Watched this month or completion rate
+        var now = DateTimeOffset.UtcNow;
+        var startOfMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
+        var watchedThisMonth = _history.Count(item => item.WatchedAt >= startOfMonth);
+
+        var totalMedia = _movies.Count + _shows.Sum(s => s.EpisodeCount);
+        var watchedMedia = _movies.Count(m => m.Watched) + _shows.Sum(s => s.WatchedEpisodeCount);
+        var completionPercent = totalMedia > 0
+            ? (int)Math.Round((double)watchedMedia / totalMedia * 100.0)
+            : 0;
+
+        StatCardRecord fifthStat = watchedThisMonth > 0
+            ? new(LocalizationService.Text("StatWatchedThisMonth"), Count(watchedThisMonth), "\uE787")
+            : new(LocalizationService.Text("StatCompletionRate"), LocalizationService.Digits($"{LocalizationService.Number(completionPercent)}%"), "\uE73E");
+
         return
         [
             new(LocalizationService.Text("StatMovies"), Count(_movies.Count), "\uE8B2"),
             new(LocalizationService.Text("StatShows"), Count(_shows.Count), "\uE7F4"),
-            new(LocalizationService.Text("StatEpisodes"), Count(episodes), "\uE8FD"),
             new(LocalizationService.Text("StatEpisodesOnDisk"), Count(onDisk), "\uEDA2"),
+            new(LocalizationService.Text("StatWatchTime"), watchTimeText, "\uE823"),
+            fifthStat,
         ];
+    }
+
+    private static int ParseRuntimeMinutes(string? runtime, int defaultMinutes)
+    {
+        if (string.IsNullOrWhiteSpace(runtime)) return defaultMinutes;
+        var digits = new string(runtime.TakeWhile(char.IsDigit).ToArray());
+        if (int.TryParse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out var minutes) && minutes > 0)
+        {
+            return minutes;
+        }
+        return defaultMinutes;
     }
 
     private static string Count(int value) => LocalizationService.Number(value);
@@ -370,7 +497,7 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
 
             if (result.Status == AvailabilityInspectionStatus.Present)
             {
-                Activate();
+                _activityDirty = true;
                 return;
             }
 

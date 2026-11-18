@@ -17,6 +17,11 @@ using TBDMovies.Infrastructure.Security;
 using TBDMovies.Application.Trakt;
 using TBDMovies.Infrastructure.Trakt;
 using System.Text.Json;
+using TBDMovies.Application.Playback;
+using TBDMovies.FileSystem.Playback;
+using TBDMovies.Application.Subtitles;
+using TBDMovies.FileSystem.Subtitles;
+using TBDMovies.Infrastructure.Subtitles;
 
 namespace TBDMovies.UI.Services;
 
@@ -144,6 +149,8 @@ internal static class AppServices
 
     public static ViewingActivityService ViewingActivity => Require(_viewingActivity);
     public static ShowPersonalLibraryService ShowPersonal => Require(_showPersonal);
+    public static PlaybackTrackingService PlaybackTracking => Require(_playbackTrackingService);
+    public static IPlaybackProgressRepository PlaybackProgress => Require(_playbackProgressRepository);
 
     public static Task<FileActionResult> PlayMediaFileAsync(string path, CancellationToken token = default) =>
         new TrackedPlaybackActions(MediaFileActions, playedPath => ViewingActivity.RecordSuccessfulPlay(playedPath)).OpenFileAsync(path, token);
@@ -153,6 +160,10 @@ internal static class AppServices
     public static ISettingsUiActions Settings => Require(_settings);
 
     public static IOrganizationUiActions Organization => Require(_organization);
+
+    public static ISubtitleDiscoveryService Subtitles => Require(_subtitles);
+    public static ISubtitleDownloadClient SubtitleClient => Require(_subDlClient);
+    public static ISubtitleDownloadService SubtitleDownloader => Require(_subtitleDownloader);
 
 
     public static IMetadataProvider Metadata => Require(_metadataProvider);
@@ -241,6 +252,7 @@ internal static class AppServices
     private static ITraktProjectionService? _traktProjection;
 
     private static TraktAuthClient? _traktAuthClient;
+    private static TraktAuthService? _traktAuthService;
     private static TraktDataClient? _traktDataClient;
     private static TraktSyncService? _traktSyncService;
     private static readonly SemaphoreSlim TraktReconfigGate = new(1, 1);
@@ -330,6 +342,65 @@ internal static class AppServices
     }
 
     /// <summary>
+    /// Fast-path read of theme and language preferences directly from the database using an isolated,
+    /// read-only connection without waiting for the full composition root or acquiring Gate lock.
+    /// Falls back safely to defaults (Dark, English) if database is missing, corrupted, or not yet migrated.
+    /// </summary>
+    public static (AppTheme Theme, UiLanguage Language) RestorePreferencesFast()
+    {
+        try
+        {
+            var dbPath = Path.Combine(DataFolder, "library.db");
+            if (!File.Exists(dbPath))
+            {
+                return (AppTheme.Dark, UiLanguage.English);
+            }
+
+            var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+            {
+                DataSource = dbPath,
+                Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadOnly,
+                DefaultTimeout = 1 // fail-fast, never hang UI thread
+            };
+
+            using var conn = new Microsoft.Data.Sqlite.SqliteConnection(builder.ToString());
+            conn.Open();
+
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT key, value FROM settings WHERE key IN ('ui_theme', 'ui_language');";
+            using var reader = cmd.ExecuteReader();
+
+            string? themeVal = null;
+            string? langVal = null;
+
+            while (reader.Read())
+            {
+                var key = reader.GetString(0);
+                var val = reader.IsDBNull(1) ? null : reader.GetString(1);
+                if (key == "ui_theme") themeVal = val;
+                else if (key == "ui_language") langVal = val;
+            }
+
+            var theme = themeVal switch
+            {
+                "Light" => AppTheme.Light,
+                _ => AppTheme.Dark
+            };
+
+            var lang = string.Equals(langVal, "Arabic", StringComparison.OrdinalIgnoreCase)
+                ? UiLanguage.Arabic
+                : UiLanguage.English;
+
+            return (theme, lang);
+        }
+        catch
+        {
+            // First-run, missing table, or locked file: always fail-safe to defaults
+            return (AppTheme.Dark, UiLanguage.English);
+        }
+    }
+
+    /// <summary>
     /// The theme and language the user last chose, read back through the settings service so the shell
     /// starts where they left it. An unavailable store answers with the defaults.
     /// </summary>
@@ -401,6 +472,8 @@ internal static class AppServices
     private static WatchHistoryService? _watchHistory;
     private static ViewingActivityService? _viewingActivity;
     private static ShowPersonalLibraryService? _showPersonal;
+    private static PlaybackProgressRepository? _playbackProgressRepository;
+    private static PlaybackTrackingService? _playbackTrackingService;
     private static ImportService? _import;
     private static ReconciliationService? _reconciliation;
     private static OperationHistoryService? _history;
@@ -422,6 +495,9 @@ internal static class AppServices
     private static ILibraryRepairUiActions? _repair;
     private static IPersonalLibraryRepository? _personalRepo;
     private static IWatchHistoryRepository? _watchHistoryRepo;
+    private static SubtitleDiscoveryService? _subtitles;
+    private static SubDlClient? _subDlClient;
+    private static SubtitleDownloadService? _subtitleDownloader;
 
     /// <summary>
     /// The two objects that own a resource rather than a connection string: the journal store holds a
@@ -511,6 +587,7 @@ internal static class AppServices
                 IMediaFileRepository mediaFiles = new UnitOfWorkMediaFileRepository(catalogFactory);
                 var personal = new PersonalLibraryRepository(connectionString);
                 var settingsRepository = new SettingsRepository(connectionString);
+                PurgeLegacyDpapiCredentials(settingsRepository, connectionString);
                 var maintenance = new LibraryMaintenanceRepository(connectionString);
                 operations = new FileOperationStore(connectionString);
                 coordinator = new FileOperationCoordinator(operations);
@@ -522,8 +599,9 @@ internal static class AppServices
                     isolatedProfileRoot: GetTestDataRoot(),
                     settings: settingsRepository);
                 var settings = new SettingsService(maintenance, posterCache: posterCache,
-                    settings: settingsRepository, credentialStore: credentialStore);
-                var tmdbClient = new TmdbClient(() => settings.GetTmdbToken() ?? ResolveEnvTmdbToken(),
+                    settings: settingsRepository, credentialStore: credentialStore,
+                    environmentTokenProvider: ResolveEnvTmdbToken);
+                var tmdbClient = new TmdbClient(() => settings.GetTmdbToken(),
                     authenticationResult: settings.RecordTmdbAuthenticationResult);
                 var matching = new MetadataMatchingService(catalogFactory, tmdbClient, posterCache);
 
@@ -564,6 +642,17 @@ internal static class AppServices
                 _watchHistory = watchHistory;
                 _viewingActivity = new ViewingActivityService(new ViewingActivityRepository(connectionString));
                 _showPersonal = new ShowPersonalLibraryService(new ShowPersonalLibraryRepository(connectionString), tv);
+                var playbackProgress = new PlaybackProgressRepository(connectionString);
+                _playbackProgressRepository = playbackProgress;
+                _playbackTrackingService = new PlaybackTrackingService(
+                    playbackProgress,
+                    PlayerProcessLauncher.Shared,
+                    settingsRepository,
+                    getTraktData: () => _traktDataClient,
+                    getTraktAuth: () => _traktAuthService,
+                    getTraktClientId: () => TraktConfig.ClientId,
+                    personalLibraryRepository: personal,
+                    watchHistoryRepository: personal);
                 _import = import;
                 _reconciliation = reconciliation;
                 _tv = tv;
@@ -577,6 +666,9 @@ internal static class AppServices
                 _repair = repair;
                 _personalRepo = personal;
                 _watchHistoryRepo = personal;
+                _subtitles = new SubtitleDiscoveryService();
+                _subDlClient = new SubDlClient(() => settingsRepository.Get("subdl_api_key"));
+                _subtitleDownloader = new SubtitleDownloadService();
 
                 TryRestoreTraktOnStartup(settingsRepository, connectionString, movies, mediaFiles, tvShows, tvSeasons, tvEpisodes, availabilityInspector, personal, personal);
 
@@ -630,12 +722,15 @@ internal static class AppServices
         _traktSyncService?.Dispose();
         _traktSyncService = null;
         _trakt = null;
+        _traktAuthService = null;
         _traktAuthClient?.Dispose();
         _traktAuthClient = null;
         _traktDataClient?.Dispose();
         _traktDataClient = null;
         _traktLocalSnapshot = null;
         _traktProjection = null;
+        _playbackProgressRepository = null;
+        _playbackTrackingService = null;
         _movies = null;
         _tvShows = null;
         _tvSeasons = null;
@@ -665,6 +760,10 @@ internal static class AppServices
         _repair = null;
         _personalRepo = null;
         _watchHistoryRepo = null;
+        _subtitles = null;
+        _subDlClient?.Dispose();
+        _subDlClient = null;
+        _subtitleDownloader = null;
         _operationStore = null;
         _coordinator = null;
     }
@@ -781,6 +880,7 @@ internal static class AppServices
                 _traktSyncService = candidateSync;
                 _trakt = candidateSync;
                 _traktAuthClient = candidateAuth;
+                _traktAuthService = auth;
                 _traktDataClient = candidateData;
                 _traktLocalSnapshot = snapshot;
                 _traktProjection = projection;
@@ -890,6 +990,7 @@ internal static class AppServices
             syncService.SyncCompleted += (_, _) => TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
 
             _traktAuthClient = authClient;
+            _traktAuthService = authService;
             _traktDataClient = dataClient;
             _traktSyncService = syncService;
             _trakt = syncService;
@@ -908,6 +1009,7 @@ internal static class AppServices
             _traktSyncService?.Dispose();
             _traktSyncService = null;
             _trakt = null;
+            _traktAuthService = null;
             _traktAuthClient?.Dispose();
             _traktAuthClient = null;
             _traktDataClient?.Dispose();
@@ -953,10 +1055,44 @@ internal static class AppServices
         return TBDMovies.FileSystem.Inspection.CrashTempFileInspector.FindStaleTempFiles(roots, () => token.IsCancellationRequested);
     }
 
-    private static string? ResolveEnvTmdbToken()
+    internal static string? ResolveEnvTmdbToken()
     {
-        var token = Environment.GetEnvironmentVariable("TMDB_READ_TOKEN") ?? Environment.GetEnvironmentVariable("TMDB_API_KEY");
-        return string.IsNullOrWhiteSpace(token) ? null : token.Trim();
+        var token = Environment.GetEnvironmentVariable("TMDB_READ_TOKEN");
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            token = Environment.GetEnvironmentVariable("TMDB_API_KEY");
+        }
+        return SettingsService.SanitizeAndValidateTmdbToken(token);
+    }
+
+    private static void PurgeLegacyDpapiCredentials(ISettingsRepository settingsRepository, string connectionString)
+    {
+        try
+        {
+            var testRoot = GetTestDataRoot();
+            bool tmdbPurged = WindowsTmdbCredentialStore.MigrateLegacyDpapi(settingsRepository, testRoot);
+            bool traktPurged = WindowsTraktCredentialStore.MigrateLegacyDpapi(settingsRepository, testRoot);
+
+            if (tmdbPurged || traktPurged)
+            {
+                try
+                {
+                    using var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+                    connection.Open();
+                    using var command = connection.CreateCommand();
+                    command.CommandText = "VACUUM;";
+                    command.ExecuteNonQuery();
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"VACUUM failed after DPAPI purge: {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"PurgeLegacyDpapiCredentials failed: {ex.Message}");
+        }
     }
 
     private static T Require<T>(T? service)

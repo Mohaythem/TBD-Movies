@@ -51,7 +51,7 @@ public sealed class WindowsTraktCredentialStoreTests
     }
 
     [Fact]
-    public void When_native_credential_deleted_recovers_from_settings_dpapi_backup()
+    public void Write_DoesNotPersistDpapiToSettings_ReliesExclusivelyOnNativeStore()
     {
         var profile = Path.Combine(Path.GetTempPath(), "TBDMovies-TraktCredentialTest-" + Guid.NewGuid().ToString("N"));
         var settings = new TestSettingsRepo();
@@ -81,36 +81,66 @@ public sealed class WindowsTraktCredentialStoreTests
             Assert.NotNull(nativeRead);
             Assert.Equal("access-secret-token", nativeRead.AccessToken);
 
-            // Verify settings has DPAPI encrypted blob, not plaintext
-            var cipher = settings.Get("trakt_credential_dpapi");
-            Assert.NotNull(cipher);
-            Assert.DoesNotContain("access-secret-token", cipher);
-            Assert.DoesNotContain("refresh-secret-token", cipher);
+            // Verify settings NEVER has DPAPI encrypted blob
+            Assert.Null(settings.Get("trakt_credential_dpapi"));
 
-            // Delete from native store
+            // Delete from native store means Read returns null (no DPAPI fallback)
             bareStore.Delete();
             Assert.Null(bareStore.Read());
-
-            // Read from storeWithSettings should recover from DPAPI
-            var recovered = storeWithSettings.Read();
-            Assert.NotNull(recovered);
-            Assert.Equal("client-id-recovery", recovered.ClientId);
-            Assert.Equal("access-secret-token", recovered.AccessToken);
-            Assert.Equal("refresh-secret-token", recovered.RefreshToken);
-
-            // Native Credential Manager is also restored
-            var restoredNative = bareStore.Read();
-            Assert.NotNull(restoredNative);
-            Assert.Equal("access-secret-token", restoredNative.AccessToken);
-
-            // Delete via storeWithSettings removes both native and settings backup
-            storeWithSettings.Delete();
-            Assert.Null(bareStore.Read());
-            Assert.Null(settings.Get("trakt_credential_dpapi"));
+            Assert.Null(storeWithSettings.Read());
         }
         finally
         {
             bareStore.Delete();
+        }
+    }
+
+    [Fact]
+    public void MigrateLegacyDpapi_RestoresNativeCredentialAndDeletesSettingsRow()
+    {
+        var profile = Path.Combine(Path.GetTempPath(), "TBDMovies-TraktCredentialTest-" + Guid.NewGuid().ToString("N"));
+        var settings = new TestSettingsRepo();
+        var store = new WindowsTraktCredentialStore(profile);
+
+        var payload = new TraktCredentialPayload(
+            "client-id-migrated",
+            "access-secret-migrated",
+            "refresh-secret-migrated",
+            "bearer",
+            3600,
+            "public",
+            1700001000,
+            "acc-migrated");
+
+        try
+        {
+            store.Delete();
+            Assert.Null(store.Read());
+
+            // Simulate legacy DPAPI row in settings
+            var json = System.Text.Json.JsonSerializer.Serialize(payload);
+            var raw = System.Text.Encoding.UTF8.GetBytes(json);
+            var legacyCipherBytes = System.Security.Cryptography.ProtectedData.Protect(
+                raw, null, System.Security.Cryptography.DataProtectionScope.CurrentUser);
+            var legacyCipher = Convert.ToBase64String(legacyCipherBytes);
+            settings.Set("trakt_credential_dpapi", legacyCipher, DateTimeOffset.UtcNow);
+
+            // Run migration
+            var migrated = WindowsTraktCredentialStore.MigrateLegacyDpapi(settings, profile);
+            Assert.True(migrated);
+
+            // Native credential is now populated
+            var recovered = store.Read();
+            Assert.NotNull(recovered);
+            Assert.Equal("access-secret-migrated", recovered.AccessToken);
+            Assert.Equal("refresh-secret-migrated", recovered.RefreshToken);
+
+            // Settings row is purged
+            Assert.Null(settings.Get("trakt_credential_dpapi"));
+        }
+        finally
+        {
+            store.Delete();
         }
     }
 

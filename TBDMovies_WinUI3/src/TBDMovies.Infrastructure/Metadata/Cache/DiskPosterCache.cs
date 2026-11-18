@@ -11,27 +11,38 @@ namespace TBDMovies.Infrastructure.Metadata.Cache;
 
 public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, IDisposable
 {
+    public const long DefaultMaxPosterSizeBytes = 10 * 1024 * 1024; // 10 MB limit to prevent disk flooding
+    public const long MaxPosterSizeBytes = DefaultMaxPosterSizeBytes;
+
     private readonly ConcurrentDictionary<string, Task<string?>> _inFlight = new();
     private readonly string _cacheDirectory;
     private readonly HttpClient _httpClient;
     private readonly bool _ownsHttpClient;
     private readonly string _imageBaseUrl;
     private readonly string _defaultPosterSize;
+    private readonly long _maxPosterSizeBytes;
 
     public DiskPosterCache(
         string cacheDirectory,
         HttpClient? httpClient = null,
         string imageBaseUrl = "https://image.tmdb.org/t/p/",
-        string defaultPosterSize = "w500")
+        string defaultPosterSize = "w500",
+        long maxPosterSizeBytes = DefaultMaxPosterSizeBytes)
     {
         if (string.IsNullOrWhiteSpace(cacheDirectory))
         {
             throw new ArgumentException("cacheDirectory must be provided", nameof(cacheDirectory));
         }
 
+        if (maxPosterSizeBytes <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxPosterSizeBytes), "maxPosterSizeBytes must be greater than zero.");
+        }
+
         _cacheDirectory = cacheDirectory;
         _imageBaseUrl = imageBaseUrl ?? "https://image.tmdb.org/t/p/";
         _defaultPosterSize = defaultPosterSize ?? "w500";
+        _maxPosterSizeBytes = maxPosterSizeBytes;
 
         if (httpClient == null)
         {
@@ -148,7 +159,7 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
 
             var cleanRef = reference.Trim().TrimStart('/', '\\');
             var url = $"{_imageBaseUrl.TrimEnd('/')}/{_defaultPosterSize.Trim('/')}/{cleanRef}";
-            var tempPath = Path.Combine(_cacheDirectory, $".tmp_{Guid.NewGuid():N}.tmp");
+            string? tempPath = null;
 
             try
             {
@@ -159,25 +170,59 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
                         return null;
                     }
 
-                    using (var stream = await response.Content.ReadAsStreamAsync(cancellationToken))
-                    using (var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                    if (response.Content.Headers.ContentLength is { } length && length > _maxPosterSizeBytes)
                     {
-                        await stream.CopyToAsync(fileStream, cancellationToken);
+                        return null;
+                    }
+
+                    tempPath = Path.Combine(_cacheDirectory, $".tmp_{Guid.NewGuid():N}.tmp");
+                    var sizeExceeded = false;
+                    using (var stream = await response.Content.ReadAsStreamAsync(cancellationToken))
+                    {
+                        using (var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                        {
+                            var buffer = new byte[8192];
+                            var totalBytes = 0L;
+                            int read;
+                            while ((read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken).ConfigureAwait(false)) > 0)
+                            {
+                                totalBytes += read;
+                                if (totalBytes > _maxPosterSizeBytes)
+                                {
+                                    sizeExceeded = true;
+                                    break;
+                                }
+
+                                await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                            }
+                        }
+                    }
+
+                    if (sizeExceeded)
+                    {
+                        TryDeleteFile(tempPath);
+                        return null;
                     }
                 }
 
-                if (IsValidImage(tempPath, out _))
+                if (tempPath != null && IsValidImage(tempPath, out _))
                 {
                     File.Move(tempPath, targetPath, overwrite: true);
                     return targetPath;
                 }
 
-                TryDeleteFile(tempPath);
+                if (tempPath != null)
+                {
+                    TryDeleteFile(tempPath);
+                }
                 return null;
             }
             catch
             {
-                TryDeleteFile(tempPath);
+                if (tempPath != null)
+                {
+                    TryDeleteFile(tempPath);
+                }
                 return null;
             }
     }

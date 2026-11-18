@@ -169,7 +169,14 @@ public record PersonalMovieSummary(
 /// display-only, so a rename never changes identity or loses membership. <paramref name="ItemCount" /> is
 /// the number of members in the list, counting movies and TV shows together.
 /// </summary>
-public record CustomListRecord(int Id, string Name, int ItemCount);
+public record CustomListRecord(
+    int Id,
+    string Name,
+    int ItemCount,
+    long? TraktListId = null,
+    string? TraktSlug = null,
+    string SyncStatus = "SYNCED",
+    string? LastSyncedAt = null);
 
 /// <summary>The kind of media a custom-list member is.</summary>
 public enum CustomListMediaKind
@@ -177,6 +184,17 @@ public enum CustomListMediaKind
     Movie,
     Show
 }
+
+/// <summary>
+/// A pending action queued while offline for a custom list.
+/// </summary>
+public record CustomListPendingAction(
+    int Id,
+    int ListId,
+    CustomListMediaKind? MediaKind,
+    int? TmdbId,
+    string ActionType,
+    DateTimeOffset CreatedAt);
 
 /// <summary>
 /// One member of a custom list, movie or TV show, with just what a list card needs to render and to
@@ -191,4 +209,6 @@ public record CustomListMember(
     string? PosterReference,
     bool IsMissing,
     string? CustomDisplayTitle = null,
-    string? CanonicalTitle = null);
+    string? CanonicalTitle = null,
+    int? TmdbId = null,
+    bool IsCloudOnly = false);

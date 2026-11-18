@@ -1,103 +1,503 @@
 # TBD Movies — Active Progress & Status Checkpoint
 
 ## Current Goal
-- Next Milestone: Unified Cinematic Color Palette (Cinema Gold & Obsidian) across `ThemeResources.xaml` and `MainWindow.xaml.cs`.
+- **Active Track / Next Priority**: Project development frozen until user directs next post-exam item. Pending open items in `/BUGS.md`: `[U9]` remaining gaps (Trakt Show Favorites pull & upload, `if (!userListsSuccess)` safeguard unit test, plus queue/tombstone polish), `[U10]` (live playback timeline measurement), `[L6]` (SQLite `VACUUM` after plaintext token deletion), `[L8]` (Inno Setup code signing), `[M1]`, `[U7]` & `[U3]` (Subtitles/SubDL — frozen), and `[U6]` (Random picker regression check).
+- **Batch Approved & Closed**: `[H1]`, `[P1]`, `[P3]`, `[P4]`, `[P5]`, `[P5-B]`, `[M2]`, `[M3]`, `[M4]`, `[L1]`, `[L2]`, `[L3]`, `[L4]`, `[L5]`, `[L7]`, `[L9]`, `[U4]`, `[U5]`, `[U5-B]`, `[U8]`, `[U9-EXE]` verified with `1,143 / 1,143` tests passing in Release; `[P2]` closed as By Design.
+- **Partially Implemented / Superseded (Tracked Open in `/BUGS.md`)**:
+  - `[U9]` & `[U9-Hardening]`: `Migration 22`, `Migration 23`, `[TBD] {name}` list unification, and `DeleteCustomListCascade` implemented, with open sub-items tracked in `/BUGS.md`.
+  - `[L6]`: `VACUUM` runs on DPAPI row purge (`[M2]`) only, NOT on plaintext `'tmdb_read_access_token'` deletion in `SettingsService.MigrateLegacyCredential()` (`L222-237`).
+  - `[U1]` & `[U2]`: UI controls and initial tracker scaffolding built, superseded in live playback by open **`[U10]`** (`WindowsMediaTimelineTracker.cs:37-48` static `Position` / session filtering & companion tracker issues).
 
 ## Completed Work
-1. **Core Issues Track**:
-   - Disabled Play & Open Folder on missing movie files (`IsEnabled = false`); added `[ ⚠️ Missing ]` badge.
-   - Cleaned badges: Removed emojis `🎬` and `📺`, displaying clean text ("Movie" / "TV Show").
-   - Improved TV batch import: Auto-select episodes (`Selected = true`), relax series conflict blockers.
-   - Expanded export in Settings to include both Movies and TV Shows.
-   - Added multiple physical edition cards to `MovieDetailsPage` (`MediaFilesRepeater` Fluent cards with play, folder, copy path, and primary selector).
-   - In-memory session preference for primary movie file (`ConcurrentDictionary<int, int>` in `LibraryProjection`).
-2. **Performance & Debouncing Track**:
-   - Added 200ms UI `DispatcherQueueTimer` debouncing to `SearchBox_TextChanged` across `LibraryPage`, `MyListsPage`, and `TraktPage`.
-   - Immediate refresh on query clear (`string.IsNullOrEmpty(text)`).
-   - Safe timer disposal on navigation / unload (`Deactivate()`, `IDeactivatableView`, `Unloaded`).
-   - Eliminated white theme flicker completely on theme switch in `MainWindow.xaml.cs:ApplyTheme()`, removing the temporary flip to `ElementTheme.Default` and mutating `RootGrid.Resources` in place.
-3. **UI Layouts Track**:
-   - Styled `MyListsPage` list tabs as rounded pill capsules (`TabPillItemStyle` with `CornerRadius="12"`, background `#1F2937`, active `#1A324A` with accent border).
-   - Re-introduced 3-tab media type selector in `LibraryPage.xaml`: `[ All ] | [ Movies ] | [ TV Shows ]` with fast in-memory filtering.
-   - Replaced `SplitButton` with native WinUI 3 `DropDownButton` (single unified rectangle with text + chevron) for sort options.
-   - Overrode `InfoBar` success brushes in `ThemeResources.xaml` to dark slate `#202B35`, permanently removing sour yellow (#3d3a17).
-3. **TMDB Engine & Metadata Track**:
-   - Fixed root cause of `"The operation could not be completed. Please retry."`: Assigned `_matching = matching;` in `AppServices.cs`.
-   - Handled query titles with embedded release years (e.g., "Zodiac 2007") using `TrailingYearRegex` in `MetadataMatchingService.cs`.
-   - Implemented natural, non-trapping auto-focus in `MatchMediaDialog.cs`: autofocuses on `_titleBox` with text selected, explicit `TabIndex` order, full keyboard navigation.
-   - Upgraded poster downloads to high-res `w500` with fallback chains (`w780`, `w500`, `w342`, `original`) in `DiskPosterCache.cs`.
-   - Ensured immediate UI update in `MovieDetailsPage.xaml.cs` and `TVShowDetailsPage.xaml.cs` by awaiting poster caching before reloading the view.
-4. **My Lists & Trakt Unified Redesign Track**:
-   - Removed redundant list name heading (`ListNameText`), recovering vertical space and pulling cards up.
-   - Grouped custom list management into primary `+ Add Media` (`AccentControlButtonStyle`) and a compact native WinUI 3 `MenuFlyout` (`[ ••• More ]` containing `Rename` and `Delete`), hiding options on system lists.
-   - Redesigned Trakt Hub into a clean card container (`CardBackgroundFillColorDefaultBrush`) with a distinct Trakt badge (`TRAKT HUB`), unified segmented pill selectors, and quick-access action buttons.
-   - Implemented native `+ New Trakt List` with a sleek `ContentDialog` for instant list creation and automatic tab refresh.
-   - Elevated `SearchBox` to the header row parallel to `My Lists` title and count on the far right.
-   - Created native lightweight `controls:WrapPanel` for `ListSelector`, allowing list capsules to wrap onto multiple lines across full width with ZERO horizontal scrollbar clutter.
-5. **Release & Packaging Track**:
-   - Upgraded version to `0.12.0` across `TBDMovies.UI.csproj` and `TBD-Movies.iss`.
-   - Verified visual UI state live in desktop environment using `cua-driver`.
-   - Built official Inno Setup installer: `TBDMoviesSetup.exe` (34.9 MB).
-   - Created portable distribution archive: `TBD-Movies-v0.12.0-portable.zip` (48.4 MB).
-   - Passed all 1,030 unit tests with 0 failures in Release configuration.
-   - Pushed all 14 commits to `main` on GitHub (`origin/main`).
-   - Published official GitHub Release `v0.12.0` with both Setup and Portable assets attached.
+47. **Instant Library Rendering & Release Executable Production [U9-EXE]**:
+    - **Synchronous Instant Rendering (`LibraryPage.xaml.cs`)**:
+        - Replaced asynchronous `LoadShowsAsync()` and its background thread scheduling with synchronous, instantaneous `LoadShows()` matching `LoadMovies()` and `HomePage.LoadShows()`.
+        - Eliminated the `_showsLoading` spinner trap (`if (_showsLoading && (_movies is null || _movies.Count == 0))`) from `Refresh()` that previously locked the library in a loading spinner when clicking the TV shows tab.
+        - Enabled immediate 0ms perceptual display for all 90 movies and 16 shows across All, Movies, and TV Shows tabs.
+    - **Release Build & Packaging**:
+        - Successfully compiled clean Release binary: `TBDMovies_WinUI3\src\TBDMovies.UI\bin\Release\net10.0-windows10.0.22621\win-x64\TBD-Movies.exe`.
+        - Build: 0 Warning(s), 0 Error(s). Tests: 1,143 / 1,143 passed (100%).
+        - Development frozen until user completes midterms.
 
-6. **Test Suite Modernization & Clean-up Track**:
-   - Removed obsolete legacy V1 tests: `PersistenceTests.cs` and `MigrationUpgradeTests.cs`.
-   - Cleaned up empty leftover artifact directories under `Domain/Library` and `Domain/Media`.
-   - Consolidated duplicate tests: merged `TvManualMatchReproTests.cs` into `TvPersistedManualMatchTests.cs`, `TraktListWriterTests.cs` into `TraktDataClientTests.cs`, and `DiscoveryNetworkHardeningTests.cs` into `NetworkHardeningTests.cs`.
-   - Zeroed all xUnit warnings: resolved blocking operations (`xUnit1031`) in `WriteCoordinationTests.cs` and collection assertions (`xUnit2013`) in `MovieIdentityConflictPersistenceTests.cs`.
-   - Validated: 1,026 / 1,026 tests passing (100% Pass) with 0 Warnings and 0 Failures.
+46. **Database Migration 23, Library Loading Resilience & Trakt Sync Hardening [U9-Hardening]**:
+    - **Database Migration 23 (`DatabaseMigrator.cs:718-733`)**:
+        - Rebuilt `custom_list_pending_actions` via `custom_list_pending_actions_new` allowing `NULL` `media_kind` and `tmdb_id` for list-level `CREATE_LIST` actions with `CHECK (action_type IN ('ADD', 'REMOVE', 'CREATE_LIST'))` (`1,136 / 1,136` tests).
+    - **LibraryPage Lifecycle & Resilience (`LibraryPage.xaml.cs`)**:
+        - Eliminated suicidal catalog cache purge on background Trakt revision increments in `LoadMovies()`.
+        - Tolerant snapshotting in `LoadShowsAsync()` accepting generation results without dropping shows on revision bump.
+        - Proper page lifecycle management in `Deactivate()` setting `_isActivated = false` to prevent background tasks touching unloaded visual tree.
+        - Memory leak prevention: explicit `Dispose()` on `_cachedShowCards` dictionary upon catalog reload, and immediate `.ToArray()` materialization of movie/show cards in `PopulateLibrary()` to avoid re-evaluation.
+        - Partial failure isolation: TV shows loading errors no longer brick the page into `Error` state if movies are already loaded.
+    - **Trakt Sync Hardening & Anti-Zombie Architecture (`TraktSyncService.cs` & `PersonalLibraryRepository.cs`)**:
+        - Remote-deleted lists are removed immediately via `DeleteCustomListCascade(local.Id)` (`TraktSyncService.cs:1684`) when `userListsSuccess == true` (`PENDING_DELETE` is reserved strictly for local deletions awaiting upload).
+        - Added `ListDeletedCustomLists()` to `IPersonalLibraryRepository` with safe default interface implementation to query `is_deleted = 1` tombstones without breaking test doubles.
+        - Two-factor safety guard against accidental remote wipes: skipped remote deletion reconciliation when `userListsSuccess == false` (`L1666`; dedicated unit test still pending under `[U9]`).
+        - Tombstone protection in `UpsertTraktCustomList` preventing incoming Trakt list queries from clearing `is_deleted = 1` on lists pending deletion (`PENDING_DELETE`).
+        - Fixed null-safety in `ITraktDataClient.AddCollectionBatchAsync` handling null batch inputs without `NullReferenceException`.
+    - **Verification**:
+        - Release Build: 0 Warning(s), 0 Error(s).
+        - Unit Tests: 1,143 / 1,143 passed (100% Pass rate across all projects).
 
-7. **Library Multi-Select & Batch Actions Polish Track**:
-   - Escape accelerator: Global `KeyboardAccelerator` cancels multi-select and clears state; augmented with `PreviewKeyDown` (`handledEventsToo: true`) on grid containers to prevent focus trapping after manual card clicks.
-   - Layout spacing: Isolated `SelectionCommandBar` into its own `Auto` row, pushing the grid down smoothly; added 16px vertical breathing margin (`Margin="0,16,0,0"`) separating filter/view tabs from cards.
-   - View switcher styling: Styled `GridViewModeItem` and `CompactViewModeItem` as oval pill capsules (`PillSelectorBarItemStyle`, `CornerRadius="12"`), eliminating underline.
-   - Auto-scroll & Cumulative drag: Auto-scrolls vertical view smoothly; maintains `_dragAccumulatedKeys` so items touched during a drag remain selected even as earlier rows scroll out of view (fixing virtualization loss).
-   - Header notification: Placed `HeaderNotificationBadge` in empty space between library title and search box (`Grid.Column="1"`), auto-dismissing in 3s.
-   - Deduplication & detailed counts: Compares selection against existing items in target custom list, adds only new entries, and presents clear breakdown of movies and TV shows added (e.g., "5 movies and 3 TV shows").
-   - Native scroll performance & Escape window hook: Removed UI-thread pointer hooking and card hover spam restoring 60/120fps DirectManipulation; hooked Escape globally on `XamlRoot.Content`. Removed movie/show badge from cards.
+45. **External Player Timeline Tracking Scaffolding [U2 — Initial Attempt, Superseded by Open U10]**:
+    - **Timeline Tracker Scaffolding (`IPlayerTimelineTracker`)**:
+        - Created `MpcWebTimelineTracker`, `VlcHttpTimelineTracker`, `MpvPipeTimelineTracker`, and `WindowsMediaTimelineTracker` (`GSMTC` with `UseShellExecute = true` for `WindowsApps` paths).
+    - **Periodic Database Auto-Save & Scrobble Thresholds (`PlayerProcessLauncher.cs` & `PlaybackTrackingService.cs`)**:
+        - 1-second polling loop with periodic 5-second database saves (`!isPaused && Math.Abs(pos - lastSaved) >= 3.0`).
+        - 90% rule: Marks media as watched locally and sends Trakt Scrobble `Stop` when progress `>= 90%` (sending `Pause` under 90% to avoid premature Trakt 80% auto-watched).
+        - 92% rule: Clears resume point when approaching end credits.
+    - **Live Playback Status**: Live testing (`2026-11-16`) showed position freezing at 30 seconds and ignoring Seek/PlaybackRate; root causes are tracked under open **`[U10]`** in `/BUGS.md`.
+    - **Unit Tests at Checkpoint**: 1,135 / 1,135 passed (`0 Warning(s), 0 Error(s)`).
 
-8. **Unified Fluent Corner Radius (Squircle / Radius 8) Track**:
-   - Tab pills & view switcher: Softened `TabPillItemStyle` and `PillSelectorBarItemStyle` from 12 to `CornerRadius="8"` across Library, My Lists, and Trakt, eliminating exaggerated pill shapes.
-   - Native rounded SearchBox: Engineered `SearchBoxTextBoxStyle` for `AutoSuggestBox.TextBoxStyle` with native `CornerRadius="8"`, uniform 1px border (`ControlStrokeColorDefaultBrush`), and Fluent interactive states, completely eliminating the default flat look and bottom-only elevation underline.
-   - Global control consistency: Centrally aligned `<CornerRadius x:Key="ControlCornerRadius">8,8,8,8</CornerRadius>` and updated all button styles (`SubtleControlButtonStyle`, `AccentControlButtonStyle`, `IconActionButtonStyle`, `TextActionButtonStyle`).
+44. **Playback Resume UI, SplitButton Flyout, 3s Threshold & Poster Progress Bar [U1 — UI Built, Tracking Superseded by Open U10]**:
+    - **Never-Collapse Flyout Architecture (`MovieDetailsPage.xaml.cs` & `TVShowDetailsPage.xaml.cs`)**:
+        - Flyout items ("Play from beginning" & "Clear resume point") remain permanently visible (`Visibility.Visible`), controlled via `IsEnabled`.
+    - **Unified 3-Second Resume Threshold (`PlaybackModels.cs:27`)**:
+        - Lowered `HasResumePosition` threshold from `15.0s` to `PositionSeconds >= 3.0` to align 1:1 with the persistence filter (`[U1-متابعة]`).
+    - **Dual-Query Fallback, Live Event Subscription & Thin Poster Progress Bar (`4px`)**:
+        - Queries progress by `MediaFileId` then `movieId` / `episodeId`; added `PosterProgressBar` (`CornerRadius="0,0,8,8"`) and decoupled `StartPlaybackAsync` (`CancellationToken.None`).
+    - **Unit Tests at Checkpoint**: 1,131 / 1,131 passed (`0 Warning(s), 0 Error(s)`).
 
-9. **TV Shows Auto-Select, Check Library View Action & In-Page Relink Track**:
-   - **TV Shows Batch Auto-Select**: Resolved deselection bug in `AddMediaPage.xaml.cs`. TV episodes now rely on `CanAdd` in `SelectReadyButton_Click`, auto-selection is re-asserted in `ReviewMetadataAsync:finally`, `ReclassifyRows` automatically selects valid episodes, and `AddMediaReviewFacts` treats TV episodes with `CanAdd` as `Ready`. Group headers automatically compute and reflect full checked state (`true`).
-   - **Check Library View Action**: Replaced obsolete "Open Folder" button on missing items with native "View" (`\uE890` icon + `ViewAction` label). Added `FindShowForMediaFile` in `ITvLibraryUiActions`/`TvLibraryService` and hooked `ShowReviewRequested` / `MovieReviewRequested` to navigate directly to `TVShowDetailsPage` or `MovieDetailsPage` with seamless Back navigation to `check`.
-   - **Details Page Play Button -> Relink on Missing Media**: In `MovieDetailsPage`, missing files dynamically switch `PlayButton` from grey/disabled into an active native blue Accent button (`DetailsAccentButtonStyle`) with `\uE71B` link icon and `Relink` text, invoking `FileOpenPicker` and reconciliation relink. Upon successful relink, the button automatically reverts to `[ ▶ Play ]`. In `TVShowDetailsPage`, episode rows and `PlayNextButton` similarly transform into active Relink buttons when files are missing.
+43. **Unified Trakt Custom Lists & Local Lists [U9 — Core Implemented, Sub-items Open in `/BUGS.md`]**:
+    - **Database Migration 22 (`DatabaseMigrator.cs`)**:
+        - Added columns `trakt_list_id`, `trakt_slug`, `sync_status`, `is_deleted`, and `last_synced_at` to `custom_lists`.
+        - Recreated `custom_list_members` to support cloud-only items (`movie_id IS NULL AND show_id IS NULL AND tmdb_id > 0`), added `cloud_title` and `cloud_year`, and set partial unique index `ux_custom_list_members_tmdb`.
+        - Created `custom_list_pending_actions` queue table for offline additions and deletions.
+    - **Domain & Repository Architecture (`PersonalLibraryRepository.cs`)**:
+        - Implemented `UpsertTraktCustomList` with automatic **`[TBD] {name}`** prefix disambiguation on name collisions.
+        - Implemented `AddCloudMediaToCustomList`, `RemoveCloudMediaFromCustomList`, `EnqueuePendingAction`, `ListPendingActions`, and `DeletePendingAction`.
+        - Updated `ListCustomListItems` query to combine local movies, local shows, and cloud-only media.
+    - **Two-Way Custom List Sync (`TraktSyncService.cs`)**:
+        - Implemented `ReconcileCustomListsAsync`, added `POST /users/me/lists` (`CreateCustomListAsync`), and enqueued `CREATE_LIST` on local list creation (remaining gaps for Show Favorites pull/upload and safeguard unit test tracked in `/BUGS.md`).
+    - **UI Consolidation (`MyListsPage.xaml`, `MyListsPage.xaml.cs`)**:
+        - Consolidated custom lists into a single continuous `WrapPanel` tab strip (`ListSelector`), removed `TraktRow` border and `TraktTabItem`, added `SyncStatusText` / `SyncNowButton`, and displayed cloud badges.
+    - **Verification & Test Suite**:
+        - Build: 0 Warning(s), 0 Error(s).
+        - Unit Tests: `1,131 / 1,131` on initial `UnifiedTraktListsTests` pass, rising to `1,132 / 1,132` after sync test addition.
 
-10. **TV Shows Multi-Folder Unification, Visual Indentation & View Mode Toggle Icons Track**:
-    - **Library View Mode Toggle Icons**: Corrected inverted and improper Segoe Fluent Icons in `LibraryPage.xaml` and `LibraryPage.xaml.cs`. Grid mode (viewing posters) now displays List icon `\uEA37` (`Symbol.List`) with "List view" tooltip; Compact mode (viewing list) displays Grid icon `\uE8A9` (`Symbol.ViewAll`) with "Grid view" tooltip.
-    - **TV Shows Multi-Folder Unification (`AmbiguousPathProvenance` Lockout Fix)**: In `TvBatchAnalysisService.cs`, grouped series candidates by `NormalizeKey(Title)` so multiple season folders (e.g. `Inside Job\Season 1` and `Inside Job\Season 2`) unite under a single parent series candidate (`Inside Job · 18 files`). Ambiguous folder paths no longer clear `CanImport = false` on non-colliding episodes. In `AddMediaModels.cs`, updated `TvGroupKey` to unify on show identity, and removed `AmbiguousPathProvenance` from `CanSelect` exclusion list so candidate checkboxes are fully selectable. In `LocalizationService.cs`, updated `TvBatchCorrect` from "Select" ("اختيار") to "Edit" ("تعديل") and added `TvBatchCorrectionTitle` ("Edit Series" / "تعديل المسلسل").
-    - **Submenu Visual Indentation Hierarchy**: Structured visual hierarchy in `AddMediaPage.xaml`, `TvReviewGroupHeader.cs`, and `AddMediaModels.cs`: Level 0 (Show Header) has Margin `0,0,0,0`; Level 1 (Season Header) has nested Margin `32,0,0,0`; Level 2 (Episode Rows) has indented Margin `64,0,0,0`.
+42. **Performance & UI Refresh Optimization [U8] — In-Place UI Updates Across Library, Custom Lists, and Home Pages**:
+    - **Single-Item Database Lookups (`MediaCardContextMenu.cs`)**:
+        - Replaced full table scans (`ListMovies().FirstOrDefault()` / `ListShows().FirstOrDefault()`) with direct single-item lookups (`GetMovieItem(id)` / `GetShowDetails(id)`), eliminating 1,000+ row SQLite scans on right-click context menu opens.
+    - **Activity Shelf Dirty Flag & Revision Check (`HomePage.xaml.cs`)**:
+        - Introduced `_activityDirty` boolean flag subscribed to `AppServices.PlaybackTracking.PlaybackEnded`.
+        - In `Activate()`: compares `_lastLoadedCatalogRevision` with `AppServices.CatalogRevision`. Skips full database and shelf re-query if the catalog has not changed.
+        - Only refreshes Continue Watching / Recent activity shelves when `_activityDirty` is true.
+    - **Library Card Item Caching & In-Place File Patching (`LibraryPage.xaml.cs` & `MainWindow.xaml.cs`)**:
+        - Implemented `_cachedMovieCards` and `_cachedShowCards` to reuse `LibraryCardItem` instances across filter/search keystrokes in `PopulateLibrary()`.
+        - Tied cache invalidation strictly to explicit `InvalidateCatalog()` calls.
+        - Replaced full catalog invalidation on `MediaPathChanged` with surgical `PatchMovieFileChanged(movieId)`.
+        - Prevented full catalog reload on `RecordMovieOpened` / `RecordShowOpened`.
+    - **In-Place Custom List Mutations & Trakt N+1 Fix (`MyListsPage.xaml.cs` & `MyListsPage.Trakt.cs`)**:
+        - Removed `Invalidate()` + `Refresh()` churn on list removals, media picker additions, and list renames.
+        - Deletions update `_sectionItems`, UI view, item counters, and toggle `EmptyState` in-place using database-first sequencing.
+        - Renaming lists updates tab label and `_customLists` directly without rebuilding tabs.
+        - In `CreateMediaItemFromTrakt`: replaced sequential N+1 table scans with single-item lookups.
+    - **Build & Tests**:
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - 1,126 / 1,126 unit tests passing (100% Pass).
+41. **UI Spacing Fix [U5-B] — Vertical Gap Reduction in MovieDetailsPage & TVShowDetailsPage**:
+    - **Problem**: Excessive vertical gap between poster/HeroCopyPanel content and the separator line above "Watch activity" / "Local file" sections. User reported it looked unbalanced.
+    - **Fix Applied**:
+      - `MovieDetailsPage.xaml`: `PageContent` Spacing `16 → 8`, `HeroGrid` RowSpacing `24 → 16`.
+      - `TVShowDetailsPage.xaml`: `HeroGrid` RowSpacing `32 → 16`.
+    - **Build**: 0 Warnings, 0 Errors ✅
+    - **Tests**: 1,124 / 1,124 Passed (no regressions).
 
-11. **Library Cards Hover Selection Indicator & Empty Space Marquee Drag Track**:
-    - **Hover Checkbox Appearance**: Enabled subtle checkbox circle appearance on hovering over library cards in `LibraryCardItem.cs`, `LibraryPage.xaml`, and `LibraryPage.xaml.cs`. `SelectionIndicatorVisibility` reflects `IsHovered`, displaying `HoverBg` and `HoverBorder` at `0.85` opacity, disappearing gracefully on pointer exit unless selected or selection mode is active.
-    - **Marquee Selection Restricted to Empty Space**: Guarded `OnGridPointerPressed` with `IsInsideGridViewItem(DependencyObject)`. Pointer drag initiated directly over a card (`GridViewItem`) or scrollbar does not draw the marquee rectangle, reserving marquee selection exclusively for dragging from empty spaces between and around cards.
+40. **Process Safety [L9] — Zombie Instance Disambiguation**:
+    - **SessionId Filter**: Only processes in same Windows logon session are considered (protects RDP / Fast User Switching environments).
+    - **Executable Path Filter**: `Environment.ProcessPath` vs `candidate.MainModule.FileName` — prevents killing unrelated apps that share the same process name.
+    - **Startup Grace Period**: Processes running < 10 seconds are polled for up to 3 seconds before any kill decision (prevents DB migration corruption on double-click).
+    - **FindApplicationMainWindow()**: Window title must contain "TBD Movies" (via `GetWindowText` P/Invoke).
+    - **RestoreAndForegroundWindow()**: Uses `BringWindowToTop` + `IsIconic` for precise minimize-restore.
+    - **Lock Retry Loop**: 5-attempt × 150ms (handles Defender/AV file handle delays).
+    - **Build**: 0 Warnings, 0 Errors | **Tests**: 1,124 / 1,124 | **EGM Verdict**: APPROVED 🟢
 
-12. **Vertical Media Card Text Inset & Visual Breathing Space Track**:
-    - **Card Height & Bottom Breathing Margin**: Increased `MediaCardItemHeight` from 346 to `360` in `ThemeResources.xaml` to provide true vertical space for cards across all grids.
-    - **Text Spacing & Distinct Bottom Clearance**: Set `Margin="6,0,6,14"` on text StackPanels across `LibraryPage.xaml`, `Templates.xaml`, and `MyListsPage.xaml`. This preserves full card presence without narrowing or squeezing titles (6px horizontal margin + 4px padding = 10px from lateral border), while delivering a prominent 18px total clearance (14px margin + 4px padding) between the release year and the card's bottom rounded boundary.
-13. **Automatic Dead Missing Files Pruning Track**:
-    - **Episode & Movie Replacement Pruning**: In `ImportService.cs`, when linking a new verified media file to an episode or movie, automatically prunes any existing old media files for that same episode or movie that are `Missing` or absent from disk.
-    - **Reconciliation Auto-Prune**: In `ReconciliationService.cs`, added `PruneDeadMissingFiles()` to clean up dead missing records from `media_files` and `episode_media_files` whenever an episode or movie possesses another file that is present on disk. Invoked at the conclusion of `ReconcileLibraryFiles()`.
-    - **CheckLibrary Defensive Filter**: In `CheckLibraryPage.xaml.cs`, `MissingFiles()` triggers `PruneDeadMissingFiles()` and excludes any file where another valid media file exists for that episode or movie.
+39. **Security & State Unification [L7] — TMDB Credential Fallback Order, Single Source of Truth & Secret Hygiene**:
+    - **Single Source of Truth (`SettingsService.cs` & `AppServices.cs`)**:
+        - Refactored `SettingsService` to serve as the exclusive, authoritative gatekeeper for TMDB credentials, accepting an optional `Func<string?> environmentTokenProvider`.
+        - Windows Credential Manager (`WindowsTmdbCredentialStore`) has strict, absolute priority. Environment variables (`TMDB_READ_TOKEN` / `TMDB_API_KEY`) act strictly as fallbacks when the store is empty.
+        - Eradicated the split-brain composition bypass in `AppServices.cs:604-605` (`() => settings.GetTmdbToken()`), unifying UI state reporting and network client token provisioning.
+    - **Anti-Zombie Secret Hygiene (`tmdb_explicitly_removed`)**:
+        - Explicit credential removal via `SettingsService.RemoveTmdbCredentialAsync()` records persistent `tmdb_explicitly_removed = "true"` in SQLite settings and nullifies active memory state.
+        - Prevents ambient environment variables from resurrecting deleted keys across application restarts.
+        - Saving a new credential via `SaveTmdbCredentialAsync()` clears the flag and restores normal lifecycle.
+    - **Input Sanitization & CRLF Defense**:
+        - Added `SettingsService.SanitizeAndValidateTmdbToken()` stripping wrapping quotes and whitespace, enforcing length boundaries `[20, 2048]`, and rejecting control chars (`\r`, `\n`, `\0`) and non-ASCII ranges to eliminate HTTP header injection vulnerabilities.
+    - **Unit Test Coverage (`SessionCredentialRegressionTests.cs`)**:
+        - Added 6 comprehensive unit tests covering fallback priority, explicit removal retention, re-enabling on save, and robust input validation/sanitization.
+    - **Dual Goldfish Audit & Verification**:
+        - Audited by EGM Security Critic (`egm-design`) and verified by independent Code Reviewer (`reviewer`) with unanimous `APPROVED 🟢`.
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - 1,124 / 1,124 unit tests passing (100% Pass).
 
-14. **Official Release v0.12.5 Packaging Track**:
-    - **Version Bump**: Updated version to `0.12.5` across `TBDMovies.UI.csproj` (`<Version>`, `<AssemblyVersion>`, `<FileVersion>`) and `TBD-Movies.iss` (`MyAppVersion`, `VersionInfoVersion`).
-    - **Release Build & Inno Setup Installer**: Built self-contained Release binaries (`win-x64`) and compiled Windows installer `TBDMoviesSetup.exe` (34.9 MB) to `artifacts\release\0.12.5\TBDMoviesSetup.exe`.
-    - **Portable Distribution Zip**: Synced Release payload to `D:\TBD-Movies\portable\` and generated portable distribution archive `TBD-Movies-v0.12.5-portable.zip` (48.4 MB) in `artifacts\release\0.12.5\`.
-    - **Database Verification**: Verified in live `library.db` that duplicate/dead missing paths for `Inside Job` are completely resolved (0 missing, 18 present).
+38. **Security Hardening [L5] — TMDB Client Auto-Redirect Restriction & Credential Leakage Prevention**:
+    - **SocketsHttpHandler Security Parity (`TmdbClient.cs`)**:
+        - Initialized default `_httpClient` using `SocketsHttpHandler` with `AllowAutoRedirect = false` and `disposeHandler: true`, matching `TraktDataClient` and `TraktAuthClient`.
+        - Eradicated silent 3xx redirect following (up to 50 hops default), preventing credential exfiltration (v3 query-string `api_key` and v4 JWT Bearer tokens) to third-party endpoints or via Open Redirect attacks (CWE-200 / CWE-522 / CWE-918).
+        - Guaranteed clean connection pool and handler disposal upon `TmdbClient.Dispose()`.
+    - **Unit Test Coverage (`TmdbClientAndPosterCacheTests.cs`)**:
+        - Added `TmdbClient_DefaultConstructor_ConfiguresSocketsHttpHandlerWithoutRedirects` (reflection check ensuring production default client uses `SocketsHttpHandler` with `AllowAutoRedirect == false`).
+        - Added `TmdbClient_DoesNotFollowRedirects_RejectsWithFailure` (verifying 3xx redirect returns fast fail `MetadataFailureKind.Api` and prevents follow-up HTTP requests).
+    - **Dual Goldfish Audit & Verification**:
+        - Audited by EGM Security Critic (`egm-design`) and verified by independent Code Reviewer (`reviewer`) with unanimous `APPROVED 🟢`.
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - 1,111 / 1,111 unit tests passing (100% Pass).
+37. **Security Hardening [L4] — Poster Download Size Ceiling & Disk Flooding Prevention in DiskPosterCache**:
+    - **Multi-Phase Size Protection (`DiskPosterCache.cs`)**:
+        - Defined `DefaultMaxPosterSizeBytes = 10 * 1024 * 1024` (10 MB ceiling) with optional constructor parameter for deterministic testability.
+        - Phase 1 (Header Pre-Check): Aborts immediately before generating temp GUID file if advertised `Content-Length > _maxPosterSizeBytes`.
+        - Phase 2 (Bounded Streaming): Replaced unbounded `CopyToAsync` with 8 KB chunked buffer loop tracking cumulative bytes; immediately breaks and purges temp file if threshold is exceeded on chunked streams.
+        - File Lock Safety: Scoped `FileStream` disposal prior to invoking `TryDeleteFile(tempPath)` to guarantee zero Win32 sharing violations.
+    - **Unit Test Coverage (`TmdbClientAndPosterCacheTests.cs`)**:
+        - Added `DiskPosterCache_RejectsOversizedPoster_ViaContentLengthHeader` and `DiskPosterCache_AbortsOversizedPoster_DuringStreamingWithoutContentLength`.
+    - **Dual Goldfish Audit & Verification**:
+        - Audited by EGM Security Critic (`egm-design`) and verified by independent Code Reviewer (`reviewer`) with unanimous `APPROVED 🟢`.
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - 1,109 / 1,109 unit tests passing (100% Pass).
+
+36. **Security Hardening [L3] — Strict Cryptographic HTTPS Enforcement on TMDB URLs**:
+    - **Protocol Allowlist Restriction (`TmdbUrl.cs`)**:
+        - Enforced strict `string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)` rejecting plain `http://` or other unencrypted protocols.
+        - Preserved safe UX auto-upgrade for bare domain strings pasted by the user (`themoviedb.org/movie/123` -> `https://themoviedb.org/movie/123`).
+    - **Test Suite Updates (`TmdbUrlTests.cs`)**:
+        - Updated tests to assert explicit rejection for lowercase, uppercase, and subdomain `http://` URLs.
+    - **Dual Goldfish Audit & Verification**:
+        - Audited by EGM Security Critic (`egm-design`) and verified by independent Code Reviewer (`reviewer`) with unanimous `APPROVED 🟢`.
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - 1,107 / 1,107 unit tests passing (100% Pass).
+
+35. **Security Hardening [L2] — Shell Execution & MediaFileActions Protection Against Binary Planting and ADS**:
+    - **System Binary Isolation (`MediaFileActions.cs`)**:
+        - Enforced absolute system path for Windows Explorer via `Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe")`, eliminating CWE-426 Untrusted Search Path / CWD binary hijacking.
+        - Explicitly routed folder launches (`Directory.Exists(cleanPath)`) through trusted Explorer binary rather than arbitrary shell protocol handlers.
+        - Isolated `WorkingDirectory` to system Windows folder or containing media directory, preventing DLL hijacking from untrusted CWD.
+    - **NTFS Alternate Data Stream (ADS) & Path Sanitization**:
+        - Introduced `HasAlternateDataStream` validator rejecting any colon `:` beyond legal drive letter positions (including long UNC `\\?\` devices).
+        - Applied `Path.GetFullPath(path).TrimEnd(' ', '.').Replace("\"", "")` sanitization to prevent CLI argument escape and trailing-character extension bypasses.
+    - **Dual Goldfish Audit & Verification**:
+        - Audited by EGM Security Critic (`egm-design`) and verified by independent Code Reviewer (`reviewer`) with unanimous `APPROVED 🟢`.
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - 1,105 / 1,105 unit tests passing (100% Pass) with new ADS security tests.
+34. **UI Performance Optimization [U8 — Phase 1, Expanded in #42] — Decoupled Silent Background List Update in HomePage**:
+    - **Context Menu Reload Decoupling (`HomePage.xaml.cs:310-311`, expanded to targeted `onChanged` in Phase 2 `#42`)**:
+        - Removed destructive `onChanged: Activate` callback from `Home_ContextRequested`.
+        - Replaced with direct `MediaCardContextMenu.ShowForContext(this, e)`, later refined in `#42` with targeted shelf/revision refresh.
+        - Eliminated full-library re-querying (`LoadMovies`, `LoadShows`, `LoadHistory`, `BuildStats`, `UpdateActivityShelves`), eradicating visible UI flicker, focus loss, and CPU/Disk I/O spikes when toggling custom lists, favorites, or watchlist.
+        - Retained 100% durable background persistence in SQLite and asynchronous Trakt sync.
+    - **Independent Goldfish Audit & Verification**:
+        - Audited and approved by Goldfish Critic (`APPROVED 🟢`).
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - 1,103 / 1,103 unit tests passing (100% Pass).
+33. **UI/UX & Responsive Layout Optimization [U5] — Multi-Screen Responsive Refinement, WrapPanel Action Bar & Wide Alignment**:
+    - **Movie Overview Alignment Fix (`MovieDetailsPage.xaml`)**:
+        - Set `OverviewText` and `OverviewToggleButton` to `HorizontalAlignment="Left"`.
+        - Eradicated the ~290px centering gap on wide displays caused by `Stretch` + `MaxWidth="{StaticResource ProseMaxWidth}"`, ensuring flush alignment with title, metadata, and buttons.
+    - **WrapPanel Action Bar (`MovieDetailsPage.xaml` & `TVShowDetailsPage.xaml`)**:
+        - Replaced rigid StackPanels with `controls:WrapPanel` (`Orientation="Horizontal" RowSpacing="8" ColumnSpacing="8"`).
+        - Action buttons remain in a clean, single panoramic row across wide and medium viewports, wrapping naturally down without clipping or premature 2-row vertical stacking.
+        - Removed rigid `<Setter Target="CommandsPanel.Orientation" Value="Vertical" />` overrides in `DetailsMediumState`, `ShowMediumState`, and `ShowNarrowState`.
+    - **TV Show Rightward Expansion & Sizing (`TVShowDetailsPage.xaml` & `.xaml.cs`)**:
+        - Expanded `OverviewText.MaxWidth` to `1000px`, allowing synopsis to breathe and extend naturally to the right.
+        - Wrapped `ShowTitleViewPanel` in `controls:WrapPanel` to prevent infinite width measurement issues with long titles.
+        - Lowered Wide breakpoint from `1050px` to `950px` (and Medium to `700px`), ensuring laptop screens (1080p with 125%/150% scaling) retain the full wide panoramic presentation.
+    - **Vertical Spacing Tightening & Benchmark Scale (`MovieDetailsPage.xaml` & `TVShowDetailsPage.xaml`)**:
+        - Applied standard benchmark 2:3 poster scale in Wide state (`340px × 510px`, down from oversized 420x630), bringing the bottom of the poster up by 120px.
+        - Reduced vertical transition above and below the section divider to standard 16px (down from 40px/32px dead gaps).
+        - Raised the entire lower section (`Watch activity`, `Local file`, `Seasons`) by ~160px closer to the poster, creating a cohesive, well-proportioned layout without excessive empty gaps.
+    - **Independent Dual-Goldfish Audit & Verification**:
+        - Audited and approved by parallel Goldfish critics (`egm-design`).
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - 1,103 / 1,103 unit tests passing (100% Pass).
+32. **Security & Reliability Hardening [L1] — Savepoint Allowlist Validation & SQL Injection Hardening**:
+    - **Zero-Allocation Allowlist Validation (`CatalogRepositories.cs`)**:
+        - Added `ValidateSavepointName(string name)` enforcing `^[a-zA-Z_][a-zA-Z0-9_]*$` with a maximum length of 64 characters.
+        - Eliminated heap allocation risks by utilizing an indexed loop over string characters (`for (var i = 1; i < name.Length; i++)`).
+        - Enforced leading character restriction (`!char.IsAsciiLetter(name[0]) && name[0] != '_'`) to comply strictly with SQL standard grammar and eliminate SQLite lexical ambiguities.
+        - Applied sanitized exception messages without echoing unvalidated user inputs (preventing CWE-117 log forging).
+    - **Unit of Work Lifecycle Protection**:
+        - Added `if (_completed) throw new InvalidOperationException("Unit of work is already complete.");` to `Savepoint`, `ReleaseSavepoint`, and `RollbackToSavepoint`.
+    - **Test Coverage (`CatalogSavepointTests.cs`)**:
+        - Added 24 dedicated test cases covering valid identifiers, 64-char bounds, injection payload rejection, lifecycle exceptions (`Commit`, `Dispose`, `ReadOnly`), and verified SQLite transactional rollback semantics.
+    - **Verification**:
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - 1,103 / 1,103 unit tests passing (100% Pass).
+31. **Performance & Durability Optimization [P4] — Unified WAL Synchronous Mode in FileOperationStore**:
+    - **Unified Synchronous Pragma (`FileOperationStore.cs`)**:
+        - Replaced `PRAGMA synchronous = FULL;` with `PRAGMA synchronous = NORMAL;` on connection-level initialization in `FileOperationStore(SqliteConnection, ...)`.
+        - Aligned with `SqliteConnections.Open` and `DatabaseMigrator.cs:769` across the entire solution.
+        - Preserved SQLite WAL mode durability guarantees (ACID compliant against OS and app crashes) while eliminating periodic `fsync` disk I/O stalls during file operations (moving, renaming, restoring media files).
+    - **Verification**:
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - 1,079 / 1,079 unit tests passing (100% Pass).
+30. **Feature & Smoothness Optimization [P5-B] — Season Switching Transitions in TV Show Details**:
+    - **Engineered Micro Season Transitions (`TVShowDetailsPage.xaml.cs`)**:
+        - Implemented `PlaySeasonTransition()` providing the same 150ms entrance animation (`CubicEaseOut`).
+        - Applied `DoubleAnimation` on `Opacity` (0.0 to 1.0) and `TranslateTransform.Y` (15.0px to 0.0px) to `EpisodesRepeater`.
+        - Enforced smart conditional triggering: skips animation if the clicked season tab matches `_activeSeasonNumber`, and suppresses animation on initial page load (`animate: false` in `PopulateSeasons`) to avoid competing with page-level transitions.
+    - **Re-entrancy & Cancellation Safety**:
+        - Cancelled in-flight transitions on rapid tab clicks via `_activeSeasonTransitionStoryboard.Stop()`, resetting `EpisodesRepeater.Opacity = 1.0` and `TranslateTransform.Y = 0`.
+    - **Accessibility & Lifecycle Safety**:
+        - Adheres to `_uiSettings.AnimationsEnabled` (0ms snap when animations are disabled in Windows).
+        - Stopped active storyboard and nulled references in `Deactivate()`.
+        - Added defensive `AppServices.IsAvailable` guard before unsubscribing from `PlaybackTracking.PlaybackEnded` to prevent shutdown exceptions.
+    - **Verification**:
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - 1,079 / 1,079 unit tests passing (100% Pass).
+29. **Feature & Smoothness Optimization [P5] — Page Transitions (Micro Fade-In & Subtle Slide)**:
+    - **Engineered High-Performance Page Transitions (`MainWindow.xaml.cs`)**:
+        - Implemented `PlayPageTransition(Page page)` providing a buttery-smooth 150ms entrance animation (`CubicEaseOut`).
+        - Combined `DoubleAnimation` on `Opacity` (0.0 to 1.0) with `DoubleAnimation` on `TranslateTransform.Y` (15.0px to 0.0px) for a subtle upward entrance glide.
+        - Preserved 100% of the single-host cached page architecture (`ContentHost`), eliminating page recreation overhead and maintaining exact scroll positions, search text, tab selections, and multi-selection state across navigation.
+    - **Re-entrancy & Cancellation Safety**:
+        - Cancelled in-flight transitions on rapid navigation via `_activeTransitionStoryboard.Stop()`, immediately resetting the prior page to full opacity (1.0) and zero translation to prevent partial visibility glitches.
+    - **Accessibility & Windows Settings Compliance**:
+        - Integrated `_uiSettings.AnimationsEnabled`: instantly falls back to 0ms snap transition whenever animation effects are disabled in Windows Accessibility settings.
+    - **Lifecycle Clean-up**:
+        - Disposed/stopped active storyboard during `OnWindowClosed`.
+    - **Verification**:
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - 1,079 / 1,079 unit tests passing (100% Pass).
+28. **Feature & Latency Optimization [P3] — Startup Splash & Window Latency Elimination**:
+    - **Telemetry Engine (`StartupTelemetry.cs`)**:
+        - Engineered high-precision startup stopwatch logging segmented latencies: `PreInitMs` (single-instance claim), `WindowVisibleMs` (`_window.Activate()`), `ServicesInitMs` (background DB and service init), `HomePageLoadMs` (data hydration), and `TotalStartupMs` (splash dismissed).
+    - **Fast-Path Theme & Language Restoration (`AppServices.RestorePreferencesFast`)**:
+        - Isolated direct SQLite read-only connection with 1-second timeout, bypassing `lock (Gate)` and heavy service container instantiation.
+        - Applied prior to XAML layout realization in `MainWindow` constructor to guarantee zero white flash (Theme flicker) and zero RTL layout flip.
+        - Safe fallback to defaults `(AppTheme.Dark, UiLanguage.English)` on missing database file, unmigrated schema, or connection timeouts.
+    - **Integrated Splash Overlay & Hard Input Locking (`MainWindow.xaml` / `MainWindow.xaml.cs`)**:
+        - Created `StartupSplashOverlay` matching WinUI 3 Fluent styling with symbol `&#xE714;` (film reel), `TitleTextBlockStyle`, and indeterminate `ProgressBar`.
+        - Enforced strict input locking during background initialization: disabled navigation pane (`ShellNavigation.IsEnabled = false;`), guarded keyboard accelerators (`settingsShortcut` and `EscAccelerator` return `args.Handled = true` if `!AppServices.IsAvailable`), and set `IsHitTestVisible="True"` on splash overlay.
+    - **Asynchronous Service Initialization (`App.xaml.cs`)**:
+        - Shifted `AppServices.Initialize` off the UI thread via `Task.Run()`.
+        - Immediate window presentation via `_window.Activate()` before services complete.
+        - Coordinated UI readiness via `await mainWindow.CompleteStartupAsync(initServicesTask)` which awaits services, hydrates home page data, dismisses splash, and unlocks navigation controls.
+    - **Independent Code Review**:
+        - Subagent Goldfish 1 (`0bfa2d3c-d068-4dec-97cc-85ffd49cd724`) conducted comprehensive code review verifying all 4 strict user constraints with zero material defects.
+    - **Verification**:
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - 1,079 / 1,079 tests passing (100% Pass).
+27. **Architecture Resolution [P2] — Library Grid Paging vs Virtualized In-Memory Collection (Closed as By Design)**:
+    - **In-Depth Goldfish Architectural Evaluation**:
+        - Audited `LibraryPage.xaml` / `LibraryPage.xaml.cs` and confirmed hardware-accelerated UI Virtualization is active and functioning via `ItemsWrapGrid` inside bounded row height (`Grid.Row="1" Height="*"`).
+        - Measured memory footprint: 10,000 lightweight `LibraryCardItem` models require only ~4-5 MB RAM in .NET 10 64-bit; initial SQLite read takes only 15-25ms.
+        - Virtualized grid only realizes ~30-50 visual card controls in memory, dynamically recycling them during scrolling.
+        - Evaluated database-level keyset paging proposal: rejected because `ListPage` was strictly ID-only (lacking support for Title, Year, Rating, and LastOpenedAt with NULLs), no `ListPage` exists for TV shows, the unified `[ All ]` tab would require an extremely fragile `UNION ALL` across colliding ID spaces, and pushing instant search to SQL would require JSON parsing on keystrokes.
+        - Formally concluded that the current in-memory cached architecture is the optimal, lowest-latency design for modern desktop SSD environments. Preserved UI-level chunking as a potential future consideration for collections exceeding 50,000 items.
+26. **BugFix [P1] — Continue Watching N+1 Query Elimination in Home Page**:
+    - **Two-Tier Architecture Engineered**:
+        - **Tier 1 (Fast-Path SQL Reader)**: Added `ITvContinueWatchingReader` interface to `ITvRepositories.cs`. Implemented directly in `TvShowRepository.cs` and `CatalogRepositoryAdapters.cs` using a single CTE query with Window Function (`ROW_NUMBER() OVER (PARTITION BY se.show_id ORDER BY COALESCE(se.season_number, 2147483647) ASC, e.episode_number ASC)`).
+        - Driven from `watched_shows` joined to `tv_seasons` and `tv_episodes`, leveraging existing B-tree indexes (`idx_tv_seasons_show_id`, `idx_tv_episodes_season_id`).
+        - Subquery using `NOT EXISTS (SELECT 1 FROM watch_events w2 WHERE w2.episode_id = e.id AND w2.media_kind = 'EPISODE')` preventing subquery materialization and utilizing `idx_watch_events_episode_watched`.
+        - Correctly maps missing seasons with `COALESCE(se.season_number, 2147483647) ASC` to preserve C# `?? int.MaxValue` sorting semantics in SQLite.
+        - Checks media presence via `EXISTS (SELECT 1 FROM episode_media_files emf JOIN media_files mf ON mf.id = emf.media_file_id WHERE emf.episode_id = e.id AND mf.status = 'PRESENT')`.
+        - **Tier 2 (Optimized In-Memory Fallback)**: In `TvLibraryService.ListContinueWatching`, checks `history.GetWatchedShowIds()` upfront and exits early if empty; for watched shows, batches seasons via `seasons.ListByShow(show.Id)` and files via `episodes.ListMediaFilesByShow(show.Id)` into in-memory dictionaries, completely removing hundreds of per-episode queries.
+    - **Performance Benchmark**:
+        - Measured execution time on active library:
+            - **FastPath SQL**: **0.81 ms** (single query).
+            - **In-Memory Fallback**: **5.76 ms** (batched).
+        - Achieved over 100x speedup compared to legacy N+1 query loops.
+    - **Verification**:
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - Added dedicated comprehensive parity & edge-case test suite in `TvContinueWatchingOptimizationTests.cs`:
+            - `FastPathSql_And_InMemoryFallback_ProduceIdenticalContinueWatchingResults` (field-by-field parity check across both tiers).
+            - `NullHistory_ReturnsEmptyListImmediately`
+            - `NegativeOrZeroLimit_ThrowsArgumentOutOfRangeException`
+        - 1,079 / 1,079 tests passing (100% Pass).
+25. **BugFix [M4] — Resilient Trakt Network & 5xx Exponential Backoff**:
+    - **Transient vs Non-Transient Request Handling (`TraktDataClient`)**:
+        - Expanded `SendWithRetryAsync` to automatically retry transient network failures (`HttpRequestException` and socket drops) and server responses (all 5xx codes: 500, 502, 503, 504 and 408 Request Timeout).
+        - Applied exponential backoff with jitter and `Retry-After` header extraction (RFC 9110 compliant).
+        - Disposed `response` immediately before awaiting backoff delays to prevent socket exhaustion and TCP leak under `ResponseHeadersRead`.
+        - Enforced strict fail-fast on non-transient status codes: 401 Unauthorized, 403 Forbidden, 400 Bad Request, 404 Not Found, redirects (3xx), and explicit user cancellation.
+        - Preserved exact-once mutation invariants for all write operations (`ListWriter`, `Scrobble`, `History`, `Watchlist`).
+    - **Verification**:
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - Added 7 new unit tests in `TraktDataClientTests.cs`:
+            - `GetResourceAsync_503ServiceUnavailable_RetriesAndSucceeds`
+            - `GetResourceAsync_500InternalServerError_RetriesWithBackoffAndSucceeds`
+            - `GetResourceAsync_503_RetriesExhausted_ThrowsHttpError`
+            - `GetResourceAsync_TransientNetworkException_RetriesAndSucceeds`
+            - `GetResourceAsync_TransientNetworkException_RetriesExhausted_ThrowsNetwork`
+            - `GetResourceAsync_BadRequest400_ThrowsImmediatelyWithoutRetry`
+            - `GetResourceAsync_Forbidden403_ThrowsImmediatelyWithoutRetry`
+        - 1,076 / 1,076 tests passing (100% Pass).
+24. **BugFix [M3] — Prevent Orphaned Hardlinks on Safe File Transfer Verification Failures**:
+    - **Kernel File Lock Invariant (`SafeTransferEngine`)**:
+        - Released locked handles (`sourceHandle?.Dispose()` and `directoryGuard?.Dispose()`) *before* attempting destination deletion in `finally`, eliminating NTFS `ERROR_SHARING_VIOLATION` (32) when removing shared hardlinks.
+        - Tracked `destinationCreated` flag across both `hardlink-unlink` and `copy-sha256-flush-finalize-unlink` (`ref bool destinationCreated` in `PrepareCopy`).
+        - Best-effort safe cleanup in `finally` when `!completed && destinationCreated`: automatically removes orphaned hardlinks or copy files without masking the original exception.
+        - Guarded against path equality between source and destination (defense-in-depth).
+    - **Verification**:
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - Added 2 new tests in `EngineTests.cs`:
+            - `HardlinkFailure_CleansUpOrphanedDestinationAndPreservesSource`
+            - `ForcedCopyFailure_CleansUpOrphanedDestinationAndPreservesSource`
+        - 1,069 / 1,069 tests passing (100% Pass).
+23. **BugFix [M2] — Secure Credentials Exclusively in Windows Vault & Purge SQLite DPAPI**:
+    - **DPAPI Writes & Reads Eliminated**: Removed all DPAPI backups from `Write()` and fallbacks from `Read()` in `WindowsTmdbCredentialStore` and `WindowsTraktCredentialStore`. Windows Credential Manager is now the 100% exclusive source of truth (`TBDMovies/TMDB` and `TBDMovies/Trakt`).
+    - **Safe Startup Migration & Purge**: Added `PurgeLegacyDpapiCredentials` in `AppServices.Initialize`:
+        - Migrates existing DPAPI credentials into Windows Credential Manager if missing from native store.
+        - Safely purges `tmdb_credential_dpapi` and `trakt_credential_dpapi` rows from the `Settings` table.
+        - Executes `VACUUM;` on the SQLite database after DPAPI row purge (note: `[L6]` remains partially open because plaintext `'tmdb_read_access_token'` deletion in `SettingsService.MigrateLegacyCredential()` does not execute `VACUUM;` — see `/BUGS.md`).
+    - **Verification**:
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - 1,067 / 1,067 tests passing (100% Pass) including migration and isolation unit tests.
+22. **BugFix [H1] — Resilient Trakt Session Token Refresh**:
+    - **Root Cause Eliminated**: Removed pre-emptive `inFlightMarker` (writing empty credentials with `RequiresReconnect: true` to the store prior to HTTP refresh POST).
+    - **Classification of Exceptions**:
+        - `OperationCanceledException`: rethrown cleanly without modifying tokens, store, or state.
+        - `TraktInvalidGrantException` / HTTP 400-401: explicit authentication refusal deletes store, sets `_requiresReconnect = true`, and transitions to `RequiresReconnection`.
+        - Transient network / timeout / 5xx errors: preserves existing in-memory tokens and persistent credentials in Windows Vault, allowing seamless retry without forcing user re-authentication.
+        - Store failure fallback: defensive deletion of credentials if saving new tokens fails.
+    - **Verification**:
+        - Solution build: 0 Warning(s), 0 Error(s).
+        - 1,066 / 1,066 tests passing (100% Pass) including updated and new unit tests in `TraktAuthServiceTests.cs`.
+21. **BugFix & HomePage Shelves Separation Track**:
+    - **Crash Fix (`AccentSplitButtonStyle`)**:
+        - Diagnosed fatal application termination (`0xc000027b` / `XamlParseException`) when invoking the Random Picker or navigating to movie details.
+        - Root cause: `PlayButton` on `MovieDetailsPage.xaml` referenced `Style="{StaticResource AccentSplitButtonStyle}"`, which was undeclared in XAML resources.
+        - Added `<Style TargetType="SplitButton" x:Key="AccentSplitButtonStyle">` to `MovieDetailsPage.xaml` and globally to `Styles.xaml`.
+    - **Reverted Unified Activity Shelf to Dedicated Shelves**:
+        - Restored separate "Continue Watching" (`ContinueRowGrid`, `ContinueRepeater`, `ContinueEmptyState`) and "Watch History" (`HistoryRowGrid`, `HistoryRepeater`, `HistoryEmptyState`) sections per user directive ("رجع اكمال المشاهدة وتاريخ المشاهدة كله لوحده").
+        - Preserved the new resume progress bar (`ProgressBar` with `ProgressPercentage` and `HasResumeVisibility`) and dynamic `ResumeFrom` / `Play` action on Continue Watching cards.
+        - Maintained rich cinematic stats (5 metrics with watch time, episodes on disk, completion/monthly rate).
+    - **Verification**: 1,065 / 1,065 unit tests passing (100% Pass) with 0 errors and 0 warnings.
+    - **Deployment Sync**: Synchronized Release binaries to `D:\TBD-Movies\portable\` and updated Inno Setup installer.
+20. **HomePage Redesign & Rich Stats Track**:
+    - **Unified Activity Hub**:
+        - Replaced redundant dual 320x196 shelves with a unified responsive shelf (`ActivityRepeater`).
+        - Integrated native pill switcher tabs (`TabPillItemStyle`) for `[ Continue Watching / قيد المتابعة ]` and `[ Watch History / سجل المشاهدة ]`.
+        - Single dynamic "See All" button contextually routing to `continue-watching` or `recently-watched`.
+        - Built-in reactive frameless `EmptyStateCard` handling both empty states cleanly.
+        - Integrated bottom accent `ProgressBar` on Continue Watching cards for items with resume positions, plus dynamic "Resume from {0}" button text.
+    - **Rich Cinematic Stats**:
+        - Capped card stretching across ultrawide displays (`MaxWidth="1200"` container, `MinWidth="180"` / `MaxWidth="240"` card bounds).
+        - Expanded metrics: Movies count, TV Shows count, Episodes on disk, Total Watch Time (computed from watch history & media runtimes, formatted e.g. `{0}h` / `{0} س`), and Monthly watch activity / Completion rate.
+    - **Event and Contract Integrity**: Preserved `MovieSelected`, `ShowSelected`, `LibraryRequested`, `ActivityListRequested`, and full `ILocalizableView` lifecycle.
+    - **Localization**: Full bilingual Arabic & English translations in `LocalizationService`.
+    - **Verification**: 1,065 / 1,065 unit tests passing (100% Pass) with 0 errors and 0 warnings.
+    - **Deployment Sync**: Synchronized Release binaries to `D:\TBD-Movies\portable\` excluding `*.pdb`.
+19. **Phase 2 Subtitles Engine: SubDL Online Downloader & UTF-8 Normalization**:
+    - **SubDL REST API Client**: Built `SubDlClient` implementing `ISubtitleDownloadClient` supporting movie and TV episode queries by IMDB/TMDB ID and language filters (`ar,en`).
+    - **In-Memory Archive Extraction & UTF-8 Normalization**: Implemented `SubtitleDownloadService` which extracts zip archives in memory, detects Windows-1256 (CP1256) encoding for Arabic subtitles, and cleanly re-encodes to UTF-8 without BOM, permanently eliminating Mojibake / garbled Arabic characters.
+    - **Interactive Subtitle Dialog (`SubtitleDialog.cs`)**: Designed sleek native WinUI 3 `ContentDialog` with `[ All ]`, `[ Arabic ]`, `[ English ]` segmented tabs, release names, translator author badges, language tags, and single-click download with automatic UI badge refresh.
+    - **Settings Configuration**: Added Subtitles card in `SettingsPage` to store and validate SubDL API key with direct link to free key.
+    - **Verification**: 1,065 / 1,065 tests passing (100% Pass) including 15 new unit tests with 0 errors and 0 warnings.
+    - **Deployment Sync**: Synchronized Release binaries to `D:\TBD-Movies\portable\` and compiled `TBDMoviesSetup.exe`.
+18. **Phase 1 Subtitles Engine: Local Subtitle Detection & Native UI Badges**:
+    - **Interface & Service Implementation**:
+        - Defined `ISubtitleDiscoveryService` in `TBDMovies.Application.Subtitles`.
+        - Implemented `SubtitleDiscoveryService` in `TBDMovies.FileSystem.Subtitles` supporting `.srt`, `.ass`, `.vtt` formats in media directory and `Subs`/`Subtitles` subfolders.
+        - Supported exact name matching, language suffix parsing, TV episode matching (`S{season:D2}E{episode:D2}`), and single-video standalone subtitle discovery.
+        - Language token identification (`AR` for Arabic, `EN` for English, plus 2 KB Unicode probing for Arabic characters `\u0600`..`\u06FF`).
+    - **Composition Root**: Registered `ISubtitleDiscoveryService Subtitles` in `AppServices.cs`.
+    - **Presentation & WinUI 3 Native Badges**:
+        - `SubtitleBadgeModel` with styling:
+            - `[ AR ]`: `BadgeSuccessBackgroundBrush`, `BadgeSuccessBorderBrush`, `BadgeSuccessForegroundBrush`.
+            - `[ EN ]`: `ControlFillColorSecondaryBrush`, `ControlStrokeColorDefaultBrush`, `TextFillColorSecondaryBrush`.
+            - Tooltip displaying subtitle language name and filename.
+        - Integrated subtitle badges into `FilePresentPanel` and `MediaFilesRepeater` on `MovieDetailsPage.xaml/.cs` with asynchronous discovery.
+        - Integrated subtitle badges into Column 2 Status Badges on `TVShowDetailsPage.xaml/.cs` with asynchronous loading.
+    - **Verification**: 1,050 / 1,050 tests passing (100% Pass) including 14 new dedicated unit tests (`SubtitleDiscoveryServiceTests.cs`) with 0 errors and 0 warnings.
+    - **Deployment Sync**: Synchronized Release binaries to `D:\TBD-Movies\portable\` excluding `*.pdb`.
+17. **Resume Playback & Trakt Scrobble Engine Track**:
+    - **Database Migration v21**: Created `playback_progress` table with `ON DELETE CASCADE` on `media_file_id`, index `idx_playback_progress_watched`, and included in `MaintenanceRepository.ClearCatalog`.
+    - **Domain & Application**: Created `PlaybackProgress` domain record, `IPlaybackProgressRepository` / `PlaybackProgressRepository`, `IPlayerProcessLauncher`, and `PlaybackTrackingService`.
+    - **Player CLI Integration**: Added CLI argument generation and path resolution for VLC (`--start-time`), MPC-BE / MPC-HC (`/startpos`), MPV (`--start`), System Default, and custom players with templates (`{path}`, `{seconds}`, `{time}`).
+    - **Trakt Scrobbling Engine**: Full integration of `POST /scrobble/start`, `POST /scrobble/pause`, and `POST /scrobble/stop`. Implemented 80% completion threshold to automatically record local watch history and mark watched on Trakt, as well as 92% end credits detection to auto-clear resume markers.
+    - **Presentation & WinUI 3 UI**:
+        - `MovieDetailsPage`: Converted Play button to native `SplitButton` with primary Resume/Play action and flyout options (`[ ↺ Play from Beginning ]`, `[ ✕ Clear Resume Point ]`). Added subtle accent `ProgressBar` across the bottom edge of the poster card.
+        - `TVShowDetailsPage`: Added thumbnail `ProgressBar` to each episode card, dynamic `ResumeFrom` button labels, "Play from Beginning" and "Clear Resume Point" context options, and reactive hero `PlayNextButton` updating with next episode's resume position.
+        - `SettingsPage`: Added Media Player configuration group with dropdown selector (Default, VLC, MPC, MPV, Custom), custom player path file picker, and custom argument templates.
+        - Full Arabic and English localization in `LocalizationService`.
+    - **Verification**: 1,036 / 1,036 tests passing (100% Pass) including 7 new dedicated unit tests (`PlaybackTrackingTests.cs`) with 0 errors and 0 warnings.
+    - **Deployment Sync**: Synchronized Release binaries to `D:\TBD-Movies\portable\` excluding `*.pdb`.
+16. **Random Media Picker in Library Track**:
+    - **UI Button Integration**: Placed a single clean native WinUI 3 icon button (`RandomPickerButton`, `CornerRadius="8"`, Glyph `\uE8B1`) on `LibraryPage.xaml` in the command row adjacent to `ViewModeToggleButton`.
+    - **Filter-Aware Smart Unwatched Prioritization**: Intelligently adapts to active tab: picks an unwatched movie on `[ Movies ]`, an unwatched show on `[ TV Shows ]`, and blends unwatched media proportionally on `[ All ]`.
+    - **Empty Library Protection**: Integrated graceful `ContentDialogCoordinator` warning dialog when catalog has no media.
+    - **HomePage Cleanliness Preserved**: Restored `HomePage.xaml` to its pristine layout without unnecessary clutter.
+    - **Verification**: 1,029 / 1,029 tests passing (100% Pass) with 0 errors and 0 warnings.
+    - **Deployment Sync**: Synced to `D:\TBD-Movies\portable\` and compiled `TBDMoviesSetup.exe`.
+15. **High-Contrast Palette Evaluation & Revert Track**:
+    - **Experimentation**: Evaluated Carbon Black & Modern Blue high-contrast palette (Window background `#070709`, surface cards `#111217` with `#222530` border, primary text `#FFFFFF`, accent `#2F71E3` with hover `#4B8BF5`, pressed `#1E5DC8`, and selection tint `#262F71E3`).
+    - **Revert**: Restored previous Slate Navy (`#18222D`) with Windows 11 Fluent Blue unified palette per user directive ("الالوان اللى فاتت كانت احسن تراجع عن التعديل ده").
+    - **Test Integrity**: Maintained 1,029 / 1,029 tests passing (100% Pass).
+
+---
+
+### Foundational Release Tracks (`v0.12.0` – `v0.12.5`)
+
+- **F1. Core Issues Track**:
+  - Disabled Play & Open Folder on missing movie files (`IsEnabled = false`); added `[ ⚠️ Missing ]` badge.
+  - Cleaned badges: Removed emojis `🎬` and `📺`, displaying clean text ("Movie" / "TV Show").
+  - Improved TV batch import: Auto-select episodes (`Selected = true`), relax series conflict blockers.
+  - Expanded export in Settings to include both Movies and TV Shows.
+  - Added multiple physical edition cards to `MovieDetailsPage` (`MediaFilesRepeater` Fluent cards with play, folder, copy path, and primary selector).
+  - In-memory session preference for primary movie file (`ConcurrentDictionary<int, int>` in `LibraryProjection`).
+- **F2. Performance & Debouncing Track**:
+  - Added 200ms UI `DispatcherQueueTimer` debouncing to `SearchBox_TextChanged` across `LibraryPage`, `MyListsPage`, and `TraktPage`.
+  - Immediate refresh on query clear (`string.IsNullOrEmpty(text)`).
+  - Safe timer disposal on navigation / unload (`Deactivate()`, `IDeactivatableView`, `Unloaded`).
+  - Eliminated white theme flicker completely on theme switch in `MainWindow.xaml.cs:ApplyTheme()`, removing the temporary flip to `ElementTheme.Default` and mutating `RootGrid.Resources` in place.
+- **F3. UI Layouts Track**:
+  - Styled `MyListsPage` list tabs as rounded pill capsules (`TabPillItemStyle` with `CornerRadius="12"`, background `#1F2937`, active `#1A324A` with accent border).
+  - Re-introduced 3-tab media type selector in `LibraryPage.xaml`: `[ All ] | [ Movies ] | [ TV Shows ]` with fast in-memory filtering.
+  - Replaced `SplitButton` with native WinUI 3 `DropDownButton` (single unified rectangle with text + chevron) for sort options.
+  - Overrode `InfoBar` success brushes in `ThemeResources.xaml` to dark slate `#202B35`, permanently removing sour yellow (#3d3a17).
+- **F4. TMDB Engine & Metadata Track**:
+  - Fixed root cause of `"The operation could not be completed. Please retry."`: Assigned `_matching = matching;` in `AppServices.cs`.
+  - Handled query titles with embedded release years (e.g., "Zodiac 2007") using `TrailingYearRegex` in `MetadataMatchingService.cs`.
+  - Implemented natural, non-trapping auto-focus in `MatchMediaDialog.cs`: autofocuses on `_titleBox` with text selected, explicit `TabIndex` order, full keyboard navigation.
+  - Upgraded poster downloads to high-res `w500` in `DiskPosterCache.cs`.
+  - Ensured immediate UI update in `MovieDetailsPage.xaml.cs` and `TVShowDetailsPage.xaml.cs` by awaiting poster caching before reloading the view.
+- **F5. My Lists & Trakt Unified Redesign Track**:
+  - Removed redundant list name heading (`ListNameText`), recovering vertical space and pulling cards up.
+  - Grouped custom list management into primary `+ Add Media` (`AccentControlButtonStyle`) and a compact native WinUI 3 `MenuFlyout` (`[ ••• More ]` containing `Rename` and `Delete`), hiding options on system lists.
+  - Redesigned Trakt Hub into a clean card container (`CardBackgroundFillColorDefaultBrush`) with a distinct Trakt badge (`TRAKT HUB`), unified segmented pill selectors, and quick-access action buttons.
+  - Implemented native `+ New Trakt List` with a sleek `ContentDialog` for instant list creation and automatic tab refresh.
+  - Elevated `SearchBox` to the header row parallel to `My Lists` title and count on the far right.
+  - Created native lightweight `controls:WrapPanel` for `ListSelector`, allowing list capsules to wrap onto multiple lines across full width with ZERO horizontal scrollbar clutter.
+- **F6. Release & Packaging Track (`v0.12.0`)**:
+  - Upgraded version to `0.12.0` across `TBDMovies.UI.csproj` and `TBD-Movies.iss`.
+  - Verified visual UI state live in desktop environment using `cua-driver`.
+  - Built official Inno Setup installer: `TBDMoviesSetup.exe` (34.9 MB) and portable archive `TBD-Movies-v0.12.0-portable.zip` (48.4 MB).
+  - Passed all 1,030 unit tests with 0 failures in Release configuration and published GitHub Release `v0.12.0`.
+- **F7. Test Suite Modernization & Clean-up Track**:
+  - Removed obsolete legacy V1 tests: `PersistenceTests.cs` and `MigrationUpgradeTests.cs`.
+  - Cleaned up empty leftover artifact directories under `Domain/Library` and `Domain/Media`.
+  - Consolidated duplicate tests (`TvPersistedManualMatchTests.cs`, `TraktDataClientTests.cs`, `NetworkHardeningTests.cs`) and zeroed all xUnit warnings (`xUnit1031`, `xUnit2013`).
+  - Validated: 1,026 / 1,026 tests passing (100% Pass) with 0 Warnings and 0 Failures.
+- **F8. Library Multi-Select & Batch Actions Polish Track**:
+  - Escape accelerator, isolated `SelectionCommandBar` Auto row, `PillSelectorBarItemStyle`, cumulative drag `_dragAccumulatedKeys`, 3s `HeaderNotificationBadge`, deduplicated batch list additions, and native 60/120fps DirectManipulation scroll restoration.
+- **F9. Unified Fluent Corner Radius (Squircle / Radius 8) Track**:
+  - Softened `TabPillItemStyle` and `PillSelectorBarItemStyle` to `CornerRadius="8"`, engineered `SearchBoxTextBoxStyle` (`CornerRadius="8"`), and aligned `<CornerRadius x:Key="ControlCornerRadius">8,8,8,8</CornerRadius>`.
+- **F10. TV Shows Auto-Select, Check Library View Action & In-Page Relink Track**:
+  - Resolved TV episode deselection bug in `AddMediaPage.xaml.cs`, added Check Library `View` navigation (`FindShowForMediaFile`), and wired missing-media `PlayButton` -> active `Relink` across `MovieDetailsPage` and `TVShowDetailsPage`.
+- **F11. TV Shows Multi-Folder Unification, Visual Indentation & View Mode Toggle Icons Track**:
+  - Corrected `LibraryPage` Grid/List toggle icons (`\uEA37` / `\uE8A9`), unified multi-folder TV seasons by `NormalizeKey(Title)` removing `AmbiguousPathProvenance` lockout, and added 3-level visual indentation (`0` / `32` / `64`).
+- **F12. Library Cards Hover Selection Indicator & Empty Space Marquee Drag Track**:
+  - Enabled `IsHovered` selection circle at `0.85` opacity and restricted marquee drag via `IsInsideGridViewItem`.
+- **F13. Vertical Media Card Text Inset & Visual Breathing Space Track**:
+  - Increased `MediaCardItemHeight` from `346` to `360` in `ThemeResources.xaml` with `Margin="6,0,6,14"` (`18px` bottom clearance).
+- **F14. Automatic Dead Missing Files Pruning Track**:
+  - Added automatic replacement pruning in `ImportService.cs`, `PruneDeadMissingFiles()` in `ReconciliationService.cs`, and defensive filtering in `CheckLibraryPage.xaml.cs`.
+- **F15. Official Release `v0.12.5` Packaging Track**:
+  - Updated version to `0.12.5`, compiled `TBDMoviesSetup.exe` (34.9 MB) and `TBD-Movies-v0.12.5-portable.zip` (48.4 MB), and verified live `library.db` (`Inside Job`: 0 missing, 18 present).
+- **F16. Splash Screen Dwell & Window Readiness Track [P3]**:
+  - Increased splash dwell duration to 700ms and fade-out to 200ms (`CubicEaseOut`) in `MainWindow.xaml.cs`.
+- **F17. Page & Season Navigation Transitions Track [P5 & P5-B]**:
+  - Set directional slide offset to `15.0px` with **`150ms`** `CubicEaseOut` easing in `MainWindow.xaml.cs:766` and `TVShowDetailsPage.xaml.cs:1026`.
+- **F18. Catalog Savepoint Injection Hardening Track [L1]**:
+  - Implemented `ValidateSavepointName` (`^[a-zA-Z_][a-zA-Z0-9_]{0,63}$`) and `_completed` lifecycle guard in `CatalogRepositories.cs` with 24 unit tests in `CatalogSavepointTests.cs`.
+- **F19. Responsive Details Layout & WrapPanel Track [U5]**:
+  - Replaced rigid 3-column Auto Grid with `TBDMovies.UI.Controls.WrapPanel` (`MovieIdentityPanel` / `ShowIdentityPanel`), removed hardcoded `MaxWidth` math, added `_currentVisualState` thrashing guard, and preserved deterministic `VisualStateManager` breakpoints (`1,103 / 1,103` tests passing).
 
 ## Verification
-- **Build**: `dotnet build TBDMovies_WinUI3/TBDMovies.slnx -c Release --nologo` succeeded (0 Warnings, 0 Errors).
-- **Unit Tests**: `dotnet test TBDMovies_WinUI3/TBDMovies.slnx -c Release --nologo` passed 1,029 / 1,029 tests (0 Failed, 0 Skipped, 0 Warnings).
-- **Installer & Portable Assets**: Verified generated binaries in `artifacts\release\0.12.5\`:
-  - `TBDMoviesSetup.exe` (34,988,635 bytes)
-  - `TBD-Movies-v0.12.5-portable.zip` (48,447,833 bytes)
+- **Build**: `dotnet build TBDMovies_WinUI3/TBDMovies.slnx -c Release --nologo` succeeded (`0 Warnings, 0 Errors`).
+- **Unit Tests**: `dotnet test TBDMovies_WinUI3/TBDMovies.slnx -c Release --nologo` passed **`1,143 / 1,143`** tests (`0 Failed, 0 Skipped`, `DatabaseMigrator.LatestVersion = 23`).
+- **Release `v0.12.5` & Latest Executable Assets**:
+  - `TBDMoviesSetup.exe` (`34,988,635` bytes) & `TBD-Movies-v0.12.5-portable.zip` (`48,447,833` bytes)
+  - Latest local `win-x64` Release executable (`TBD-Movies.exe`, `2026-11-16`, Schema `v23`).
 
 ## Known Issues
-- None.
+- Active open and partially-open items (`[U10]`, `[U9]` sub-items, `[L6]` plaintext `VACUUM` gap, `[L8]` code signing, `[M1]`, `[U7]`, `[U3]`, `[U6]`) are tracked authoritatively in **`/BUGS.md`** and **`/HANDOFF.md`**, alongside deep codebase audit findings in **`/AUDIT_FINDINGS_REPORT.md`**.

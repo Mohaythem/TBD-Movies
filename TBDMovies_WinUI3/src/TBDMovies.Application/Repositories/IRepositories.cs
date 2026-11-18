@@ -75,6 +75,9 @@ public interface IPersonalLibraryRepository
     /// <summary>Every custom list, in creation order, each with its current member count (movies + shows).</summary>
     IReadOnlyList<CustomListRecord> ListCustomLists();
 
+    /// <summary>Every tombstoned custom list (is_deleted = 1), pending remote deletion.</summary>
+    IReadOnlyList<CustomListRecord> ListDeletedCustomLists() => [];
+
     /// <summary>
     /// Creates a custom list and returns its stable id. Throws
     /// <see cref="TBDMovies.Application.DuplicateCustomListNameException" /> when the trimmed name matches an
@@ -91,6 +94,9 @@ public interface IPersonalLibraryRepository
 
     /// <summary>Deletes a custom list and its membership rows. Media items and other lists are untouched.</summary>
     void DeleteCustomList(int listId);
+
+    /// <summary>Deletes a custom list directly and cascades to all its members and pending actions (used for remote deletions).</summary>
+    void DeleteCustomListCascade(int listId);
 
     /// <summary>Adds a movie to a custom list. Idempotent: a movie already in the list is a no-op.</summary>
     void AddMovieToCustomList(int listId, int movieId, DateTimeOffset now);
@@ -115,6 +121,36 @@ public interface IPersonalLibraryRepository
 
     /// <summary>The ids of all movies with at least one recorded watch event.</summary>
     IReadOnlySet<int> ListWatchedMovieIds() => new HashSet<int>();
+
+    /// <summary>Creates or links a custom list with a Trakt list identity.</summary>
+    int UpsertTraktCustomList(string name, long traktListId, string? traktSlug, DateTimeOffset now, string syncStatus = "SYNCED") => 0;
+
+    /// <summary>Adds a cloud-only media item (by TMDB ID) to a custom list.</summary>
+    void AddCloudMediaToCustomList(int listId, CustomListMediaKind kind, int tmdbId, DateTimeOffset now, string? title = null, int? year = null) { }
+
+    /// <summary>Removes a cloud-only media item (by TMDB ID) from a custom list.</summary>
+    void RemoveCloudMediaFromCustomList(int listId, CustomListMediaKind kind, int tmdbId) { }
+
+    /// <summary>Enqueues an offline action into custom_list_pending_actions.</summary>
+    void EnqueuePendingAction(int listId, CustomListMediaKind? kind, int? tmdbId, string actionType, DateTimeOffset now) { }
+
+    /// <summary>Gets all pending actions ordered by created_at.</summary>
+    IReadOnlyList<CustomListPendingAction> ListPendingActions(int? listId = null) => Array.Empty<CustomListPendingAction>();
+
+    /// <summary>Deletes a pending action by its primary key.</summary>
+    void DeletePendingAction(int actionId) { }
+
+    /// <summary>Sets the last_synced_at timestamp on a custom list.</summary>
+    void SetListLastSynced(int listId, DateTimeOffset syncedAt) { }
+
+    /// <summary>Lists all local custom lists not yet linked to Trakt.</summary>
+    IReadOnlyList<CustomListRecord> ListUnlinkedCustomLists() => Array.Empty<CustomListRecord>();
+
+    /// <summary>Links an existing local custom list with its Trakt identity.</summary>
+    void LinkTraktCustomList(int listId, long traktListId, string traktSlug, DateTimeOffset now) { }
+
+    /// <summary>Gets local members of a custom list that have a known TMDB ID.</summary>
+    IReadOnlyList<(int MovieOrShowId, CustomListMediaKind Kind, int TmdbId)> ListLocalMembersWithTmdb(int listId) => Array.Empty<(int, CustomListMediaKind, int)>();
 }
 
 public interface IWatchHistoryRepository

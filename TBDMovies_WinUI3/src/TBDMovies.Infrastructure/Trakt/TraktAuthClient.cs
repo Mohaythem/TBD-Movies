@@ -258,13 +258,8 @@ public sealed class TraktAuthClient : ITraktAuthClient, IDisposable
 
         if (statusCode is 400 or 401)
         {
-            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (errorBody.Contains("invalid_grant", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new TraktInvalidGrantException("The Trakt refresh token is invalid, expired, or revoked.");
-            }
-
-            throw new TraktAuthException($"Trakt token refresh failed with HTTP status {statusCode}.");
+            await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new TraktInvalidGrantException("The Trakt refresh token is invalid, expired, or revoked.");
         }
 
         throw new TraktAuthException($"Trakt token refresh failed with HTTP status {statusCode}.");

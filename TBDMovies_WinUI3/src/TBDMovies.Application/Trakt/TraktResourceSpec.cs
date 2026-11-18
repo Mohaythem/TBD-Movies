@@ -12,7 +12,11 @@ public enum TraktResourceType
     Watchlist,
     WatchedMovies,
     WatchedShows,
-    History
+    History,
+    FavoriteMovies,
+    FavoriteShows,
+    CollectionMovies,
+    CollectionShows
 }
 
 /// <summary>
@@ -79,6 +83,18 @@ public readonly record struct TraktResourceSpec
     public static TraktResourceSpec History() =>
         new(TraktResourceType.History);
 
+    public static TraktResourceSpec FavoriteMovies() =>
+        new(TraktResourceType.FavoriteMovies);
+
+    public static TraktResourceSpec FavoriteShows() =>
+        new(TraktResourceType.FavoriteShows);
+
+    public static TraktResourceSpec CollectionMovies() =>
+        new(TraktResourceType.CollectionMovies);
+
+    public static TraktResourceSpec CollectionShows() =>
+        new(TraktResourceType.CollectionShows);
+
     /// <summary>
     /// Returns the whitelisted relative path for the resource.
     /// </summary>
@@ -90,6 +106,10 @@ public readonly record struct TraktResourceSpec
         TraktResourceType.WatchedMovies => "sync/watched/movies",
         TraktResourceType.WatchedShows => "sync/watched/shows",
         TraktResourceType.History => "sync/history",
+        TraktResourceType.FavoriteMovies => "sync/favorites/movies",
+        TraktResourceType.FavoriteShows => "sync/favorites/shows",
+        TraktResourceType.CollectionMovies => "sync/collection/movies",
+        TraktResourceType.CollectionShows => "sync/collection/shows",
         _ => throw new InvalidOperationException($"Unsupported resource type {ResourceType}.")
     };
 
@@ -104,6 +124,10 @@ public readonly record struct TraktResourceSpec
         TraktResourceType.WatchedMovies => true,
         TraktResourceType.WatchedShows => true,
         TraktResourceType.History => true,
+        TraktResourceType.FavoriteMovies => true,
+        TraktResourceType.FavoriteShows => true,
+        TraktResourceType.CollectionMovies => true,
+        TraktResourceType.CollectionShows => true,
         _ => true
     };
 
@@ -118,6 +142,10 @@ public readonly record struct TraktResourceSpec
         TraktResourceType.WatchedMovies => "watched:movies",
         TraktResourceType.WatchedShows => "watched:shows",
         TraktResourceType.History => "history",
+        TraktResourceType.FavoriteMovies => "favorites:movies",
+        TraktResourceType.FavoriteShows => "favorites:shows",
+        TraktResourceType.CollectionMovies => "collection:movies",
+        TraktResourceType.CollectionShows => "collection:shows",
         _ => throw new InvalidOperationException($"Unsupported resource type {ResourceType}.")
     };
 }

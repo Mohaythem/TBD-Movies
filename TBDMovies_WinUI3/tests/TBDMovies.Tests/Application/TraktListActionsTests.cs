@@ -205,6 +205,23 @@ public sealed class TraktListActionsTests
             => ThrowOnRefresh ? throw new InvalidOperationException("refresh failed") : Task.FromResult(JsonDocument.Parse("[]").RootElement);
         public Task<JsonElement> AddMovieToListAsync(long? listId, long tmdbId, string clientId, string accessToken, CancellationToken cancellationToken = default)
         { Posts++; return PostHandler?.Invoke(cancellationToken) ?? Task.FromResult(PostResponse); }
+        public Task<JsonElement> RemoveMovieFromListAsync(long? listId, long tmdbId, string clientId, string accessToken, CancellationToken cancellationToken = default)
+        { Posts++; return PostHandler?.Invoke(cancellationToken) ?? Task.FromResult(PostResponse); }
+        public Task<JsonElement> AddShowToListAsync(long? listId, long tmdbId, string clientId, string accessToken, CancellationToken cancellationToken = default)
+        { Posts++; return PostHandler?.Invoke(cancellationToken) ?? Task.FromResult(PostResponse); }
+        public Task<JsonElement> RemoveShowFromListAsync(long? listId, long tmdbId, string clientId, string accessToken, CancellationToken cancellationToken = default)
+        { Posts++; return PostHandler?.Invoke(cancellationToken) ?? Task.FromResult(PostResponse); }
+        public Task<JsonElement> CreateCustomListAsync(string name, string? description, string privacy, string clientId, string accessToken, CancellationToken cancellationToken = default)
+        {
+            Posts++;
+            var json = $"{{\"name\":\"{name}\",\"ids\":{{\"trakt\":99999,\"slug\":\"{name.ToLowerInvariant()}\"}}}}";
+            return Task.FromResult(JsonDocument.Parse(json).RootElement);
+        }
+        public Task DeleteCustomListAsync(long listId, string clientId, string accessToken, CancellationToken cancellationToken = default)
+        {
+            Posts++;
+            return Task.CompletedTask;
+        }
         public Task<JsonElement> AddHistoryAsync(TraktSyncHistoryPayload payload, string clientId, string accessToken, CancellationToken cancellationToken = default)
             => Task.FromResult(JsonDocument.Parse("{}").RootElement);
         public Task<JsonElement> RemoveHistoryAsync(TraktSyncHistoryPayload payload, string clientId, string accessToken, CancellationToken cancellationToken = default)

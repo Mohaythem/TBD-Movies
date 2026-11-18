@@ -1,3 +1,4 @@
+using System.Globalization;
 using TBDMovies.Application.Repositories;
 using TBDMovies.Domain.Library.Personal;
 using Microsoft.Data.Sqlite;
@@ -228,16 +229,51 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
     {
         using var connection = SqliteConnections.Open(_connectionString);
         using var command = Command(connection, null, """
-            SELECT cl.id, cl.display_name, COUNT(m.id)
+            SELECT cl.id, cl.display_name, COUNT(m.id), cl.trakt_list_id, cl.trakt_slug, cl.sync_status, cl.last_synced_at
               FROM custom_lists cl
               LEFT JOIN custom_list_members m ON m.list_id = cl.id
-             GROUP BY cl.id, cl.display_name, cl.created_at
+             WHERE cl.is_deleted = 0
+             GROUP BY cl.id, cl.display_name, cl.created_at, cl.trakt_list_id, cl.trakt_slug, cl.sync_status, cl.last_synced_at
              ORDER BY cl.created_at, cl.id;
             """);
         var result = new List<CustomListRecord>();
         using var reader = command.ExecuteReader();
         while (reader.Read())
-            result.Add(new CustomListRecord(reader.GetInt32(0), reader.GetString(1), reader.GetInt32(2)));
+            result.Add(new CustomListRecord(
+                reader.GetInt32(0),
+                reader.GetString(1),
+                reader.GetInt32(2),
+                reader.IsDBNull(3) ? null : reader.GetInt64(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? "SYNCED" : reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6)));
+        return result;
+    }
+
+    public IReadOnlyList<CustomListRecord> ListDeletedCustomLists()
+    {
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = Command(connection, null, """
+            SELECT cl.id, cl.display_name, COUNT(m.id), cl.trakt_list_id, cl.trakt_slug, cl.sync_status, cl.last_synced_at
+              FROM custom_lists cl
+              LEFT JOIN custom_list_members m ON m.list_id = cl.id
+             WHERE cl.is_deleted = 1
+             GROUP BY cl.id, cl.display_name, cl.created_at, cl.trakt_list_id, cl.trakt_slug, cl.sync_status, cl.last_synced_at
+             ORDER BY cl.created_at, cl.id;
+            """);
+        var result = new List<CustomListRecord>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            result.Add(new CustomListRecord(
+                reader.GetInt32(0),
+                reader.GetString(1),
+                reader.GetInt32(2),
+                reader.IsDBNull(3) ? null : reader.GetInt64(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? "SYNCED" : reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6)));
+        }
         return result;
     }
 
@@ -249,12 +285,22 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         using var transaction = connection.BeginTransaction(deferred: false);
         RequireUniqueName(connection, transaction, trimmed, null);
         using var command = Command(connection, transaction, """
-            INSERT INTO custom_lists (display_name, created_at) VALUES ($name, $now);
+            INSERT INTO custom_lists (display_name, created_at, sync_status) VALUES ($name, $now, 'PENDING');
             SELECT last_insert_rowid();
             """);
         command.Parameters.AddWithValue("$name", trimmed);
         command.Parameters.AddWithValue("$now", now.ToString("O"));
         var id = checked((int)(long)(command.ExecuteScalar() ?? throw new InvalidOperationException("List insert returned no ID.")));
+
+        // Automatically enqueue CREATE_LIST action for full two-way auto-sync
+        using var actionCmd = Command(connection, transaction, """
+            INSERT INTO custom_list_pending_actions (list_id, media_kind, tmdb_id, action_type, created_at)
+            VALUES ($list, NULL, NULL, 'CREATE_LIST', $now);
+            """);
+        actionCmd.Parameters.AddWithValue("$list", id);
+        actionCmd.Parameters.AddWithValue("$now", now.ToString("O"));
+        actionCmd.ExecuteNonQuery();
+
         transaction.Commit();
         return id;
     }
@@ -281,7 +327,30 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         ValidateId(listId, nameof(listId));
         using var gate = DatabaseWriteGate.Enter(_connectionString);
         using var connection = SqliteConnections.Open(_connectionString);
-        // Membership rows cascade with the list (custom_list_members.list_id ... ON DELETE CASCADE).
+        using var checkCmd = Command(connection, null, "SELECT trakt_list_id FROM custom_lists WHERE id = $id;");
+        checkCmd.Parameters.AddWithValue("$id", listId);
+        var traktIdObj = checkCmd.ExecuteScalar();
+        if (traktIdObj != null && traktIdObj != DBNull.Value)
+        {
+            using var tombstoneCmd = Command(connection, null,
+                "UPDATE custom_lists SET is_deleted = 1, sync_status = 'PENDING_DELETE' WHERE id = $id;");
+            tombstoneCmd.Parameters.AddWithValue("$id", listId);
+            tombstoneCmd.ExecuteNonQuery();
+        }
+        else
+        {
+            // Membership rows cascade with the list (custom_list_members.list_id ... ON DELETE CASCADE).
+            using var command = Command(connection, null, "DELETE FROM custom_lists WHERE id = $id;");
+            command.Parameters.AddWithValue("$id", listId);
+            command.ExecuteNonQuery();
+        }
+    }
+
+    public void DeleteCustomListCascade(int listId)
+    {
+        ValidateId(listId, nameof(listId));
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
         using var command = Command(connection, null, "DELETE FROM custom_lists WHERE id = $id;");
         command.Parameters.AddWithValue("$id", listId);
         command.ExecuteNonQuery();
@@ -296,15 +365,33 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         using var transaction = connection.BeginTransaction(deferred: false);
         RequireMovie(connection, movieId, transaction);
         RequireCustomList(connection, listId, transaction);
-        // OR IGNORE makes the add idempotent against the per-list partial unique index on movie_id.
+
+        using var existsCmd = Command(connection, transaction,
+            "SELECT 1 FROM custom_list_members WHERE list_id = $list AND movie_id = $movie;");
+        existsCmd.Parameters.AddWithValue("$list", listId);
+        existsCmd.Parameters.AddWithValue("$movie", movieId);
+        if (existsCmd.ExecuteScalar() != null)
+        {
+            transaction.Commit();
+            return;
+        }
+
         using var command = Command(connection, transaction, """
-            INSERT OR IGNORE INTO custom_list_members (list_id, media_kind, movie_id, added_at)
-            VALUES ($list, 'MOVIE', $movie, $now);
+            INSERT INTO custom_list_members (list_id, media_kind, movie_id, tmdb_id, added_at)
+            SELECT $list, 'MOVIE', $movie,
+                   CASE WHEN m.provider = 'tmdb' AND m.external_id GLOB '[0-9]*' THEN CAST(m.external_id AS INTEGER) ELSE NULL END,
+                   $now
+              FROM movies m
+             WHERE m.id = $movie
+            ON CONFLICT(list_id, media_kind, tmdb_id) WHERE tmdb_id IS NOT NULL DO UPDATE SET
+                movie_id = excluded.movie_id;
             """);
         command.Parameters.AddWithValue("$list", listId);
         command.Parameters.AddWithValue("$movie", movieId);
         command.Parameters.AddWithValue("$now", now.ToString("O"));
         command.ExecuteNonQuery();
+
+        RecordPendingAddIfSynced(connection, transaction, listId, CustomListMediaKind.Movie, movieId, isMovie: true, now);
         transaction.Commit();
     }
 
@@ -314,11 +401,15 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         ValidateId(movieId, nameof(movieId));
         using var gate = DatabaseWriteGate.Enter(_connectionString);
         using var connection = SqliteConnections.Open(_connectionString);
-        using var command = Command(connection, null,
+        using var transaction = connection.BeginTransaction(deferred: false);
+        RecordPendingRemoveIfSynced(connection, transaction, listId, CustomListMediaKind.Movie, movieId, isMovie: true, DateTimeOffset.UtcNow);
+
+        using var command = Command(connection, transaction,
             "DELETE FROM custom_list_members WHERE list_id = $list AND movie_id = $movie;");
         command.Parameters.AddWithValue("$list", listId);
         command.Parameters.AddWithValue("$movie", movieId);
         command.ExecuteNonQuery();
+        transaction.Commit();
     }
 
     public IReadOnlySet<int> GetCustomListIdsForMovie(int movieId)
@@ -343,14 +434,33 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         using var transaction = connection.BeginTransaction(deferred: false);
         RequireShow(connection, showId, transaction);
         RequireCustomList(connection, listId, transaction);
+
+        using var existsCmd = Command(connection, transaction,
+            "SELECT 1 FROM custom_list_members WHERE list_id = $list AND show_id = $show;");
+        existsCmd.Parameters.AddWithValue("$list", listId);
+        existsCmd.Parameters.AddWithValue("$show", showId);
+        if (existsCmd.ExecuteScalar() != null)
+        {
+            transaction.Commit();
+            return;
+        }
+
         using var command = Command(connection, transaction, """
-            INSERT OR IGNORE INTO custom_list_members (list_id, media_kind, show_id, added_at)
-            VALUES ($list, 'SHOW', $show, $now);
+            INSERT INTO custom_list_members (list_id, media_kind, show_id, tmdb_id, added_at)
+            SELECT $list, 'SHOW', $show,
+                   CASE WHEN s.provider = 'tmdb' AND s.external_id GLOB '[0-9]*' THEN CAST(s.external_id AS INTEGER) ELSE NULL END,
+                   $now
+              FROM tv_shows s
+             WHERE s.id = $show
+            ON CONFLICT(list_id, media_kind, tmdb_id) WHERE tmdb_id IS NOT NULL DO UPDATE SET
+                show_id = excluded.show_id;
             """);
         command.Parameters.AddWithValue("$list", listId);
         command.Parameters.AddWithValue("$show", showId);
         command.Parameters.AddWithValue("$now", now.ToString("O"));
         command.ExecuteNonQuery();
+
+        RecordPendingAddIfSynced(connection, transaction, listId, CustomListMediaKind.Show, showId, isMovie: false, now);
         transaction.Commit();
     }
 
@@ -360,11 +470,15 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         ValidateId(showId, nameof(showId));
         using var gate = DatabaseWriteGate.Enter(_connectionString);
         using var connection = SqliteConnections.Open(_connectionString);
-        using var command = Command(connection, null,
+        using var transaction = connection.BeginTransaction(deferred: false);
+        RecordPendingRemoveIfSynced(connection, transaction, listId, CustomListMediaKind.Show, showId, isMovie: false, DateTimeOffset.UtcNow);
+
+        using var command = Command(connection, transaction,
             "DELETE FROM custom_list_members WHERE list_id = $list AND show_id = $show;");
         command.Parameters.AddWithValue("$list", listId);
         command.Parameters.AddWithValue("$show", showId);
         command.ExecuteNonQuery();
+        transaction.Commit();
     }
 
     public IReadOnlySet<int> GetCustomListIdsForShow(int showId)
@@ -388,12 +502,14 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         using var connection = SqliteConnections.Open(_connectionString);
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT kind, id, title, year, poster, is_missing, custom_title, canonical_title FROM (
+            SELECT kind, id, title, year, poster, is_missing, custom_title, canonical_title, tmdb_id, is_cloud FROM (
                 SELECT 'MOVIE' AS kind, m.id AS id, COALESCE(NULLIF(m.custom_display_title, ''), m.title) AS title, m.year AS year, m.poster_path AS poster,
                        CASE WHEN EXISTS (SELECT 1 FROM media_files mf WHERE mf.movie_id = m.id AND mf.status = 'PRESENT')
                             THEN 0 ELSE 1 END AS is_missing,
                        m.custom_display_title AS custom_title,
                        m.title AS canonical_title,
+                       clm.tmdb_id AS tmdb_id,
+                       0 AS is_cloud,
                        clm.added_at AS added_at
                   FROM custom_list_members clm
                   JOIN movies m ON m.id = clm.movie_id
@@ -409,10 +525,22 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
                             THEN 0 ELSE 1 END,
                        s.custom_display_title AS custom_title,
                        s.title AS canonical_title,
+                       clm.tmdb_id AS tmdb_id,
+                       0 AS is_cloud,
                        clm.added_at
                   FROM custom_list_members clm
                   JOIN tv_shows s ON s.id = clm.show_id
                  WHERE clm.list_id = $list AND clm.media_kind = 'SHOW'
+                UNION ALL
+                SELECT clm.media_kind AS kind, 0 AS id, COALESCE(clm.cloud_title, 'TMDB #' || clm.tmdb_id) AS title, clm.cloud_year AS year, NULL AS poster,
+                       1 AS is_missing,
+                       NULL AS custom_title,
+                       COALESCE(clm.cloud_title, 'TMDB #' || clm.tmdb_id) AS canonical_title,
+                       clm.tmdb_id AS tmdb_id,
+                       1 AS is_cloud,
+                       clm.added_at AS added_at
+                  FROM custom_list_members clm
+                 WHERE clm.list_id = $list AND clm.movie_id IS NULL AND clm.show_id IS NULL
             )
              ORDER BY datetime(added_at) DESC, id DESC
              LIMIT $limit OFFSET $offset;
@@ -432,9 +560,388 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
                 reader.IsDBNull(4) ? null : reader.GetString(4),
                 reader.GetInt32(5) != 0,
                 reader.IsDBNull(6) ? null : reader.GetString(6),
-                reader.IsDBNull(7) ? null : reader.GetString(7)));
+                reader.IsDBNull(7) ? null : reader.GetString(7),
+                reader.IsDBNull(8) ? null : reader.GetInt32(8),
+                reader.GetInt32(9) == 1));
         }
         return result;
+    }
+
+    public int UpsertTraktCustomList(string name, long traktListId, string? traktSlug, DateTimeOffset now, string syncStatus = "SYNCED")
+    {
+        var trimmed = ValidateListName(name);
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var transaction = connection.BeginTransaction(deferred: false);
+
+        using var findCmd = Command(connection, transaction,
+            "SELECT id, display_name FROM custom_lists WHERE trakt_list_id = $traktId;");
+        findCmd.Parameters.AddWithValue("$traktId", traktListId);
+        using (var reader = findCmd.ExecuteReader())
+        {
+            if (reader.Read())
+            {
+                var existingId = reader.GetInt32(0);
+                using var updateCmd = Command(connection, transaction, """
+                    UPDATE custom_lists
+                       SET trakt_slug = $slug,
+                           sync_status = CASE WHEN sync_status = 'PENDING_DELETE' THEN sync_status ELSE $status END,
+                           is_deleted = CASE WHEN sync_status = 'PENDING_DELETE' THEN 1 ELSE 0 END
+                     WHERE id = $id;
+                    """);
+                updateCmd.Parameters.AddWithValue("$slug", (object?)traktSlug ?? DBNull.Value);
+                updateCmd.Parameters.AddWithValue("$status", syncStatus);
+                updateCmd.Parameters.AddWithValue("$id", existingId);
+                updateCmd.ExecuteNonQuery();
+                transaction.Commit();
+                return existingId;
+            }
+        }
+
+        using var conflictCmd = Command(connection, transaction,
+            "SELECT id, display_name FROM custom_lists WHERE trakt_list_id IS NULL AND is_deleted = 0;");
+        var conflictingIds = new List<(int Id, string Name)>();
+        using (var conflictReader = conflictCmd.ExecuteReader())
+        {
+            while (conflictReader.Read())
+            {
+                var id = conflictReader.GetInt32(0);
+                var existingName = conflictReader.GetString(1);
+                if (string.Equals(existingName.Trim(), trimmed, StringComparison.OrdinalIgnoreCase))
+                {
+                    conflictingIds.Add((id, existingName));
+                }
+            }
+        }
+
+        foreach (var (conflictId, conflictName) in conflictingIds)
+        {
+            var prefixed = $"[TBD] {conflictName}";
+            using var renameCmd = Command(connection, transaction,
+                "UPDATE custom_lists SET display_name = $prefixed WHERE id = $id;");
+            renameCmd.Parameters.AddWithValue("$prefixed", prefixed);
+            renameCmd.Parameters.AddWithValue("$id", conflictId);
+            renameCmd.ExecuteNonQuery();
+        }
+
+        using var insertCmd = Command(connection, transaction, """
+            INSERT INTO custom_lists (display_name, created_at, trakt_list_id, trakt_slug, sync_status, is_deleted, last_synced_at)
+            VALUES ($name, $now, $traktId, $slug, $status, 0, $now);
+            SELECT last_insert_rowid();
+            """);
+        insertCmd.Parameters.AddWithValue("$name", trimmed);
+        insertCmd.Parameters.AddWithValue("$now", now.ToString("O"));
+        insertCmd.Parameters.AddWithValue("$traktId", traktListId);
+        insertCmd.Parameters.AddWithValue("$slug", (object?)traktSlug ?? DBNull.Value);
+        insertCmd.Parameters.AddWithValue("$status", syncStatus);
+
+        var newId = checked((int)(long)(insertCmd.ExecuteScalar() ?? throw new InvalidOperationException("Insert returned no ID.")));
+        transaction.Commit();
+        return newId;
+    }
+
+    public void AddCloudMediaToCustomList(int listId, CustomListMediaKind kind, int tmdbId, DateTimeOffset now)
+    {
+        AddCloudMediaToCustomList(listId, kind, tmdbId, now, null, null);
+    }
+
+    public void AddCloudMediaToCustomList(int listId, CustomListMediaKind kind, int tmdbId, DateTimeOffset now, string? title, int? year)
+    {
+        ValidateId(listId, nameof(listId));
+        if (tmdbId <= 0) throw new ArgumentOutOfRangeException(nameof(tmdbId));
+
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var transaction = connection.BeginTransaction(deferred: false);
+        RequireCustomList(connection, listId, transaction);
+
+        int? localMovieId = null;
+        int? localShowId = null;
+
+        if (kind == CustomListMediaKind.Movie)
+        {
+            using var findMovie = Command(connection, transaction,
+                "SELECT id FROM movies WHERE provider = 'tmdb' AND external_id = $tmdb LIMIT 1;");
+            findMovie.Parameters.AddWithValue("$tmdb", tmdbId.ToString(CultureInfo.InvariantCulture));
+            var obj = findMovie.ExecuteScalar();
+            if (obj != null && obj != DBNull.Value) localMovieId = Convert.ToInt32(obj);
+        }
+        else
+        {
+            using var findShow = Command(connection, transaction,
+                "SELECT id FROM tv_shows WHERE provider = 'tmdb' AND external_id = $tmdb LIMIT 1;");
+            findShow.Parameters.AddWithValue("$tmdb", tmdbId.ToString(CultureInfo.InvariantCulture));
+            var obj = findShow.ExecuteScalar();
+            if (obj != null && obj != DBNull.Value) localShowId = Convert.ToInt32(obj);
+        }
+
+        using var insertCmd = Command(connection, transaction, """
+            INSERT INTO custom_list_members (list_id, media_kind, tmdb_id, movie_id, show_id, cloud_title, cloud_year, added_at)
+            VALUES ($list, $kind, $tmdb, $movie, $show, $title, $year, $now)
+            ON CONFLICT(list_id, media_kind, tmdb_id) WHERE tmdb_id IS NOT NULL DO UPDATE SET
+                movie_id = COALESCE(excluded.movie_id, custom_list_members.movie_id),
+                show_id = COALESCE(excluded.show_id, custom_list_members.show_id),
+                cloud_title = COALESCE(excluded.cloud_title, custom_list_members.cloud_title),
+                cloud_year = COALESCE(excluded.cloud_year, custom_list_members.cloud_year);
+            """);
+        insertCmd.Parameters.AddWithValue("$list", listId);
+        insertCmd.Parameters.AddWithValue("$kind", kind == CustomListMediaKind.Show ? "SHOW" : "MOVIE");
+        insertCmd.Parameters.AddWithValue("$tmdb", tmdbId);
+        insertCmd.Parameters.AddWithValue("$movie", (object?)localMovieId ?? DBNull.Value);
+        insertCmd.Parameters.AddWithValue("$show", (object?)localShowId ?? DBNull.Value);
+        insertCmd.Parameters.AddWithValue("$title", (object?)title ?? DBNull.Value);
+        insertCmd.Parameters.AddWithValue("$year", (object?)year ?? DBNull.Value);
+        insertCmd.Parameters.AddWithValue("$now", now.ToString("O"));
+        insertCmd.ExecuteNonQuery();
+
+        transaction.Commit();
+    }
+
+    public void RemoveCloudMediaFromCustomList(int listId, CustomListMediaKind kind, int tmdbId)
+    {
+        ValidateId(listId, nameof(listId));
+        if (tmdbId <= 0) throw new ArgumentOutOfRangeException(nameof(tmdbId));
+
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var transaction = connection.BeginTransaction(deferred: false);
+        RequireCustomList(connection, listId, transaction);
+
+        using var chk = Command(connection, transaction, "SELECT trakt_list_id FROM custom_lists WHERE id = $id AND is_deleted = 0;");
+        chk.Parameters.AddWithValue("$id", listId);
+        var traktIdObj = chk.ExecuteScalar();
+        if (traktIdObj != null && traktIdObj != DBNull.Value)
+        {
+            using var insPending = Command(connection, transaction,
+                "INSERT INTO custom_list_pending_actions(list_id, media_kind, tmdb_id, action_type, created_at) VALUES ($lid, $kind, $tmdb, 'REMOVE', $created);");
+            insPending.Parameters.AddWithValue("$lid", listId);
+            insPending.Parameters.AddWithValue("$kind", kind == CustomListMediaKind.Show ? "SHOW" : "MOVIE");
+            insPending.Parameters.AddWithValue("$tmdb", tmdbId);
+            insPending.Parameters.AddWithValue("$created", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+            insPending.ExecuteNonQuery();
+        }
+
+        using var deleteCmd = Command(connection, transaction, """
+            DELETE FROM custom_list_members
+             WHERE list_id = $list
+               AND media_kind = $kind
+               AND (tmdb_id = $tmdb OR movie_id IN (SELECT id FROM movies WHERE provider = 'tmdb' AND external_id = $tmdbStr) OR show_id IN (SELECT id FROM tv_shows WHERE provider = 'tmdb' AND external_id = $tmdbStr));
+            """);
+        deleteCmd.Parameters.AddWithValue("$list", listId);
+        deleteCmd.Parameters.AddWithValue("$kind", kind == CustomListMediaKind.Show ? "SHOW" : "MOVIE");
+        deleteCmd.Parameters.AddWithValue("$tmdb", tmdbId);
+        deleteCmd.Parameters.AddWithValue("$tmdbStr", tmdbId.ToString(CultureInfo.InvariantCulture));
+        deleteCmd.ExecuteNonQuery();
+
+        transaction.Commit();
+    }
+
+    public void EnqueuePendingAction(int listId, CustomListMediaKind? kind, int? tmdbId, string actionType, DateTimeOffset now)
+    {
+        ValidateId(listId, nameof(listId));
+        if (actionType != "CREATE_LIST" && (!tmdbId.HasValue || tmdbId.Value <= 0)) return;
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = Command(connection, null, """
+            INSERT INTO custom_list_pending_actions (list_id, media_kind, tmdb_id, action_type, created_at)
+            VALUES ($list, $kind, $tmdb, $type, $now);
+            """);
+        command.Parameters.AddWithValue("$list", listId);
+        command.Parameters.AddWithValue("$kind", kind.HasValue ? (kind.Value == CustomListMediaKind.Show ? "SHOW" : "MOVIE") : DBNull.Value);
+        command.Parameters.AddWithValue("$tmdb", tmdbId.HasValue ? tmdbId.Value : DBNull.Value);
+        command.Parameters.AddWithValue("$type", actionType);
+        command.Parameters.AddWithValue("$now", now.ToString("O"));
+        command.ExecuteNonQuery();
+    }
+
+    public IReadOnlyList<CustomListPendingAction> ListPendingActions(int? listId = null)
+    {
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = connection.CreateCommand();
+        if (listId.HasValue)
+        {
+            command.CommandText = "SELECT id, list_id, media_kind, tmdb_id, action_type, created_at FROM custom_list_pending_actions WHERE list_id = $list ORDER BY created_at ASC;";
+            command.Parameters.AddWithValue("$list", listId.Value);
+        }
+        else
+        {
+            command.CommandText = "SELECT id, list_id, media_kind, tmdb_id, action_type, created_at FROM custom_list_pending_actions ORDER BY created_at ASC;";
+        }
+        var list = new List<CustomListPendingAction>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            CustomListMediaKind? kind = reader.IsDBNull(2) ? null : (reader.GetString(2) == "SHOW" ? CustomListMediaKind.Show : CustomListMediaKind.Movie);
+            int? tmdb = reader.IsDBNull(3) ? null : reader.GetInt32(3);
+            list.Add(new CustomListPendingAction(
+                reader.GetInt32(0),
+                reader.GetInt32(1),
+                kind,
+                tmdb,
+                reader.GetString(4),
+                DateTimeOffset.Parse(reader.GetString(5), CultureInfo.InvariantCulture)));
+        }
+        return list;
+    }
+
+    public IReadOnlyList<CustomListRecord> ListUnlinkedCustomLists()
+    {
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT cl.id, cl.display_name, COUNT(clm.id) AS member_count, cl.trakt_list_id, cl.trakt_slug, cl.sync_status, cl.last_synced_at
+            FROM custom_lists cl
+            LEFT JOIN custom_list_members clm ON clm.list_id = cl.id
+            WHERE cl.trakt_list_id IS NULL AND cl.is_deleted = 0
+            GROUP BY cl.id, cl.display_name, cl.created_at, cl.trakt_list_id, cl.trakt_slug, cl.sync_status, cl.last_synced_at
+            ORDER BY cl.created_at ASC, cl.id ASC;
+            """;
+        var result = new List<CustomListRecord>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            result.Add(new CustomListRecord(
+                reader.GetInt32(0),
+                reader.GetString(1),
+                reader.GetInt32(2),
+                reader.IsDBNull(3) ? null : reader.GetInt64(3),
+                reader.IsDBNull(4) ? null : reader.GetString(4),
+                reader.IsDBNull(5) ? "SYNCED" : reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6)));
+        }
+        return result;
+    }
+
+    public void LinkTraktCustomList(int listId, long traktListId, string traktSlug, DateTimeOffset now)
+    {
+        ValidateId(listId, nameof(listId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(traktSlug);
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = Command(connection, null, """
+            UPDATE custom_lists
+            SET trakt_list_id = $traktId,
+                trakt_slug = $slug,
+                sync_status = 'SYNCED',
+                last_synced_at = $now
+            WHERE id = $id;
+            """);
+        command.Parameters.AddWithValue("$id", listId);
+        command.Parameters.AddWithValue("$traktId", traktListId);
+        command.Parameters.AddWithValue("$slug", traktSlug);
+        command.Parameters.AddWithValue("$now", now.ToString("O"));
+        command.ExecuteNonQuery();
+    }
+
+    public IReadOnlyList<(int MovieOrShowId, CustomListMediaKind Kind, int TmdbId)> ListLocalMembersWithTmdb(int listId)
+    {
+        ValidateId(listId, nameof(listId));
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COALESCE(movie_id, show_id, 0) AS item_id, media_kind, tmdb_id
+            FROM custom_list_members
+            WHERE list_id = $listId AND tmdb_id IS NOT NULL AND tmdb_id > 0;
+            """;
+        command.Parameters.AddWithValue("$listId", listId);
+        var result = new List<(int, CustomListMediaKind, int)>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            var itemId = reader.IsDBNull(0) ? 0 : reader.GetInt32(0);
+            var kind = reader.GetString(1) == "SHOW" ? CustomListMediaKind.Show : CustomListMediaKind.Movie;
+            var tmdbId = reader.GetInt32(2);
+            result.Add((itemId, kind, tmdbId));
+        }
+        return result;
+    }
+
+    public void DeletePendingAction(int actionId)
+    {
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = Command(connection, null, "DELETE FROM custom_list_pending_actions WHERE id = $id;");
+        command.Parameters.AddWithValue("$id", actionId);
+        command.ExecuteNonQuery();
+    }
+
+    public void SetListLastSynced(int listId, DateTimeOffset syncedAt)
+    {
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = Command(connection, null, "UPDATE custom_lists SET last_synced_at = $synced, sync_status = 'SYNCED' WHERE id = $id;");
+        command.Parameters.AddWithValue("$synced", syncedAt.ToString("O"));
+        command.Parameters.AddWithValue("$id", listId);
+        command.ExecuteNonQuery();
+    }
+
+    private static void RecordPendingAddIfSynced(SqliteConnection connection, SqliteTransaction transaction, int listId, CustomListMediaKind kind, int mediaId, bool isMovie, DateTimeOffset now)
+    {
+        using var checkCmd = Command(connection, transaction, "SELECT trakt_list_id FROM custom_lists WHERE id = $id;");
+        checkCmd.Parameters.AddWithValue("$id", listId);
+        var traktId = checkCmd.ExecuteScalar();
+        if (traktId == null || traktId == DBNull.Value) return;
+
+        int? tmdbId = null;
+        if (isMovie)
+        {
+            using var getTmdb = Command(connection, transaction, "SELECT external_id FROM movies WHERE id = $id AND provider = 'tmdb';");
+            getTmdb.Parameters.AddWithValue("$id", mediaId);
+            var ext = getTmdb.ExecuteScalar()?.ToString();
+            if (int.TryParse(ext, out var val) && val > 0) tmdbId = val;
+        }
+        else
+        {
+            using var getTmdb = Command(connection, transaction, "SELECT external_id FROM tv_shows WHERE id = $id AND provider = 'tmdb';");
+            getTmdb.Parameters.AddWithValue("$id", mediaId);
+            var ext = getTmdb.ExecuteScalar()?.ToString();
+            if (int.TryParse(ext, out var val) && val > 0) tmdbId = val;
+        }
+
+        if (tmdbId is int validTmdb && validTmdb > 0)
+        {
+            using var queueCmd = Command(connection, transaction, """
+                INSERT INTO custom_list_pending_actions (list_id, media_kind, tmdb_id, action_type, created_at)
+                VALUES ($list, $kind, $tmdb, 'ADD', $now);
+                """);
+            queueCmd.Parameters.AddWithValue("$list", listId);
+            queueCmd.Parameters.AddWithValue("$kind", kind == CustomListMediaKind.Show ? "SHOW" : "MOVIE");
+            queueCmd.Parameters.AddWithValue("$tmdb", validTmdb);
+            queueCmd.Parameters.AddWithValue("$now", now.ToString("O"));
+            queueCmd.ExecuteNonQuery();
+        }
+    }
+
+    private static void RecordPendingRemoveIfSynced(SqliteConnection connection, SqliteTransaction transaction, int listId, CustomListMediaKind kind, int mediaId, bool isMovie, DateTimeOffset now)
+    {
+        using var checkCmd = Command(connection, transaction, "SELECT trakt_list_id FROM custom_lists WHERE id = $id;");
+        checkCmd.Parameters.AddWithValue("$id", listId);
+        var traktId = checkCmd.ExecuteScalar();
+        if (traktId == null || traktId == DBNull.Value) return;
+
+        using var getMemberTmdb = Command(connection, transaction, """
+            SELECT tmdb_id FROM custom_list_members
+             WHERE list_id = $list AND media_kind = $kind AND (
+                 ($isMovie = 1 AND movie_id = $mediaId) OR ($isMovie = 0 AND show_id = $mediaId)
+             );
+            """);
+        getMemberTmdb.Parameters.AddWithValue("$list", listId);
+        getMemberTmdb.Parameters.AddWithValue("$kind", kind == CustomListMediaKind.Show ? "SHOW" : "MOVIE");
+        getMemberTmdb.Parameters.AddWithValue("$isMovie", isMovie ? 1 : 0);
+        getMemberTmdb.Parameters.AddWithValue("$mediaId", mediaId);
+        var tmdbObj = getMemberTmdb.ExecuteScalar();
+        if (tmdbObj != null && tmdbObj != DBNull.Value && Convert.ToInt32(tmdbObj) is int tmdb && tmdb > 0)
+        {
+            using var queueCmd = Command(connection, transaction, """
+                INSERT INTO custom_list_pending_actions (list_id, media_kind, tmdb_id, action_type, created_at)
+                VALUES ($list, $kind, $tmdb, 'REMOVE', $now);
+                """);
+            queueCmd.Parameters.AddWithValue("$list", listId);
+            queueCmd.Parameters.AddWithValue("$kind", kind == CustomListMediaKind.Show ? "SHOW" : "MOVIE");
+            queueCmd.Parameters.AddWithValue("$tmdb", tmdb);
+            queueCmd.Parameters.AddWithValue("$now", now.ToString("O"));
+            queueCmd.ExecuteNonQuery();
+        }
     }
 
     private static string ValidateListName(string name)
@@ -456,7 +963,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
     /// </summary>
     private static void RequireUniqueName(SqliteConnection connection, SqliteTransaction? transaction, string trimmedName, int? exceptListId)
     {
-        using var command = Command(connection, transaction, "SELECT id, display_name FROM custom_lists;");
+        using var command = Command(connection, transaction, "SELECT id, display_name FROM custom_lists WHERE is_deleted = 0;");
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {

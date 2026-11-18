@@ -136,7 +136,8 @@ public class LibraryService : ILibraryUiActions, IPersonalLibraryUiActions
     }
 
     public IReadOnlyList<CustomList> ListCustomLists() =>
-        _personal.ListCustomLists().Select(list => new CustomList(list.Id, list.Name, list.ItemCount)).ToList();
+        _personal.ListCustomLists().Select(list => new CustomList(
+            list.Id, list.Name, list.ItemCount, list.TraktListId, list.TraktSlug, list.SyncStatus, list.LastSyncedAt)).ToList();
 
     public CustomList CreateCustomList(string name)
     {
@@ -178,11 +179,14 @@ public class LibraryService : ILibraryUiActions, IPersonalLibraryUiActions
     public IReadOnlySet<int> GetCustomListIdsForShow(int showId) =>
         _personal.GetCustomListIdsForShow(showId);
 
+    public void RemoveCloudMediaFromCustomList(int listId, CustomListMediaKind kind, int tmdbId) =>
+        _personal.RemoveCloudMediaFromCustomList(listId, kind, tmdbId);
+
     public IReadOnlyList<CustomListItem> ListCustomListItems(int listId) =>
         _personal.ListCustomListItems(listId)
             .Select(member => new CustomListItem(
                 member.Kind, member.Id, member.Title, member.Year, member.PosterReference, member.IsMissing,
-                member.CustomDisplayTitle, member.CanonicalTitle))
+                member.CustomDisplayTitle, member.CanonicalTitle, member.TmdbId, member.IsCloudOnly))
             .ToList();
 
     private PersonalMovieSnapshot MapSnapshot(PersonalMovieState state) =>

@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -19,6 +19,9 @@ internal sealed class SafeTransferEngine : IDisposable
     private readonly ConcurrentDictionary<string, TransferSession> _sessions = new(StringComparer.Ordinal);
     private readonly bool _forceCopy;
 
+    internal Func<SourceIdentity, SourceIdentity>? DestinationIdentityResolverForTesting { get; set; }
+    internal Func<string, string>? DestinationHashResolverForTesting { get; set; }
+
     internal SafeTransferEngine(bool forceCopy = false) => _forceCopy = forceCopy;
 
     public PreparedTransfer Prepare(
@@ -30,11 +33,16 @@ internal sealed class SafeTransferEngine : IDisposable
         if (string.IsNullOrWhiteSpace(operationId)) throw new ArgumentException("Operation ID is required.", nameof(operationId));
         if (_sessions.ContainsKey(operationId)) throw new InvalidOperationException("Operation already has an active transfer session.");
 
+        if (StringComparer.OrdinalIgnoreCase.Equals(Path.GetFullPath(source), Path.GetFullPath(destination)))
+            throw new ArgumentException("Source and destination must be distinct paths.", nameof(destination));
+
         PathPolicy.AssertNoReparseComponents(source);
         PathPolicy.AssertNoReparseComponents(Path.GetDirectoryName(destination)!);
         var sourceHandle = WindowsNative.OpenLockedSource(source);
         SafeFileHandle? directoryGuard = null;
         string? tempPath = null;
+        var destinationCreated = false;
+        var completed = false;
         try
         {
             if (WindowsNative.Identity(sourceHandle) != expected)
@@ -46,7 +54,9 @@ internal sealed class SafeTransferEngine : IDisposable
             PreparedTransfer prepared;
             if (!_forceCopy && WindowsNative.CreateHardLinkW(destination, source, IntPtr.Zero))
             {
-                var destinationIdentity = WindowsNative.Identity(destination);
+                destinationCreated = true;
+                var destinationIdentity = DestinationIdentityResolverForTesting?.Invoke(WindowsNative.Identity(destination))
+                    ?? WindowsNative.Identity(destination);
                 if (destinationIdentity != expected)
                     throw new IOException("Hard-link destination does not identify the locked source.");
                 prepared = FromIdentity("hardlink-unlink", destinationIdentity, null);
@@ -58,7 +68,7 @@ internal sealed class SafeTransferEngine : IDisposable
                 tempPath = Path.Combine(
                     Path.GetDirectoryName(destination)!,
                     $".{Path.GetFileName(destination)}.tbdmovies-{operationId}.tmp");
-                prepared = PrepareCopy(source, destination, tempPath, expected, sourceHandle);
+                prepared = PrepareCopy(source, destination, tempPath, expected, sourceHandle, ref destinationCreated);
                 tempPath = null;
             }
 
@@ -67,13 +77,41 @@ internal sealed class SafeTransferEngine : IDisposable
                 throw new InvalidOperationException("Operation already has an active transfer session.");
             sourceHandle = null!;
             directoryGuard = null;
+            completed = true;
             return prepared;
         }
         finally
         {
-            if (tempPath is not null && File.Exists(tempPath)) File.Delete(tempPath);
+            // Release handles first to unlock the NTFS file lock before attempting to delete destination
             sourceHandle?.Dispose();
             directoryGuard?.Dispose();
+
+            if (!completed)
+            {
+                if (destinationCreated)
+                {
+                    try
+                    {
+                        if (File.Exists(destination)) File.Delete(destination);
+                    }
+                    catch
+                    {
+                        // Best-effort cleanup: prevent masking the primary failure exception
+                    }
+                }
+
+                if (tempPath is not null)
+                {
+                    try
+                    {
+                        if (File.Exists(tempPath)) File.Delete(tempPath);
+                    }
+                    catch
+                    {
+                        // Best-effort cleanup: prevent masking the primary failure exception
+                    }
+                }
+            }
         }
     }
 
@@ -124,12 +162,13 @@ internal sealed class SafeTransferEngine : IDisposable
         foreach (var operationId in _sessions.Keys) Abandon(operationId);
     }
 
-    private static PreparedTransfer PrepareCopy(
+    private PreparedTransfer PrepareCopy(
         string source,
         string destination,
         string tempPath,
         SourceIdentity expected,
-        SafeFileHandle sourceHandle)
+        SafeFileHandle sourceHandle,
+        ref bool destinationCreated)
     {
         string sourceHash;
         using (var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, BufferSize, FileOptions.SequentialScan))
@@ -150,7 +189,9 @@ internal sealed class SafeTransferEngine : IDisposable
         if (WindowsNative.Identity(sourceHandle) != expected)
             throw new SourceChangedException("Source identity changed during cross-volume copy.");
         File.Move(tempPath, destination, overwrite: false);
-        var destinationHash = ComputeSha256(destination);
+        destinationCreated = true;
+        var destinationHash = DestinationHashResolverForTesting?.Invoke(ComputeSha256(destination))
+            ?? ComputeSha256(destination);
         if (!StringComparer.Ordinal.Equals(sourceHash, destinationHash))
             throw new IOException("Destination SHA-256 verification failed.");
         return FromIdentity("copy-sha256-flush-finalize-unlink", WindowsNative.Identity(destination), destinationHash);

@@ -13,7 +13,7 @@ namespace TBDMovies.UI.Models;
 /// or a TVShowRecord (with its ShowCardItem) so that movies and TV shows render together
 /// in a single collection.
 /// </summary>
-public sealed record LibraryCardItem : INotifyPropertyChanged
+public sealed record LibraryCardItem : INotifyPropertyChanged, IDisposable
 {
     public MovieRecord? Movie { get; }
     public TVShowRecord? Show { get; }
@@ -32,6 +32,18 @@ public sealed record LibraryCardItem : INotifyPropertyChanged
         Show = show;
         ShowCard = showCard;
         showCard.PropertyChanged += OnSourceChanged;
+    }
+
+    public void Dispose()
+    {
+        if (Movie is not null)
+        {
+            Movie.PropertyChanged -= OnSourceChanged;
+        }
+        if (ShowCard is not null)
+        {
+            ShowCard.PropertyChanged -= OnSourceChanged;
+        }
     }
 
     private void OnSourceChanged(object? sender, PropertyChangedEventArgs e)

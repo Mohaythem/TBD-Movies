@@ -53,7 +53,7 @@ checklist (below). Interactive journeys, removable-drive, and clean-machine veri
 - Automated suite baseline: **381 / 381** passing.
 
 ## QA data isolation
-- The installed app resolves its data folder from `TBD Movies_TEST_DATA_ROOT` (absolute path) when set,
+- The installed app resolves its data folder from `TBDMOVIES_TEST_DATA_ROOT` (absolute path) when set,
   else the default `%LOCALAPPDATA%\TBD Movies`. This override was moved from Debug-only to all
   configurations so the installed Release build can run against a disposable profile. It is inert unless
   the variable is set and never changes the default location.
@@ -82,7 +82,7 @@ checklist (below). Interactive journeys, removable-drive, and clean-machine veri
 | 5K | 923 ms | 987 ms | yes | yes |
 | 10K | 1186 ms | 1205 ms | yes | yes |
 
-Methodology: installed EXE launched with `TBD Movies_TEST_DATA_ROOT` set; wall-clock from process start
+Methodology: installed EXE launched with `TBDMOVIES_TEST_DATA_ROOT` set; wall-clock from process start
 until `MainWindowHandle != 0` (proxy for time-to-usable window); process fully stopped between runs.
 No established SLO exists, so no pass/fail threshold is invented. Observation: startup is ~0.7–1.2 s and
 grows only modestly from 1K to 10K (roughly flat, no nonlinear blow-up, no hang, no immediate exit).
@@ -123,7 +123,7 @@ cascades, migration backup fail-closed, StorageUnavailable vs Missing — all gr
 
 ## Manual GUI checklist (run against the installed app; set the QA data root first)
 Set once per shell, then launch the installed app:
-`setx-free:  $env:TBD Movies_TEST_DATA_ROOT="$env:LOCALAPPDATA\Temp\TBD Movies-qa\10k"` then start
+`setx-free:  $env:TBDMOVIES_TEST_DATA_ROOT="$env:LOCALAPPDATA\Temp\TBD Movies-qa\10k"` then start
 `%LOCALAPPDATA%\Programs\TBD Movies\TBD Movies.UI.exe`. Then verify (5 groups):
 1. Library: cards appear quickly; scrolling stays smooth; posters fall back to placeholder with correct
    2:3 geometry (QA poster refs are synthetic, so all show placeholders — no layout collapse, no runaway).

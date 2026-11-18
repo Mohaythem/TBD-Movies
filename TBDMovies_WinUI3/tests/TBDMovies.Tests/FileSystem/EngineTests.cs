@@ -1,4 +1,5 @@
-﻿using TBDMovies.Domain.Core.Operations;
+using TBDMovies.Domain.Core.Operations;
+using TBDMovies.Domain.Core.Safety;
 using TBDMovies.FileSystem.Engine;
 using TBDMovies.FileSystem.Operations;
 using TBDMovies.FileSystem.Safety;
@@ -116,6 +117,44 @@ public sealed class EngineTests : IDisposable
         {
             Directory.Delete(other, true);
         }
+    }
+
+    [Fact]
+    public void HardlinkFailure_CleansUpOrphanedDestinationAndPreservesSource()
+    {
+        var source = CreateSource();
+        var destination = Path.Combine(_directory, "orphaned_dest.mkv");
+        var expected = WindowsNative.Identity(source);
+        using var engine = new SafeTransferEngine(forceCopy: false)
+        {
+            DestinationIdentityResolverForTesting = id => new SourceIdentity(id.Size + 1, id.MTimeNs, id.Dev, id.Ino)
+        };
+
+        var ex = Assert.Throws<IOException>(() =>
+            engine.Prepare(source, destination, expected, "op_test_hl_fail"));
+        Assert.Contains("Hard-link destination does not identify the locked source", ex.Message);
+        Assert.False(File.Exists(destination), "Orphaned hardlink destination must be deleted on verification failure.");
+        Assert.True(File.Exists(source), "Source file must remain intact and unaffected.");
+        Assert.Equal("hello world", File.ReadAllText(source));
+    }
+
+    [Fact]
+    public void ForcedCopyFailure_CleansUpOrphanedDestinationAndPreservesSource()
+    {
+        var source = CreateSource();
+        var destination = Path.Combine(_directory, "orphaned_dest_copy.mkv");
+        var expected = WindowsNative.Identity(source);
+        using var engine = new SafeTransferEngine(forceCopy: true)
+        {
+            DestinationHashResolverForTesting = hash => "0000000000000000000000000000000000000000000000000000000000000000"
+        };
+
+        var ex = Assert.Throws<IOException>(() =>
+            engine.Prepare(source, destination, expected, "op_test_copy_fail"));
+        Assert.Contains("Destination SHA-256 verification failed", ex.Message);
+        Assert.False(File.Exists(destination), "Destination copy must be deleted on SHA-256 verification failure.");
+        Assert.True(File.Exists(source), "Source file must remain intact and unaffected.");
+        Assert.Equal("hello world", File.ReadAllText(source));
     }
 
     private string CreateSource()

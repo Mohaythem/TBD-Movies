@@ -398,7 +398,7 @@ public sealed class TraktAuthServiceTests
     }
 
     [Fact]
-    public async Task GetAccessToken_UncertainNetworkFailure_PersistsFailClosedMarker_DoesNotReplayOnRestart()
+    public async Task GetAccessToken_TransientNetworkFailure_PreservesSessionAndStoredTokens_AllowsRetry()
     {
         var now = _timeProvider.GetUtcNow();
         _credentialStore.Write(new TraktCredentialPayload(
@@ -414,22 +414,29 @@ public sealed class TraktAuthServiceTests
 
         var service = CreateService();
 
-        await Assert.ThrowsAsync<TraktAuthException>(() => service.GetAccessTokenAsync());
+        var ex = await Assert.ThrowsAsync<TraktAuthException>(() => service.GetAccessTokenAsync());
+        Assert.IsType<HttpRequestException>(ex.InnerException);
 
-        // Verify fail-closed marker in persistent storage
-        var storedMarker = _credentialStore.Read();
-        Assert.NotNull(storedMarker);
-        Assert.True(storedMarker.RequiresReconnect);
+        // Verify session and stored tokens are preserved (NOT marked RequiresReconnect)
+        var storedTokens = _credentialStore.Read();
+        Assert.NotNull(storedTokens);
+        Assert.False(storedTokens.RequiresReconnect);
+        Assert.Equal("expiring-token", storedTokens.AccessToken);
 
-        // Simulate app restart by constructing a new service instance reading the same store
+        var state = service.GetAuthState();
+        Assert.False(state.RequiresReconnect);
+
+        // Simulate app restart: credentials still valid and not requiring reconnect
         var restartedService = CreateService();
-        var state = restartedService.GetAuthState();
-        Assert.False(state.IsConnected);
-        Assert.True(state.RequiresReconnect);
+        var restartedState = restartedService.GetAuthState();
+        Assert.False(restartedState.RequiresReconnect);
 
-        // Verification: No tokens are replayed on restart
-        await Assert.ThrowsAsync<TraktAuthException>(() => restartedService.GetAccessTokenAsync());
-        Assert.Equal(1, _authClient.RefreshCallsCount);
+        // Once network recovers, refresh succeeds
+        _authClient.RefreshExceptionToThrow = null;
+        _authClient.RefreshTokenToReturn = new TraktTokenPair("new-access", "new-refresh", "bearer", 7200, "public", now.ToUnixTimeSeconds());
+        var recoveredToken = await restartedService.GetAccessTokenAsync();
+        Assert.Equal("new-access", recoveredToken);
+        Assert.True(restartedService.GetAuthState().IsConnected);
     }
 
     [Fact]
@@ -447,15 +454,10 @@ public sealed class TraktAuthServiceTests
 
         _authClient.RefreshTokenToReturn = new TraktTokenPair("new-access", "new-refresh", "bearer", 7200, "public", now.ToUnixTimeSeconds());
 
-        // Permit write of marker, but fail when writing new tokens
-        var writeCount = 0;
+        // Fail when writing new tokens
         _credentialStore.OnWrite = _ =>
         {
-            writeCount++;
-            if (writeCount > 1)
-            {
-                throw new InvalidOperationException("Failed to persist new tokens to secure vault");
-            }
+            throw new InvalidOperationException("Failed to persist new tokens to secure vault");
         };
 
         var service = CreateService();
@@ -465,10 +467,11 @@ public sealed class TraktAuthServiceTests
         var state = service.GetAuthState();
         Assert.False(state.IsConnected);
         Assert.True(state.RequiresReconnect);
+        Assert.Null(_credentialStore.Read());
 
         // Restarting service cannot replay old tokens
         var restartedService = CreateService();
-        Assert.True(restartedService.GetAuthState().RequiresReconnect);
+        Assert.False(restartedService.GetAuthState().IsConnected);
     }
 
     [Fact]
@@ -497,7 +500,7 @@ public sealed class TraktAuthServiceTests
     }
 
     [Fact]
-    public async Task GetAccessToken_UncertainRefreshWithDeleteFailure_LeavesFailClosedMarker_BlocksReuseOnRestart()
+    public async Task GetAccessToken_TransientNetworkFailure_DoesNotAttemptDelete_PreservesStoredCredentials()
     {
         var now = _timeProvider.GetUtcNow();
         _credentialStore.Write(new TraktCredentialPayload(
@@ -509,26 +512,44 @@ public sealed class TraktAuthServiceTests
             "public",
             now.ToUnixTimeSeconds()));
 
-        _authClient.RefreshExceptionToThrow = new HttpRequestException("Uncertain connection drop during POST /oauth/token");
-        _credentialStore.ThrowOnDelete = new InvalidOperationException("OS credential vault delete failure");
+        _authClient.RefreshExceptionToThrow = new HttpRequestException("Temporary network timeout");
+        _credentialStore.ThrowOnDelete = new InvalidOperationException("Delete should NOT be called on transient failure");
 
         var service = CreateService();
 
         await Assert.ThrowsAsync<TraktAuthException>(() => service.GetAccessTokenAsync());
 
-        // Verify fail-closed marker in persistent storage survives delete failure
-        var storedMarker = _credentialStore.Read();
-        Assert.NotNull(storedMarker);
-        Assert.True(storedMarker.RequiresReconnect);
+        // Verify stored credentials were NOT deleted
+        var stored = _credentialStore.Read();
+        Assert.NotNull(stored);
+        Assert.False(stored.RequiresReconnect);
+        Assert.Equal("expiring-token", stored.AccessToken);
+    }
 
-        // App restart cannot replay old refresh token; blocks reuse
-        var restartedService = CreateService();
-        var state = restartedService.GetAuthState();
-        Assert.False(state.IsConnected);
-        Assert.True(state.RequiresReconnect);
+    [Fact]
+    public async Task GetAccessToken_OperationCanceled_RethrowsAndPreservesSession()
+    {
+        var now = _timeProvider.GetUtcNow();
+        _credentialStore.Write(new TraktCredentialPayload(
+            "test-client-id",
+            "expiring-token",
+            "refresh-token",
+            "bearer",
+            60,
+            "public",
+            now.ToUnixTimeSeconds()));
 
-        await Assert.ThrowsAsync<TraktAuthException>(() => restartedService.GetAccessTokenAsync());
-        Assert.Equal(1, _authClient.RefreshCallsCount);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var service = CreateService();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.GetAccessTokenAsync(cancellationToken: cts.Token));
+
+        var stored = _credentialStore.Read();
+        Assert.NotNull(stored);
+        Assert.False(stored.RequiresReconnect);
+        Assert.False(service.GetAuthState().RequiresReconnect);
     }
 
     [Fact]

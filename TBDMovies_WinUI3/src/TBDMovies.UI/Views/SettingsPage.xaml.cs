@@ -81,6 +81,7 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         RefreshFolders();
         RefreshTmdbStatus();
         RefreshTraktStatus();
+        RefreshSubDlStatus();
     }
 
     public void ApplyLocalization()
@@ -98,6 +99,16 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         LanguageHelpText.Text = LocalizationService.Text("LanguageHelp");
         LanguageEnglishItem.Content = LocalizationService.Text("EnglishLanguage");
         LanguageArabicItem.Content = LocalizationService.Text("ArabicLanguage");
+
+        MediaPlayerHeadingText.Text = LocalizationService.Text("MediaPlayer");
+        MediaPlayerLabelText.Text = LocalizationService.Text("MediaPlayer");
+        MediaPlayerHelpText.Text = LocalizationService.Text("MediaPlayerHelp");
+        PlayerDefaultItem.Content = LocalizationService.Text("PlayerSystemDefault");
+        PlayerVlcItem.Content = LocalizationService.Text("PlayerVlc");
+        PlayerMpcItem.Content = LocalizationService.Text("PlayerMpc");
+        PlayerMpvItem.Content = LocalizationService.Text("PlayerMpv");
+        PlayerCustomItem.Content = LocalizationService.Text("PlayerCustom");
+        CustomPlayerArgsHelpText.Text = LocalizationService.Text("PlayerCustomArgsHelp");
 
         LibraryHeadingText.Text = LocalizationService.Text("LibrarySection");
         MediaFoldersLabelText.Text = LocalizationService.Text("MediaFolders");
@@ -152,10 +163,17 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         ClearLibraryHelpText.Text = LocalizationService.Text("ClearLibraryDataHelp");
         ClearLibraryButton.Content = LocalizationService.Text("Clear");
 
+        SubtitlesHeadingText.Text = LocalizationService.Text("Subtitles");
+        SubDlApiKeyLabelText.Text = LocalizationService.Text("SubDlApiKey");
+        SubDlApiKeyHelpText.Text = LocalizationService.Text("SubDlApiKeyHelp");
+        SaveSubDlApiKeyButtonText.Text = LocalizationService.Text("Save");
+        GetSubDlKeyButtonText.Text = LocalizationService.Text("GetSubDlApiKey");
+
         SyncSelectors();
         RefreshFolders();
         RefreshTmdbStatus();
         RefreshTraktStatus();
+        RefreshSubDlStatus();
     }
 
     private void LoadVersionInfo()
@@ -172,6 +190,21 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
             _ => 0,
         };
         LanguageSelector.SelectedIndex = LocalizationService.CurrentLanguage == UiLanguage.Arabic ? 1 : 0;
+        if (AppServices.IsAvailable)
+        {
+            var playerType = AppServices.PlaybackTracking.ResolvePlayerType();
+            PlayerSelector.SelectedIndex = playerType switch
+            {
+                TBDMovies.Domain.Playback.MediaPlayerType.Vlc => 1,
+                TBDMovies.Domain.Playback.MediaPlayerType.Mpc => 2,
+                TBDMovies.Domain.Playback.MediaPlayerType.Mpv => 3,
+                TBDMovies.Domain.Playback.MediaPlayerType.Custom => 4,
+                _ => 0
+            };
+            CustomPlayerPanel.Visibility = playerType == TBDMovies.Domain.Playback.MediaPlayerType.Custom ? Visibility.Visible : Visibility.Collapsed;
+            CustomPlayerPathBox.Text = AppServices.SettingsStore.Get("playback_player_custom_path") ?? string.Empty;
+            CustomPlayerArgsBox.Text = AppServices.SettingsStore.Get("playback_player_custom_args") ?? string.Empty;
+        }
         _isSyncing = false;
     }
 
@@ -247,6 +280,45 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
 
         LocalizationService.SetLanguage(
             LanguageSelector.SelectedIndex == 1 ? UiLanguage.Arabic : UiLanguage.English);
+    }
+
+    private void PlayerSelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isSyncing || !_hasBeenShown || !AppServices.IsAvailable) return;
+        var type = PlayerSelector.SelectedIndex switch
+        {
+            1 => TBDMovies.Domain.Playback.MediaPlayerType.Vlc,
+            2 => TBDMovies.Domain.Playback.MediaPlayerType.Mpc,
+            3 => TBDMovies.Domain.Playback.MediaPlayerType.Mpv,
+            4 => TBDMovies.Domain.Playback.MediaPlayerType.Custom,
+            _ => TBDMovies.Domain.Playback.MediaPlayerType.Default
+        };
+        AppServices.PlaybackTracking.SetPlayerType(type);
+        CustomPlayerPanel.Visibility = type == TBDMovies.Domain.Playback.MediaPlayerType.Custom ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void CustomPlayerPathBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_isSyncing || !AppServices.IsAvailable) return;
+        AppServices.PlaybackTracking.SetCustomPlayerConfig(CustomPlayerPathBox.Text, CustomPlayerArgsBox.Text);
+    }
+
+    private void CustomPlayerArgsBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_isSyncing || !AppServices.IsAvailable) return;
+        AppServices.PlaybackTracking.SetCustomPlayerConfig(CustomPlayerPathBox.Text, CustomPlayerArgsBox.Text);
+    }
+
+    private async void BrowseCustomPlayerButton_Click(object sender, RoutedEventArgs e)
+    {
+        var picker = new Windows.Storage.Pickers.FileOpenPicker();
+        picker.FileTypeFilter.Add(".exe");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, MainWindow.WindowHandle);
+        var file = await picker.PickSingleFileAsync();
+        if (file is not null)
+        {
+            CustomPlayerPathBox.Text = file.Path;
+        }
     }
 
     /// <summary>
@@ -1171,6 +1243,26 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
             return uri.AbsoluteUri;
         }
         return null;
+    }
+
+    private void RefreshSubDlStatus()
+    {
+        var key = AppSettingsStore.ReadSubDlApiKey();
+        SubDlApiKeyBox.Password = key ?? string.Empty;
+    }
+
+    private void SaveSubDlApiKeyButton_Click(object sender, RoutedEventArgs e)
+    {
+        var key = SubDlApiKeyBox.Password?.Trim();
+        AppSettingsStore.WriteSubDlApiKey(key);
+        SubDlFeedback.Severity = InfoBarSeverity.Success;
+        SubDlFeedback.Message = LocalizationService.Text("SubDlKeySaved");
+        SubDlFeedback.IsOpen = true;
+    }
+
+    private void GetSubDlKeyButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = Windows.System.Launcher.LaunchUriAsync(new Uri("https://subdl.com"));
     }
 
     #endregion

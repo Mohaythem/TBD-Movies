@@ -195,6 +195,38 @@
                 <Grid x:Name="ContentHost" />
             </Border>
         </NavigationView>
+
+        <!--
+            Startup Splash Overlay: Displayed immediately upon window activation while
+            AppServices and catalog databases initialize in the background.
+        -->
+        <Grid
+            x:Name="StartupSplashOverlay"
+            Grid.Row="1"
+            Background="{ThemeResource ShellContentBackgroundBrush}"
+            IsHitTestVisible="True"
+            Opacity="1.0"
+            Visibility="Visible">
+            <StackPanel
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Spacing="20">
+                <FontIcon
+                    FontFamily="{StaticResource SymbolThemeFontFamily}"
+                    FontSize="48"
+                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                    Glyph="&#xE714;" />
+                <TextBlock
+                    x:Name="SplashAppNameText"
+                    HorizontalAlignment="Center"
+                    Style="{StaticResource TitleTextBlockStyle}"
+                    Text="TBD Movies" />
+                <ProgressBar
+                    Width="180"
+                    HorizontalAlignment="Center"
+                    IsIndeterminate="True" />
+            </StackPanel>
+        </Grid>
     </Grid>
 
 </Window>

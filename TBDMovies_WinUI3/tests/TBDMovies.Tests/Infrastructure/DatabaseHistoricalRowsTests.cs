@@ -158,8 +158,8 @@ public sealed class DatabaseHistoricalRowsTests : IDisposable
             "UPDATE tv_seasons SET season_number=1000 WHERE id=31",
             "UPDATE media_files SET movie_id=999 WHERE id=20",
             "INSERT INTO episode_media_files VALUES (22,32,'duplicate')",
-            "INSERT INTO custom_list_members VALUES (99,70,'MOVIE',10,NULL,'duplicate')",
-            "INSERT INTO custom_list_members VALUES (99,70,'SHOW',10,30,'invalid')"
+            "INSERT INTO custom_list_members(id,list_id,media_kind,movie_id,show_id,added_at) VALUES (99,70,'MOVIE',10,NULL,'duplicate')",
+            "INSERT INTO custom_list_members(id,list_id,media_kind,movie_id,show_id,added_at) VALUES (99,70,'SHOW',10,30,'invalid')"
         }) Assert.Throws<SqliteException>(() => Exec(db, sql));
 
         Exec(db, "DELETE FROM movies WHERE id=10; DELETE FROM tv_shows WHERE id=30;");
@@ -211,9 +211,9 @@ public sealed class DatabaseHistoricalRowsTests : IDisposable
         if (version == 11) Exec(db, "INSERT INTO custom_list_movies VALUES (80,'thrillers',10,'2026-01-04');");
         if (version >= 12)
         {
-            Exec(db, "INSERT INTO custom_lists VALUES (70,'Keep','2026-01-01');");
+            Exec(db, "INSERT INTO custom_lists(id,display_name,created_at) VALUES (70,'Keep','2026-01-01');");
             if (version == 12) Exec(db, "INSERT INTO custom_list_members VALUES (80,70,10,'2026-01-04');");
-            else Exec(db, "INSERT INTO custom_list_members VALUES (80,70,'MOVIE',10,NULL,'2026-01-04'),(81,70,'SHOW',NULL,30,'2026-01-05');");
+            else Exec(db, "INSERT INTO custom_list_members(id,list_id,media_kind,movie_id,show_id,added_at) VALUES (80,70,'MOVIE',10,NULL,'2026-01-04'),(81,70,'SHOW',NULL,30,'2026-01-05');");
         }
         if (version == 14) Exec(db, "UPDATE movies SET review_match=1 WHERE id=10;");
     }

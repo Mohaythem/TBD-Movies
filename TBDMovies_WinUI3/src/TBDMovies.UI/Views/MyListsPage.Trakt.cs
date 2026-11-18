@@ -58,58 +58,6 @@ public sealed partial class MyListsPage
 
     private void RebuildTraktTabs()
     {
-        TraktPlaylistsSelector.Children.Clear();
-        _traktPlaylistsTabs.Clear();
-        var trakt = AppServices.Trakt;
-        if (trakt is null) return;
-        TraktSyncState state;
-        try { state = trakt.GetSyncState(); } catch { return; }
-        var account = state.AuthState.IsConnected ? state.CurrentAccountId : state.LastAccountId;
-        _traktAccount = account;
-        IReadOnlyList<TraktCustomList> lists;
-        int watchCount = 0;
-        int watchedMoviesCount = 0;
-        int watchedShowsCount = 0;
-        int historyCount = 0;
-        try
-        {
-            watchCount = trakt.GetWatchlist(account).Count;
-            watchedMoviesCount = trakt.GetWatchedMovies(account).Count;
-            watchedShowsCount = trakt.GetWatchedShows(account).Count;
-            historyCount = trakt.GetHistory(account).Count;
-            lists = trakt.GetLists(account);
-        }
-        catch
-        {
-            lists = [];
-        }
-
-        var defs = new List<(string Key, string Name, int Count, string Glyph)>
-        {
-            (TraktWatchlistKey, LocalizationService.Text("TraktWatchlist"), watchCount, "\uE8FD"),
-            (TraktWatchedMoviesKey, LocalizationService.Text("TraktWatchedMovies"), watchedMoviesCount, "\uE8B2"),
-            (TraktWatchedShowsKey, LocalizationService.Text("TraktWatchedShows"), watchedShowsCount, "\uE7F4"),
-            (TraktHistoryKey, LocalizationService.Text("TraktHistory"), historyCount, "\uE81C")
-        };
-        var combinedLists = lists.Concat(_localTraktLists.Where(local => !lists.Any(remote => remote.TraktId == local.TraktId || string.Equals(remote.Name, local.Name, StringComparison.OrdinalIgnoreCase)))).ToList();
-        foreach (var list in combinedLists) defs.Add(($"trakt:list:{list.TraktId}", list.Name, list.ItemCount, "\uE8BD"));
-        if (IsTraktKey(_selectedKey) && !defs.Any(x => x.Key == _selectedKey))
-        {
-            _selectedKey = TraktWatchlistKey;
-            _selectedTraktKey = TraktWatchlistKey;
-        }
-        foreach (var def in defs)
-        {
-            var label = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Text = def.Name };
-            var count = new TextBlock { VerticalAlignment = VerticalAlignment.Center, Text = string.Empty, Style = (Style)App.Current.Resources["SecondaryCaptionTextStyle"], Visibility = Visibility.Collapsed };
-            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            content.Children.Add(new FontIcon { FontSize = 14, Glyph = def.Glyph, FontFamily = (FontFamily)App.Current.Resources["SymbolThemeFontFamily"] });
-            content.Children.Add(label); content.Children.Add(count);
-            var tab = new RadioButton { GroupName = "TraktPlaylistsGroup", Style = (Style)App.Current.Resources["TabPillItemStyle"], Tag = def.Key, Content = content, IsChecked = def.Key == _selectedKey };
-            tab.Checked += TraktPlaylistTab_Checked;
-            TraktPlaylistsSelector.Children.Add(tab);
-            _traktPlaylistsTabs.Add((tab, label, count, def.Key));
-        }
     }
 
     private void TraktPlaylistTab_Checked(object sender, RoutedEventArgs e)
@@ -126,7 +74,6 @@ public sealed partial class MyListsPage
     private void SyncTraktSelectedTab()
     {
         _syncing = true;
-        if (TraktTabItem.IsChecked != true) TraktTabItem.IsChecked = true;
         foreach (var (tab, _, _, key) in _traktPlaylistsTabs)
             if (key == _selectedKey && tab.IsChecked != true) tab.IsChecked = true;
         _syncing = false;
@@ -154,7 +101,6 @@ public sealed partial class MyListsPage
         var displayKey = _selectedKey;
 
         SyncTraktSelectedTab();
-        TraktRow.Visibility = Visibility.Visible;
         ContinueGrid.Visibility = Visibility.Collapsed;
         ListMoreOptionsButton.Visibility = Visibility.Collapsed;
 
@@ -171,7 +117,6 @@ public sealed partial class MyListsPage
         AddMoviesButton.Visibility = canWrite ? Visibility.Visible : Visibility.Collapsed;
         UpdateTraktSyncVisibility();
         AddMoviesButton.IsEnabled = canWrite && !_traktBusy;
-        SyncTraktButton.IsEnabled = (state?.AuthState.IsConnected == true) && !_traktBusy;
         AddMoviesButtonText.Text = LocalizationService.Text("AddToTrakt");
 
         var isHistory = _selectedKey == TraktHistoryKey;
@@ -256,7 +201,6 @@ public sealed partial class MyListsPage
             EmptyState.Message = LocalizationService.Text(_query.Length == 0 ? "TraktListOfflineHelp" : "NoResultsHelp");
             EmptyState.IsActionVisible = false;
 
-            TraktTabCount.Text = string.Empty;
             foreach (var (_, _, count, key) in _traktPlaylistsTabs)
                 count.Text = string.Empty;
         }
@@ -278,7 +222,6 @@ public sealed partial class MyListsPage
             EmptyState.Message = LocalizationService.Text(_query.Length == 0 ? "TraktListOfflineHelp" : "NoResultsHelp");
             EmptyState.IsActionVisible = false;
 
-            TraktTabCount.Text = string.Empty;
             foreach (var (_, _, count, key) in _traktPlaylistsTabs)
                 count.Text = string.Empty;
         }
@@ -300,25 +243,27 @@ public sealed partial class MyListsPage
         {
             if (isShow)
             {
-                var show = AppServices.Tv.ListShows().FirstOrDefault(x => x.Id == localId);
-                if (show is not null)
+                try
                 {
-                    var card = TvProjection.ToCard(show);
+                    var show = AppServices.Tv.GetShowDetails(localId);
+                    var card = TvProjection.ToDetails(show);
                     var isLocal = card.LocalEpisodeCount > 0;
                     var badge = LocalizationService.Text(isLocal ? "Local" : "Unavailable");
                     return new ListMediaItem(card, showLocalBadge: true, isLocal: isLocal, localBadgeText: badge);
                 }
+                catch { }
             }
             else
             {
-                var movie = AppServices.Library.ListMovies().FirstOrDefault(x => x.Id == localId);
-                if (movie is not null)
+                try
                 {
+                    var movie = AppServices.Library.GetMovieItem(localId);
                     var card = LibraryProjection.ToCard(movie);
                     var isLocal = card.HasLocalFile;
                     var badge = LocalizationService.Text(isLocal ? "Local" : "Unavailable");
                     return new ListMediaItem(card, showLocalBadge: true, isLocal: isLocal, localBadgeText: badge);
                 }
+                catch { }
             }
         }
 
@@ -334,25 +279,27 @@ public sealed partial class MyListsPage
                 {
                     if (isShow)
                     {
-                        var show = AppServices.Tv.ListShows().FirstOrDefault(x => x.Id == candidate.LocalId);
-                        if (show is not null)
+                        try
                         {
-                            var card = TvProjection.ToCard(show);
+                            var show = AppServices.Tv.GetShowDetails(candidate.LocalId);
+                            var card = TvProjection.ToDetails(show);
                             var isLocal = card.LocalEpisodeCount > 0;
                             var badge = LocalizationService.Text(isLocal ? "Local" : "Unavailable");
                             return new ListMediaItem(card, showLocalBadge: true, isLocal: isLocal, localBadgeText: badge);
                         }
+                        catch { }
                     }
                     else
                     {
-                        var movie = AppServices.Library.ListMovies().FirstOrDefault(x => x.Id == candidate.LocalId);
-                        if (movie is not null)
+                        try
                         {
+                            var movie = AppServices.Library.GetMovieItem(candidate.LocalId);
                             var card = LibraryProjection.ToCard(movie);
                             var isLocal = card.HasLocalFile;
                             var badge = LocalizationService.Text(isLocal ? "Local" : "Unavailable");
                             return new ListMediaItem(card, showLocalBadge: true, isLocal: isLocal, localBadgeText: badge);
                         }
+                        catch { }
                     }
                 }
             }
@@ -653,7 +600,7 @@ public sealed partial class MyListsPage
         var trakt = AppServices.Trakt;
         if (trakt is null || !trakt.GetSyncState().AuthState.IsConnected) return;
         _traktBusy = true;
-        SyncTraktButton.IsEnabled = AddMoviesButton.IsEnabled = false;
+        AddMoviesButton.IsEnabled = false;
         var generation = ++_traktGeneration;
         _traktCts?.Cancel(); _traktCts?.Dispose(); _traktCts = new CancellationTokenSource();
         try
@@ -677,7 +624,7 @@ public sealed partial class MyListsPage
         finally
         {
             _traktBusy = false;
-            if (_traktActive) { SyncTraktButton.IsEnabled = true; AddMoviesButton.IsEnabled = true; }
+            if (_traktActive) { AddMoviesButton.IsEnabled = true; }
         }
     }
 
@@ -685,12 +632,12 @@ public sealed partial class MyListsPage
     {
         if (_traktBusy) return;
         _traktBusy = true;
-        SyncTraktButton.IsEnabled = AddMoviesButton.IsEnabled = false;
+        AddMoviesButton.IsEnabled = false;
         _traktWriteCts?.Cancel(); _traktWriteCts?.Dispose(); _traktWriteCts = new CancellationTokenSource();
         try { await ShowAddTraktCoreAsync(_traktWriteCts.Token); }
         catch (OperationCanceledException) { }
         catch (Exception error) { if (_traktActive) await ReportAsync(error); }
-        finally { _traktBusy = false; _traktWriteCts?.Dispose(); _traktWriteCts = null; if (_traktActive) { SyncTraktButton.IsEnabled = AddMoviesButton.IsEnabled = true; } }
+        finally { _traktBusy = false; _traktWriteCts?.Dispose(); _traktWriteCts = null; if (_traktActive) { AddMoviesButton.IsEnabled = true; } }
     }
 
     private async Task ShowAddTraktCoreAsync(CancellationToken operationToken)
@@ -830,7 +777,7 @@ public sealed partial class MyListsPage
         if (!_traktActive) return;
         DispatcherQueue.TryEnqueue(() =>
         {
-            if (!_traktActive) return;
+            if (!_traktActive || !_isActivated || !IsLoaded) return;
             RebuildTraktTabs();
             if (IsTraktKey(_selectedKey))
             {
@@ -850,11 +797,6 @@ public sealed partial class MyListsPage
 
     private void UpdateTraktSyncVisibility()
     {
-        var trakt = AppServices.Trakt;
-        var isConnected = trakt?.GetSyncState().AuthState.IsConnected == true;
-        var isTraktOpen = IsTraktKey(_selectedKey);
-        TraktRow.Visibility = isTraktOpen ? Visibility.Visible : Visibility.Collapsed;
-        SyncTraktButton.Visibility = isTraktOpen && isConnected ? Visibility.Visible : Visibility.Collapsed;
-        SyncTraktButton.IsEnabled = isConnected && !_traktBusy;
+        UpdateSyncStatus();
     }
 }

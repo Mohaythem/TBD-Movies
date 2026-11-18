@@ -1,0 +1,285 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Data.Sqlite;
+using TBDMovies.Application.Playback;
+using TBDMovies.Application.Repositories;
+using TBDMovies.Application.Trakt;
+using TBDMovies.Domain.Playback;
+using TBDMovies.FileSystem.Playback;
+using TBDMovies.FileSystem.Playback.Trackers;
+using TBDMovies.Infrastructure.Persistence.Migrations;
+using TBDMovies.Infrastructure.Persistence.Repositories;
+using Xunit;
+
+namespace TBDMovies.Tests.Application;
+
+public sealed class PlaybackTrackingTests
+{
+    [Fact]
+    public void PlaybackProgress_CalculatesResumePositionCorrectly()
+    {
+        // Under 3 seconds -> HasResumePosition should be false
+        var p1 = new PlaybackProgress(1, 2, 1000, DateTimeOffset.UtcNow);
+        Assert.False(p1.HasResumePosition);
+
+        // Exactly 3 seconds and above -> HasResumePosition should be true
+        var p1b = new PlaybackProgress(1, 3, 1000, DateTimeOffset.UtcNow);
+        Assert.True(p1b.HasResumePosition);
+
+        // Valid middle position -> HasResumePosition is true
+        var p2 = new PlaybackProgress(1, 600, 1000, DateTimeOffset.UtcNow);
+        Assert.True(p2.HasResumePosition);
+        Assert.Equal(60.0, p2.ProgressPercentage);
+        Assert.Equal("10:00", p2.FormattedResumeTime);
+
+        // Over 92% -> HasResumePosition is false (assumed end credits)
+        var p3 = new PlaybackProgress(1, 950, 1000, DateTimeOffset.UtcNow);
+        Assert.False(p3.HasResumePosition);
+        Assert.Equal(95.0, p3.ProgressPercentage);
+
+        // Hours formatting
+        var p4 = new PlaybackProgress(1, 3665, 7200, DateTimeOffset.UtcNow);
+        Assert.True(p4.HasResumePosition);
+        Assert.Equal("1:01:05", p4.FormattedResumeTime);
+    }
+
+    [Theory]
+    [InlineData(MediaPlayerType.Vlc, 125, "--start-time=125 \"C:\\movie.mkv\"")]
+    [InlineData(MediaPlayerType.Mpc, 125, "/startpos 00:02:05 \"C:\\movie.mkv\"")]
+    [InlineData(MediaPlayerType.Mpv, 125, "--start=125 \"C:\\movie.mkv\"")]
+    [InlineData(MediaPlayerType.Default, 125, "\"C:\\movie.mkv\"")]
+    public void PlayerProcessLauncher_BuildsExpectedArguments(MediaPlayerType player, double startPos, string expectedArgs)
+    {
+        var args = PlayerProcessLauncher.BuildArguments("C:\\movie.mkv", startPos, player, customArgsTemplate: null);
+        Assert.Equal(expectedArgs, args);
+    }
+
+    [Fact]
+    public void MpcWebTimelineTracker_ParsesVariablesHtmlCorrectly()
+    {
+        var html = "<html><body><p id=\"filepath\">C:\\test.mkv</p><p id=\"state\">1</p><p id=\"position\">145200</p><p id=\"duration\">7200000</p></body></html>";
+        var snapshot = MpcWebTimelineTracker.ParseVariablesHtml(html);
+        Assert.NotNull(snapshot);
+        Assert.Equal(145.2, snapshot.PositionSeconds, 1);
+        Assert.Equal(7200.0, snapshot.DurationSeconds);
+        Assert.True(snapshot.IsPaused);
+    }
+
+    [Fact]
+    public void VlcHttpTimelineTracker_ParsesStatusJsonCorrectly()
+    {
+        var json = "{\"time\": 250, \"length\": 3600, \"state\": \"paused\"}";
+        var snapshot = VlcHttpTimelineTracker.ParseStatusJson(json);
+        Assert.NotNull(snapshot);
+        Assert.Equal(250.0, snapshot.PositionSeconds);
+        Assert.Equal(3600.0, snapshot.DurationSeconds);
+        Assert.True(snapshot.IsPaused);
+    }
+
+    [Fact]
+    public void MpvPipeTimelineTracker_ExtractsPropertiesCorrectly()
+    {
+        var timeJson = "{\"data\": 185.5, \"error\": \"success\"}";
+        var pauseJson = "{\"data\": true, \"error\": \"success\"}";
+        var time = MpvPipeTimelineTracker.ExtractDoubleProperty(timeJson);
+        var isPaused = MpvPipeTimelineTracker.ExtractBoolProperty(pauseJson);
+        Assert.Equal(185.5, time);
+        Assert.True(isPaused);
+    }
+
+    [Fact]
+    public async Task PlaybackProgressRepository_SaveGetDeleteLifecycle()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_playback_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+
+            // Seed a movie and a media file
+            using (var conn = new SqliteConnection(connStr))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (10, 'Test Movie', 2024, datetime('now'), datetime('now'), datetime('now'));
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (100, 10, 'C:\test.mkv', 'c:\test.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
+                ";
+                cmd.ExecuteNonQuery();
+            }
+
+            var repo = new PlaybackProgressRepository(connStr);
+
+            // Initially null
+            var initial = repo.GetByMediaFileId(100);
+            Assert.Null(initial);
+
+            // Save progress
+            var now = DateTimeOffset.UtcNow;
+            repo.SaveProgress(100, 500, 1000, now);
+
+            var retrieved = repo.GetByMediaFileId(100);
+            Assert.NotNull(retrieved);
+            Assert.Equal(100, retrieved.MediaFileId);
+            Assert.Equal(500, retrieved.PositionSeconds);
+            Assert.Equal(1000, retrieved.TotalDurationSeconds);
+            Assert.Equal(50.0, retrieved.ProgressPercentage);
+
+            // Get for movie
+            var movieProgress = repo.GetForMovie(10);
+            Assert.NotNull(movieProgress);
+            Assert.Equal(100, movieProgress.MediaFileId);
+
+            // Delete progress
+            repo.DeleteProgress(100);
+            Assert.Null(repo.GetByMediaFileId(100));
+        }
+        finally
+        {
+            if (File.Exists(dbPath))
+            {
+                try { File.Delete(dbPath); } catch { }
+            }
+        }
+    }
+
+    [Fact]
+    public async Task PlaybackTrackingService_TracksProgressAndScrobbles()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_tracking_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+
+            using (var conn = new SqliteConnection(connStr))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (20, 'Tracking Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (200, 20, 'C:\tracking.mkv', 'c:\tracking.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
+                ";
+                cmd.ExecuteNonQuery();
+            }
+
+            var progressRepo = new PlaybackProgressRepository(connStr);
+            var mockLauncher = new FakePlayerLauncher();
+            var mockTrakt = new FakeTraktClient();
+
+            var service = new PlaybackTrackingService(
+                progressRepo,
+                mockLauncher,
+                traktDataClient: mockTrakt,
+                traktAuthService: new FakeTraktAuthService(),
+                traktClientId: "dummy_client_id");
+
+            var target = new PlaybackMediaTarget(
+                MediaFileId: 200,
+                FilePath: "C:\\tracking.mkv",
+                TotalDurationSeconds: 1000,
+                IsMovie: true,
+                MovieId: 20,
+                MovieTitle: "Tracking Movie");
+
+            // Mock launcher simulates user watching to 600 seconds (60% -> under 90% threshold)
+            mockLauncher.SimulatedExitPosition = 600;
+
+            var started = await service.StartPlaybackAsync(target, resume: false);
+            Assert.True(started);
+
+            // Verify progress was saved upon exit
+            var saved = progressRepo.GetByMediaFileId(200);
+            Assert.NotNull(saved);
+            Assert.Equal(600, saved.PositionSeconds);
+            Assert.Equal(60.0, saved.ProgressPercentage);
+
+            // Under 90%, scrobble action is "pause" (preventing premature Trakt watch)
+            Assert.Contains(mockTrakt.Calls, c => c.Action == "start");
+            Assert.Contains(mockTrakt.Calls, c => c.Action == "pause" && Math.Abs(c.Progress - 60.0) < 0.1);
+
+            // Now simulate watching to 910 seconds (91% -> exceeds 90% threshold)
+            mockTrakt.Calls.Clear();
+            mockLauncher.SimulatedExitPosition = 910;
+            await service.StartPlaybackAsync(target, resume: false);
+
+            // At 90%+, scrobble action is "stop" (marking as watched on both local and Trakt)
+            Assert.Contains(mockTrakt.Calls, c => c.Action == "stop" && Math.Abs(c.Progress - 91.0) < 0.1);
+        }
+        finally
+        {
+            if (File.Exists(dbPath))
+            {
+                try { File.Delete(dbPath); } catch { }
+            }
+        }
+    }
+
+    private sealed class FakePlayerLauncher : IPlayerProcessLauncher
+    {
+        public double SimulatedExitPosition { get; set; } = 300;
+        public double? SimulatedTickPosition { get; set; }
+
+        public async Task<bool> LaunchAndTrackAsync(
+            string filePath,
+            double startPositionSeconds,
+            double? totalDurationSeconds,
+            MediaPlayerType playerType,
+            string? customExecutablePath,
+            string? customArgumentsTemplate,
+            Func<double, Task> onPlaybackExit,
+            CancellationToken cancellationToken = default,
+            Func<double, bool, Task>? onProgressTick = null)
+        {
+            if (SimulatedTickPosition.HasValue && onProgressTick != null)
+            {
+                await onProgressTick(SimulatedTickPosition.Value, false);
+            }
+            await onPlaybackExit(SimulatedExitPosition);
+            return true;
+        }
+    }
+
+    private sealed class FakeTraktAuthService : ITraktAuthService
+    {
+        public TraktAuthState GetAuthState() => TraktAuthState.ConnectedState("dummy_user", DateTimeOffset.UtcNow.AddHours(1));
+        public Task<string> GetAccessTokenAsync(bool forceRefresh = false, string? rejectedAccessToken = null, CancellationToken cancellationToken = default) => Task.FromResult("dummy_token");
+        public Task<TraktDeviceCode> BeginDeviceAuthAsync(CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task<TraktAuthState> CompleteDeviceAuthAsync(TraktDeviceCode deviceCode, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public Task DisconnectAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RejectAccessTokenAsync(string rejectedAccessToken, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<bool> RecordVerifiedAccountAsync(string accountId, string expectedAccessToken, CancellationToken cancellationToken = default) => Task.FromResult(true);
+    }
+
+    private sealed class FakeTraktClient : ITraktDataClient
+    {
+        public List<(string Action, double Progress)> Calls { get; } = [];
+
+        public Task<TraktScrobbleResult> ScrobbleStartAsync(TraktScrobblePayload payload, string clientId, string accessToken, CancellationToken cancellationToken = default)
+        {
+            Calls.Add(("start", payload.Progress));
+            return Task.FromResult(new TraktScrobbleResult(true, "start", payload.Progress));
+        }
+
+        public Task<TraktScrobbleResult> ScrobblePauseAsync(TraktScrobblePayload payload, string clientId, string accessToken, CancellationToken cancellationToken = default)
+        {
+            Calls.Add(("pause", payload.Progress));
+            return Task.FromResult(new TraktScrobbleResult(true, "pause", payload.Progress));
+        }
+
+        public Task<TraktScrobbleResult> ScrobbleStopAsync(TraktScrobblePayload payload, string clientId, string accessToken, CancellationToken cancellationToken = default)
+        {
+            Calls.Add(("stop", payload.Progress));
+            return Task.FromResult(new TraktScrobbleResult(true, payload.Progress >= 80 ? "scrobble" : "pause", payload.Progress));
+        }
+
+        public Task<JsonElement> GetAccountAsync(string clientId, string accessToken, CancellationToken cancellationToken = default) => Task.FromResult(default(JsonElement));
+        public Task<JsonElement> GetResourceAsync(TraktResourceSpec resource, string clientId, string accessToken, CancellationToken cancellationToken = default) => Task.FromResult(default(JsonElement));
+        public Task<JsonElement> AddHistoryAsync(TraktSyncHistoryPayload payload, string clientId, string accessToken, CancellationToken cancellationToken = default) => Task.FromResult(default(JsonElement));
+        public Task<JsonElement> RemoveHistoryAsync(TraktSyncHistoryPayload payload, string clientId, string accessToken, CancellationToken cancellationToken = default) => Task.FromResult(default(JsonElement));
+    }
+}

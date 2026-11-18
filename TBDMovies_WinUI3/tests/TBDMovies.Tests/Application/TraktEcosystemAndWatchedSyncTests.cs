@@ -631,6 +631,7 @@ public sealed class TraktEcosystemAndWatchedSyncTests
         public int CreateCustomList(string name, DateTimeOffset now) => 1;
         public void RenameCustomList(int listId, string name, DateTimeOffset now) { }
         public void DeleteCustomList(int listId) { }
+        public void DeleteCustomListCascade(int listId) { }
     }
 
     private sealed class TestWatchHistoryRepository : IWatchHistoryRepository

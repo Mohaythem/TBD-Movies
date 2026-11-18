@@ -81,6 +81,11 @@ public static class MediaCardContextMenu
         bool horizontal, Action? changed, Action? remove)
     {
         AddImageItem(menu, owner, horizontal ? movie.HorizontalArtworkSource ?? movie.PosterSource : movie.PosterSource, movie.Title);
+        if (movie.Id <= 0)
+        {
+            AddRemove(menu, remove);
+            return;
+        }
         var state = AppServices.Personal.GetPersonalSnapshot(movie.Id);
         var fav = new ToggleMenuFlyoutItem { Text = LocalizationService.Text(state.Preference == PersonalPreference.Liked ? "InFavorites" : "AddToFavorites"), IsChecked = state.Preference == PersonalPreference.Liked };
         fav.Click += (_, _) => RunSafe(owner, () => { if (state.Preference == PersonalPreference.Liked) AppServices.Personal.ClearPersonalPreference(movie.Id); else AppServices.Personal.SetPersonalPreference(movie.Id, PersonalPreference.Liked); changed?.Invoke(); });
@@ -97,6 +102,11 @@ public static class MediaCardContextMenu
     {
         var show = card.Show;
         AddImageItem(menu, owner, horizontal ? card.HorizontalArtworkSource ?? card.PosterSource : card.PosterSource, card.Title);
+        if (show.Id <= 0)
+        {
+            AddRemove(menu, remove);
+            return;
+        }
         var state = AppServices.ShowPersonal.GetState(show.Id);
         var fav = new ToggleMenuFlyoutItem { Text = LocalizationService.Text(state.IsFavorite ? "InFavorites" : "AddToFavorites"), IsChecked = state.IsFavorite };
         fav.Click += (_, _) => RunSafe(owner, () => { AppServices.ShowPersonal.SetFavorite(show.Id, !state.IsFavorite); changed?.Invoke(); });
@@ -111,20 +121,48 @@ public static class MediaCardContextMenu
     private static void BuildActivityMenu(MenuFlyout menu, FrameworkElement owner, HomeActivityCard card, Action? changed)
     {
         AddImageItem(menu, owner, card.ArtworkSource ?? card.PosterSource, card.Title);
-        if (card.MovieId is int movieId && AppServices.Library.ListMovies().FirstOrDefault(x => x.Id == movieId) is { } movie)
-            BuildMovieActions(menu, owner, LibraryProjection.ToCard(movie), changed);
-        else if (card.ShowId is int showId && AppServices.Tv.ListShows().FirstOrDefault(x => x.Id == showId) is { } show)
-            BuildShowActions(menu, owner, TvProjection.ToCard(show), changed);
+        if (card.MovieId is int movieId)
+        {
+            try
+            {
+                var movie = AppServices.Library.GetMovieItem(movieId);
+                BuildMovieActions(menu, owner, LibraryProjection.ToCard(movie), changed);
+            }
+            catch { }
+        }
+        else if (card.ShowId is int showId)
+        {
+            try
+            {
+                var show = AppServices.Tv.GetShowDetails(showId);
+                BuildShowActions(menu, owner, TvProjection.ToDetails(show), changed);
+            }
+            catch { }
+        }
     }
 
     private static void BuildHistoryMenu(MenuFlyout menu, FrameworkElement owner, WatchHistoryCardRecord card, Action? changed)
     {
         AddImageItem(menu, owner, card.ArtworkSource, card.Title);
         if (!card.IsAvailable) return;
-        if (card.MediaKind == WatchEventMediaKind.Movie && card.MovieId is int movieId && AppServices.Library.ListMovies().FirstOrDefault(x => x.Id == movieId) is { } movie)
-            BuildMovieActions(menu, owner, LibraryProjection.ToCard(movie), changed);
-        else if (card.MediaKind == WatchEventMediaKind.Episode && card.ShowId is int showId && AppServices.Tv.ListShows().FirstOrDefault(x => x.Id == showId) is { } show)
-            BuildShowActions(menu, owner, TvProjection.ToCard(show), changed);
+        if (card.MediaKind == WatchEventMediaKind.Movie && card.MovieId is int movieId)
+        {
+            try
+            {
+                var movie = AppServices.Library.GetMovieItem(movieId);
+                BuildMovieActions(menu, owner, LibraryProjection.ToCard(movie), changed);
+            }
+            catch { }
+        }
+        else if (card.MediaKind == WatchEventMediaKind.Episode && card.ShowId is int showId)
+        {
+            try
+            {
+                var show = AppServices.Tv.GetShowDetails(showId);
+                BuildShowActions(menu, owner, TvProjection.ToDetails(show), changed);
+            }
+            catch { }
+        }
     }
 
     private static void BuildMovieActions(MenuFlyout menu, FrameworkElement owner, MovieRecord movie, Action? changed)

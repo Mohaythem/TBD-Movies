@@ -20,7 +20,8 @@ public sealed class SettingsService : ISettingsUiActions
     private TmdbCredentialState _tmdbState = TmdbCredentialState.NotConfigured;
 
     public SettingsService(ILibraryMaintenanceRepository maintenanceRepository, IPosterCacheMaintenance? posterCache = null,
-        ISettingsRepository? settings = null, Func<DateTimeOffset>? clock = null, ITmdbCredentialStore? credentialStore = null)
+        ISettingsRepository? settings = null, Func<DateTimeOffset>? clock = null, ITmdbCredentialStore? credentialStore = null,
+        Func<string?>? environmentTokenProvider = null)
     {
         _maintenanceRepository = maintenanceRepository;
         _posterCache = posterCache;
@@ -41,6 +42,7 @@ public sealed class SettingsService : ISettingsUiActions
             lock (_credentialStateGate) { _tmdbToken = null; _tmdbState = TmdbCredentialState.StorageUnavailable; }
             return;
         }
+
         try { MigrateLegacyCredential(); }
         catch
         {
@@ -50,11 +52,47 @@ public sealed class SettingsService : ISettingsUiActions
                 if (_tmdbToken is null) _tmdbState = TmdbCredentialState.StorageUnavailable;
             }
         }
+
+        // Only evaluate environment fallback when the secure vault is empty and legacy migration produced no token,
+        // and only if the user hasn't explicitly removed their credentials.
+        try
+        {
+            var explicitRemoval = string.Equals(settings?.Get("tmdb_explicitly_removed"), "true", StringComparison.Ordinal);
+            lock (_credentialStateGate)
+            {
+                if (_tmdbToken is null && !explicitRemoval && environmentTokenProvider != null)
+                {
+                    var envToken = SanitizeAndValidateTmdbToken(environmentTokenProvider());
+                    if (!string.IsNullOrWhiteSpace(envToken))
+                    {
+                        _tmdbToken = envToken;
+                        _tmdbState = TmdbCredentialState.Configured;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Environmental token resolution error must not fail settings service instantiation
+        }
     }
 
     public bool IsTmdbConfigured() { lock (_credentialStateGate) return _tmdbToken is not null; }
     public TmdbCredentialState GetTmdbCredentialState() { lock (_credentialStateGate) return _tmdbState; }
     public string? GetTmdbToken() { lock (_credentialStateGate) return _tmdbToken; }
+
+    public static string? SanitizeAndValidateTmdbToken(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        var trimmed = raw.Trim().Trim('"', '\'').Trim();
+        if (trimmed.Length < 20 || trimmed.Length > 2048) return null;
+        for (var i = 0; i < trimmed.Length; i++)
+        {
+            var c = trimmed[i];
+            if (c < 0x20 || c > 0x7E) return null;
+        }
+        return trimmed;
+    }
 
     public void RecordTmdbAuthenticationResult(string token, bool success)
     {
@@ -69,7 +107,8 @@ public sealed class SettingsService : ISettingsUiActions
     public async Task<TmdbCredentialResult> SaveTmdbCredentialAsync(string credential, ITmdbCredentialValidator validator, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(validator);
-        var candidate = credential?.Trim();
+        if (string.IsNullOrWhiteSpace(credential)) return new(false, TmdbCredentialFailure.Empty);
+        var candidate = SanitizeAndValidateTmdbToken(credential);
         if (string.IsNullOrWhiteSpace(candidate)) return new(false, TmdbCredentialFailure.Empty);
 
         await _credentialGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -112,6 +151,7 @@ public sealed class SettingsService : ISettingsUiActions
                 _credentialStore.Write(candidate);
                 if (!string.Equals(_credentialStore.Read(), candidate, StringComparison.Ordinal)) throw new InvalidOperationException();
                 _settings?.Delete("tmdb_read_access_token");
+                _settings?.Delete("tmdb_explicitly_removed");
                 lock (_credentialStateGate) { _tmdbToken = candidate; _tmdbState = TmdbCredentialState.Configured; }
                 return new(true, TmdbCredentialFailure.None);
             }
@@ -156,6 +196,7 @@ public sealed class SettingsService : ISettingsUiActions
                 cancellationToken.ThrowIfCancellationRequested();
                 _credentialStore.Delete();
                 deleted = true;
+                _settings?.Set("tmdb_explicitly_removed", "true", _clock());
                 lock (_credentialStateGate) { _tmdbToken = null; _tmdbState = TmdbCredentialState.StorageUnavailable; }
                 if (_credentialStore.Read() is not null) return false;
                 lock (_credentialStateGate) { _tmdbToken = null; _tmdbState = TmdbCredentialState.NotConfigured; }

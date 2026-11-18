@@ -78,7 +78,9 @@ public sealed class CatalogUnitOfWork : ICatalogUnitOfWork
 
     public void Savepoint(string name)
     {
+        ValidateSavepointName(name);
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_completed) throw new InvalidOperationException("Unit of work is already complete.");
         if (_readOnly || _transaction == null) return;
         using var cmd = _connection.CreateCommand();
         cmd.Transaction = _transaction;
@@ -88,7 +90,9 @@ public sealed class CatalogUnitOfWork : ICatalogUnitOfWork
 
     public void ReleaseSavepoint(string name)
     {
+        ValidateSavepointName(name);
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_completed) throw new InvalidOperationException("Unit of work is already complete.");
         if (_readOnly || _transaction == null) return;
         using var cmd = _connection.CreateCommand();
         cmd.Transaction = _transaction;
@@ -98,7 +102,9 @@ public sealed class CatalogUnitOfWork : ICatalogUnitOfWork
 
     public void RollbackToSavepoint(string name)
     {
+        ValidateSavepointName(name);
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_completed) throw new InvalidOperationException("Unit of work is already complete.");
         if (_readOnly || _transaction == null) return;
         using var cmd = _connection.CreateCommand();
         cmd.Transaction = _transaction;
@@ -106,6 +112,30 @@ public sealed class CatalogUnitOfWork : ICatalogUnitOfWork
         cmd.ExecuteNonQuery();
         cmd.CommandText = $"RELEASE \"{name}\";";
         cmd.ExecuteNonQuery();
+    }
+
+    private static void ValidateSavepointName(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        if (name.Length > 64)
+        {
+            throw new ArgumentException("Savepoint identifier exceeds maximum allowed length of 64 characters.", nameof(name));
+        }
+
+        if (!char.IsAsciiLetter(name[0]) && name[0] != '_')
+        {
+            throw new ArgumentException("Savepoint identifier must begin with an ASCII letter or underscore.", nameof(name));
+        }
+
+        for (var i = 1; i < name.Length; i++)
+        {
+            var c = name[i];
+            if (!char.IsAsciiLetterOrDigit(c) && c != '_')
+            {
+                throw new ArgumentException("Savepoint identifier must strictly contain ASCII alphanumeric characters or underscores.", nameof(name));
+            }
+        }
     }
 
     public void Dispose()

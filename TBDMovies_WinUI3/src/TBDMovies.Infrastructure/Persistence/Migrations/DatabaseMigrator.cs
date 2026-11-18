@@ -6,7 +6,7 @@ namespace TBDMovies.Infrastructure.Persistence.Migrations;
 
 public class DatabaseMigrator
 {
-    public const int LatestVersion = 20;
+    public const int LatestVersion = 23;
     private readonly string _connectionString;
 
     public DatabaseMigrator(string connectionString)
@@ -635,6 +635,102 @@ public class DatabaseMigrator
             CREATE INDEX IF NOT EXISTS idx_movies_last_opened ON movies(last_opened_at DESC, id DESC);
             CREATE INDEX IF NOT EXISTS idx_movies_title ON movies(title COLLATE NOCASE);
             CREATE INDEX IF NOT EXISTS idx_tv_shows_date_added ON tv_shows(date_added DESC, id DESC);
+        ",
+        // v21: local playback progress tracking for resume functionality.
+        @"
+            CREATE TABLE playback_progress (
+                media_file_id INTEGER PRIMARY KEY REFERENCES media_files(id) ON DELETE CASCADE,
+                position_seconds REAL NOT NULL CHECK(position_seconds >= 0),
+                total_duration_seconds REAL NULL CHECK(total_duration_seconds IS NULL OR total_duration_seconds > 0),
+                last_watched_at TEXT NOT NULL
+            );
+            CREATE INDEX idx_playback_progress_watched ON playback_progress(julianday(last_watched_at) DESC);
+        ",
+        // v22: unified Trakt custom lists, cloud media support, and offline actions queue.
+        @"
+            ALTER TABLE custom_lists ADD COLUMN trakt_list_id INTEGER DEFAULT NULL;
+            ALTER TABLE custom_lists ADD COLUMN trakt_slug TEXT DEFAULT NULL;
+            ALTER TABLE custom_lists ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'SYNCED';
+            ALTER TABLE custom_lists ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE custom_lists ADD COLUMN last_synced_at TEXT DEFAULT NULL;
+            CREATE INDEX idx_custom_lists_trakt ON custom_lists(trakt_list_id);
+
+            CREATE TABLE custom_list_members_new (
+                id INTEGER PRIMARY KEY,
+                list_id INTEGER NOT NULL REFERENCES custom_lists(id) ON DELETE CASCADE,
+                media_kind TEXT NOT NULL CHECK(media_kind IN ('MOVIE', 'SHOW')),
+                tmdb_id INTEGER DEFAULT NULL,
+                movie_id INTEGER REFERENCES movies(id) ON DELETE CASCADE,
+                show_id INTEGER REFERENCES tv_shows(id) ON DELETE CASCADE,
+                cloud_title TEXT NULL,
+                cloud_year INTEGER NULL,
+                added_at TEXT NOT NULL,
+                CHECK (
+                    (media_kind IN ('MOVIE', 'SHOW')) AND
+                    (
+                        (media_kind = 'MOVIE' AND movie_id IS NOT NULL AND show_id IS NULL) OR
+                        (media_kind = 'SHOW' AND show_id IS NOT NULL AND movie_id IS NULL) OR
+                        (movie_id IS NULL AND show_id IS NULL AND tmdb_id IS NOT NULL AND tmdb_id > 0)
+                    )
+                )
+            );
+
+            INSERT INTO custom_list_members_new (id, list_id, media_kind, tmdb_id, movie_id, show_id, cloud_title, cloud_year, added_at)
+            SELECT clm.id, clm.list_id, clm.media_kind,
+                   CASE 
+                       WHEN clm.media_kind = 'MOVIE' AND m.provider = 'tmdb' AND m.external_id GLOB '[0-9]*' 
+                           THEN CAST(m.external_id AS INTEGER)
+                       WHEN clm.media_kind = 'SHOW' AND s.provider = 'tmdb' AND s.external_id GLOB '[0-9]*' 
+                           THEN CAST(s.external_id AS INTEGER)
+                       ELSE NULL 
+                   END,
+                   clm.movie_id, clm.show_id, NULL, NULL, clm.added_at
+              FROM custom_list_members clm
+              LEFT JOIN movies m ON m.id = clm.movie_id
+              LEFT JOIN tv_shows s ON s.id = clm.show_id;
+
+            DROP TABLE custom_list_members;
+            ALTER TABLE custom_list_members_new RENAME TO custom_list_members;
+
+            CREATE INDEX idx_custom_list_members_list ON custom_list_members(list_id);
+            CREATE INDEX idx_custom_list_members_movie ON custom_list_members(movie_id);
+            CREATE INDEX idx_custom_list_members_show ON custom_list_members(show_id);
+            CREATE UNIQUE INDEX ux_custom_list_members_movie 
+                ON custom_list_members(list_id, movie_id) WHERE movie_id IS NOT NULL;
+            CREATE UNIQUE INDEX ux_custom_list_members_show 
+                ON custom_list_members(list_id, show_id) WHERE show_id IS NOT NULL;
+            CREATE UNIQUE INDEX ux_custom_list_members_tmdb 
+                ON custom_list_members(list_id, media_kind, tmdb_id) WHERE tmdb_id IS NOT NULL;
+
+            CREATE TABLE custom_list_pending_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                list_id INTEGER NOT NULL REFERENCES custom_lists(id) ON DELETE CASCADE,
+                media_kind TEXT NOT NULL CHECK(media_kind IN ('MOVIE', 'SHOW')),
+                tmdb_id INTEGER NOT NULL CHECK(tmdb_id > 0),
+                action_type TEXT NOT NULL CHECK(action_type IN ('ADD', 'REMOVE')),
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX idx_pending_actions_list ON custom_list_pending_actions(list_id);
+        ",
+
+        // 0023_relax_custom_list_pending_actions_for_create_list
+        @"
+            CREATE TABLE custom_list_pending_actions_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                list_id INTEGER NOT NULL REFERENCES custom_lists(id) ON DELETE CASCADE,
+                media_kind TEXT CHECK(media_kind IS NULL OR media_kind IN ('MOVIE', 'SHOW')),
+                tmdb_id INTEGER CHECK(tmdb_id IS NULL OR tmdb_id > 0),
+                action_type TEXT NOT NULL CHECK(action_type IN ('ADD', 'REMOVE', 'CREATE_LIST')),
+                created_at TEXT NOT NULL
+            );
+
+            INSERT INTO custom_list_pending_actions_new (id, list_id, media_kind, tmdb_id, action_type, created_at)
+            SELECT id, list_id, media_kind, tmdb_id, action_type, created_at
+              FROM custom_list_pending_actions;
+
+            DROP TABLE custom_list_pending_actions;
+            ALTER TABLE custom_list_pending_actions_new RENAME TO custom_list_pending_actions;
+            CREATE INDEX idx_pending_actions_list ON custom_list_pending_actions(list_id);
         "
     };
 
@@ -686,7 +782,7 @@ public class DatabaseMigrator
 
         for (var i = currentVersion; i < targetVersion; i++)
         {
-            var requiresForeignKeysOff = i is 4 or 7 or 8;
+            var requiresForeignKeysOff = i is 4 or 7 or 8 or 21 or 22;
             if (requiresForeignKeysOff) ExecutePragma(connection, "foreign_keys", "OFF");
             try
             {
@@ -704,7 +800,8 @@ public class DatabaseMigrator
                     ValidateSchema(connection, tx, includeActivity: i + 1 >= 15,
                         includeViewing: i + 1 >= 16, includeShowPersonal: i + 1 >= 17,
                         includeTrakt: i + 1 >= 18, includeCustomTitle: i + 1 >= 19,
-                        includeScaleIndexes: i + 1 >= 20);
+                        includeScaleIndexes: i + 1 >= 20, includePlaybackProgress: i + 1 >= 21,
+                        includeUnifiedTraktLists: i + 1 >= 22);
 
                 cmd.CommandText = $"PRAGMA user_version = {i + 1};";
                 cmd.ExecuteNonQuery();
@@ -730,7 +827,7 @@ public class DatabaseMigrator
     private static void ValidateSchema(SqliteConnection connection, SqliteTransaction? transaction = null,
         bool includeActivity = true, bool includeViewing = true, bool includeShowPersonal = true,
         bool includeTrakt = true, bool includeCustomTitle = true, bool includeScaleIndexes = true,
-        bool exhaustive = true)
+        bool includePlaybackProgress = true, bool includeUnifiedTraktLists = true, bool exhaustive = true)
     {
         var requiredTables = new[]
         {
@@ -787,6 +884,31 @@ public class DatabaseMigrator
         {
             foreach (var index in new[] { "idx_movies_date_added", "idx_movies_last_opened", "idx_movies_title", "idx_tv_shows_date_added" })
                 RequireSchemaObject(connection, "index", index, transaction);
+        }
+        if (includePlaybackProgress)
+        {
+            RequireSchemaObject(connection, "table", "playback_progress", transaction);
+            RequireSchemaObject(connection, "index", "idx_playback_progress_watched", transaction);
+            if (exhaustive)
+            {
+                RequireTableColumns(connection, "playback_progress", transaction,
+                    "media_file_id", "position_seconds", "total_duration_seconds", "last_watched_at");
+            }
+        }
+        if (includeUnifiedTraktLists)
+        {
+            RequireSchemaObject(connection, "table", "custom_list_pending_actions", transaction);
+            RequireSchemaObject(connection, "index", "idx_pending_actions_list", transaction);
+            RequireSchemaObject(connection, "index", "idx_custom_lists_trakt", transaction);
+            RequireSchemaObject(connection, "index", "ux_custom_list_members_tmdb", transaction);
+            if (exhaustive)
+            {
+                RequireTableColumns(connection, "custom_lists", transaction,
+                    "trakt_list_id", "trakt_slug", "sync_status", "is_deleted", "last_synced_at");
+                RequireTableColumns(connection, "custom_list_members", transaction, "tmdb_id");
+                RequireTableColumns(connection, "custom_list_pending_actions", transaction,
+                    "list_id", "media_kind", "tmdb_id", "action_type", "created_at");
+            }
         }
         if (exhaustive)
         {

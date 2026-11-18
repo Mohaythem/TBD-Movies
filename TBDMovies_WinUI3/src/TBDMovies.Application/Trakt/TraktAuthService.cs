@@ -355,40 +355,6 @@ public sealed class TraktAuthService : ITraktAuthService
             cancellationToken.ThrowIfCancellationRequested();
             var oldRefreshToken = _tokens.RefreshToken;
             var currentGen = Interlocked.Read(ref _generation);
-
-            // Persist fail-closed recovery marker before sending refresh POST.
-            // Tokens are kept only in memory for this attempt.
-            var inFlightMarker = new TraktCredentialPayload(
-                _config.ClientId,
-                AccessToken: string.Empty,
-                RefreshToken: string.Empty,
-                TokenType: "bearer",
-                ExpiresIn: 0,
-                Scope: "public",
-                CreatedAtUnixSeconds: _timeProvider.GetUtcNow().ToUnixTimeSeconds(),
-                AccountId: _accountId,
-                RequiresReconnect: true);
-
-            try
-            {
-                _credentialStore.Write(inFlightMarker);
-                var markerVerify = _credentialStore.Read();
-                if (markerVerify is null || !markerVerify.RequiresReconnect)
-                {
-                    _requiresReconnect = true;
-                    _tokens = null;
-                    _state = TraktAuthState.RequiresReconnection;
-                    throw new TraktAuthException("Failed to verify persistent fail-closed marker before refresh.");
-                }
-            }
-            catch (Exception ex) when (ex is not TraktAuthException)
-            {
-                _requiresReconnect = true;
-                _tokens = null;
-                _state = TraktAuthState.RequiresReconnection;
-                throw new TraktAuthException("Failed to write persistent fail-closed marker before refresh. Reconnect required.", ex);
-            }
-
             TraktTokenPair newTokens;
             try
             {
@@ -397,6 +363,10 @@ public sealed class TraktAuthService : ITraktAuthService
                     _config.RedirectUri,
                     oldRefreshToken,
                     cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (TraktInvalidGrantException ex)
             {
@@ -408,12 +378,9 @@ public sealed class TraktAuthService : ITraktAuthService
             }
             catch (Exception ex)
             {
-                // Single-use refresh token: network outcome is uncertain and token may be consumed.
-                // Do not retry. Retain fail-closed marker so restart blocks replay.
-                _requiresReconnect = true;
-                _tokens = null;
-                _state = TraktAuthState.RequiresReconnection;
-                throw new TraktAuthException("Token refresh encountered an uncertain network failure. Reconnect required.", ex);
+                // Transient network / server failure: do not destroy session or wipe credentials.
+                // Keep existing _tokens and _state, and rethrow as TraktAuthException so caller can retry.
+                throw new TraktAuthException("Token refresh encountered a transient network failure. Existing session preserved.", ex);
             }
 
             if (Interlocked.Read(ref _generation) != currentGen)
@@ -452,8 +419,7 @@ public sealed class TraktAuthService : ITraktAuthService
             }
             catch (Exception storeEx)
             {
-                // Do not delete the fail-closed marker! The persistent marker in the store
-                // already has RequiresReconnect=true, which ensures any restart will block reuse.
+                try { _credentialStore.Delete(); } catch (Exception deleteEx) { System.Diagnostics.Debug.WriteLine($"Failed to delete credentials on store failure: {deleteEx.Message}"); }
                 _requiresReconnect = true;
                 _tokens = null;
                 _state = TraktAuthState.RequiresReconnection;

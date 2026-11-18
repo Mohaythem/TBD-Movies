@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 using TBDMovies.Application.Dto;
 using TBDMovies.Domain.Library.Personal;
@@ -32,6 +33,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
 
     /// <summary>The members of the selected list for this visit, so search filters in memory.</summary>
     private IReadOnlyList<ListMediaItem>? _sectionItems;
+    private ObservableCollection<ListMediaItem> _displayedItems = new();
     private string? _sectionKey;
     private IReadOnlyList<HomeActivityCard>? _continueItems;
     private IReadOnlyList<WatchHistoryCardRecord>? _historyItems;
@@ -72,6 +74,67 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         Invalidate();
         RebuildTabs();
         Refresh();
+        UpdateSyncStatus();
+    }
+
+    public void UpdateSyncStatus()
+    {
+        var trakt = AppServices.Trakt;
+        if (trakt is null)
+        {
+            SyncStatusText.Visibility = Visibility.Collapsed;
+            SyncNowButton.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        var state = trakt.GetSyncState();
+        if (!state.AuthState.IsConnected)
+        {
+            SyncStatusText.Visibility = Visibility.Collapsed;
+            SyncNowButton.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        SyncStatusText.Visibility = Visibility.Visible;
+        SyncNowButton.Visibility = Visibility.Visible;
+        SyncNowButton.IsEnabled = !state.IsSyncing;
+
+        if (state.IsSyncing)
+        {
+            SyncStatusText.Text = LocalizationService.Text("TraktSyncing") ?? "جارٍ المزامنة...";
+        }
+        else if (state.LastSyncSuccessAt.HasValue)
+        {
+            var timeStr = state.LastSyncSuccessAt.Value.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture);
+            SyncStatusText.Text = $"{LocalizationService.Text("TraktLastSynced") ?? "آخر مزامنة"}: {timeStr}";
+        }
+        else
+        {
+            SyncStatusText.Text = string.Empty;
+        }
+    }
+
+    private async void SyncNowButton_Click(object sender, RoutedEventArgs e)
+    {
+        var trakt = AppServices.Trakt;
+        if (trakt is null) return;
+        SyncNowButton.IsEnabled = false;
+        SyncStatusText.Text = LocalizationService.Text("TraktSyncing") ?? "جارٍ المزامنة...";
+        try
+        {
+            await trakt.SyncAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MyListsPage] Manual sync failed: {ex.Message}");
+        }
+        finally
+        {
+            UpdateSyncStatus();
+            _customLists = LoadCustomLists();
+            RebuildTabs();
+            Refresh();
+        }
     }
 
     /// <summary>Drops the per-visit caches: the custom lists and the loaded section.</summary>
@@ -97,12 +160,10 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         FlowDirection = LocalizationService.FlowDirection;
         PageTitleText.Text = LocalizationService.Text("MyLists");
         NewListButtonText.Text = LocalizationService.Text("NewList");
-        SyncTraktButtonText.Text = LocalizationService.Text("TraktSyncNow");
         UpdateTraktSyncVisibility();
         AddMoviesButtonText.Text = LocalizationService.Text("AddMedia");
         RenameListMenuItem.Text = LocalizationService.Text("Rename") ?? "Rename";
         DeleteListMenuItem.Text = LocalizationService.Text("Delete") ?? "Delete";
-        NewTraktListButtonText.Text = LocalizationService.Text("NewList") ?? "New Trakt List";
         SearchBox.PlaceholderText = LocalizationService.Text("SearchLists");
         ListsCountText.Text = LocalizationService.Format("ListsCountFormat", Definitions.Count);
         LocalizeSystemTabs();
@@ -153,7 +214,6 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         WatchLaterLabel.Text = LocalizationService.Text("WatchLater");
         ContinueWatchingLabel.Text = LocalizationService.Text("ContinueWatching");
         RecentlyWatchedLabel.Text = LocalizationService.Text("RecentlyWatched");
-        TraktTabLabel.Text = LocalizationService.Text("Trakt") ?? "Trakt";
     }
 
     /// <summary>
@@ -180,14 +240,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 Style = (Style)App.Current.Resources["SecondaryCaptionTextStyle"],
                 Visibility = Visibility.Collapsed,
             };
-            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            content.Children.Add(new FontIcon
-            {
-                VerticalAlignment = VerticalAlignment.Center,
-                FontFamily = (FontFamily)App.Current.Resources["SymbolThemeFontFamily"],
-                FontSize = 14,
-                Glyph = "",
-            });
+            var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
             content.Children.Add(label);
             content.Children.Add(count);
 
@@ -207,7 +260,6 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
 
         _rebuilding = false;
         ListsCountText.Text = LocalizationService.Format("ListsCountFormat", Definitions.Count);
-        RebuildTraktTabs();
     }
 
     // APPEND_MARKER2
@@ -219,8 +271,6 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             return;
         }
         CancelTraktDisplay();
-        TraktRow.Visibility = Visibility.Collapsed;
-        TraktTabCount.Text = string.Empty;
         UpdateTraktSyncVisibility();
         AddMoviesButtonText.Text = LocalizationService.Text("AddMedia");
         AddMoviesButton.IsEnabled = true;
@@ -283,7 +333,8 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         ContinueGrid.Visibility = Visibility.Collapsed;
         HistoryGrid.Visibility = Visibility.Collapsed;
         var items = BuildItems(definition);
-        ListGrid.ItemsSource = items;
+        _displayedItems = new ObservableCollection<ListMediaItem>(items);
+        ListGrid.ItemsSource = _displayedItems;
         ListCountText.Text = FormatCount(items.Count);
         ListCountText.Visibility = items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
 
@@ -340,10 +391,6 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             if (CustomKey(id) == _selectedKey && tab.IsChecked != true) tab.IsChecked = true;
         }
 
-        if (IsTraktKey(_selectedKey) && TraktTabItem.IsChecked != true)
-        {
-            TraktTabItem.IsChecked = true;
-        }
 
         _syncing = false;
     }
@@ -372,6 +419,27 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         foreach (var (_, _, count, key) in SystemTabs)
             count.Text = string.Empty;
         foreach (var (_, _, count, id) in _dynamicTabs) count.Text = string.Empty;
+    }
+
+    private void UpdateActiveTabBadge(int activeCount)
+    {
+        foreach (var (_, _, count, key) in SystemTabs)
+        {
+            if (key == _selectedKey)
+            {
+                count.Text = activeCount > 0 ? activeCount.ToString() : string.Empty;
+                count.Visibility = activeCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
+        foreach (var (_, _, count, id) in _dynamicTabs)
+        {
+            if (CustomKey(id) == _selectedKey)
+            {
+                count.Text = activeCount > 0 ? activeCount.ToString() : string.Empty;
+                count.Visibility = activeCount > 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
     }
 
     private void SetActivityEmptyState(int count)
@@ -456,19 +524,31 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             };
             if (identity.MovieId is int movieId)
             {
-                var movie = AppServices.Library.ListMovies().FirstOrDefault(movie => movie.Id == movieId);
-                var card = movie is not null
-                    ? LibraryProjection.ToCard(movie)
-                    : new MovieRecord(movieId, string.Empty, 0, string.Empty, 0, [], string.Empty);
+                MovieRecord card;
+                try
+                {
+                    var movie = AppServices.Library.GetMovieItem(movieId);
+                    card = LibraryProjection.ToCard(movie);
+                }
+                catch
+                {
+                    card = new MovieRecord(movieId, string.Empty, 0, string.Empty, 0, [], string.Empty);
+                }
                 MovieSelected?.Invoke(this, card);
                 return;
             }
             if (identity.ShowId is int showId)
             {
-                var show = AppServices.Tv.ListShows().FirstOrDefault(show => show.Id == showId);
-                var card = show is not null
-                    ? TvProjection.ToCard(show)
-                    : new TVShowRecord(showId, string.Empty, 0, [], string.Empty, []);
+                TVShowRecord card;
+                try
+                {
+                    var show = AppServices.Tv.GetShowDetails(showId);
+                    card = TvProjection.ToDetails(show);
+                }
+                catch
+                {
+                    card = new TVShowRecord(showId, string.Empty, 0, [], string.Empty, []);
+                }
                 ShowSelected?.Invoke(this, card);
                 return;
             }
@@ -550,20 +630,21 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
     /// <summary>Projects a mixed custom-list member (movie or TV show) onto a card item.</summary>
     private static ListMediaItem ToListItem(CustomListItem item)
     {
-        var badgeText = LocalizationService.Text(!item.IsMissing ? "Local" : "OnlineOnly");
+        var isCloud = item.IsCloudOnly;
+        var badgeText = isCloud ? "سحابي" : LocalizationService.Text(!item.IsMissing ? "Local" : "OnlineOnly");
         if (item.Kind == CustomListMediaKind.Show)
         {
             var show = new TVShowRecord(
                 item.Id, item.Title, item.Year ?? 0, [], string.Empty, [], PosterReference: item.PosterReference,
                 CustomDisplayTitle: item.CustomDisplayTitle, CanonicalTitle: item.CanonicalTitle);
-            return new ListMediaItem(show, false, !item.IsMissing, badgeText);
+            return new ListMediaItem(show, isCloud, !item.IsMissing && !isCloud, badgeText, item.TmdbId);
         }
 
         var movie = new MovieRecord(
             item.Id, item.Title, item.Year ?? 0, string.Empty, 0, [], string.Empty,
-            HasLocalFile: !item.IsMissing, PosterReference: item.PosterReference,
+            HasLocalFile: !item.IsMissing && !isCloud, PosterReference: item.PosterReference,
             CustomDisplayTitle: item.CustomDisplayTitle, CanonicalTitle: item.CanonicalTitle);
-        return new ListMediaItem(movie, false, !item.IsMissing, badgeText);
+        return new ListMediaItem(movie, isCloud, !item.IsMissing && !isCloud, badgeText, item.TmdbId);
     }
 
     // APPEND_MARKER3
@@ -669,19 +750,64 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
     {
         if (sender is not FrameworkElement grid) return;
         var destinationKey = _selectedKey;
-        var resolved = ResolveCard(e) as ListMediaItem;
+        var resolved = ResolveCard(e, grid);
         var remove = resolved is not null && (destinationKey is "watch-later" or "favorites" || destinationKey.StartsWith("custom:", StringComparison.Ordinal))
-            ? new Action(() => RemoveFromSelectedList(resolved!, destinationKey))
+            ? new Action(() => RemoveFromSelectedList(resolved, destinationKey))
             : null;
         MediaCardContextMenu.ShowForContext(grid, e, horizontalMovies: false,
-            onChanged: () => { Invalidate(); Refresh(); }, removeFromList: remove);
+            onChanged: () =>
+            {
+                if (resolved is not null)
+                {
+                    bool stillInList = true;
+                    if (ParseCustomKey(destinationKey) is int listId)
+                    {
+                        IReadOnlySet<int> ids;
+                        if (resolved.Show is { } s)
+                            ids = AppServices.Personal.GetCustomListIdsForShow(s.Id);
+                        else if (resolved.Movie is { } m)
+                            ids = AppServices.Personal.GetCustomListIdsForMovie(m.Id);
+                        else
+                            ids = new HashSet<int>();
+
+                        stillInList = ids.Contains(listId);
+                    }
+                    else if (destinationKey == "watch-later")
+                    {
+                        stillInList = resolved.Show is { } s ? AppServices.ShowPersonal.GetState(s.Id).WatchLater
+                                    : resolved.Movie is { } m ? AppServices.Personal.GetPersonalSnapshot(m.Id).Watchlisted
+                                    : true;
+                    }
+                    else if (destinationKey == "favorites")
+                    {
+                        stillInList = resolved.Show is { } s ? AppServices.ShowPersonal.GetState(s.Id).IsFavorite
+                                    : resolved.Movie is { } m ? AppServices.Personal.GetPersonalSnapshot(m.Id).Preference == PersonalPreference.Liked
+                                    : true;
+                    }
+
+                    if (!stillInList)
+                    {
+                        RemoveItemInPlace(resolved);
+                    }
+                }
+            }, removeFromList: remove);
     }
 
-    private static object? ResolveCard(ContextRequestedEventArgs e)
+    private static ListMediaItem? ResolveCard(ContextRequestedEventArgs e, FrameworkElement owner)
     {
         var element = e.OriginalSource as DependencyObject;
-        while (element is not null && element is not GridViewItem) element = VisualTreeHelper.GetParent(element);
-        return (element as FrameworkElement)?.DataContext;
+        while (element is not null)
+        {
+            if (element is FrameworkElement fe && fe.DataContext is ListMediaItem item)
+                return item;
+            element = VisualTreeHelper.GetParent(element);
+        }
+        if (!e.TryGetPosition(owner, out _) && FocusManager.GetFocusedElement(owner.XamlRoot) is FrameworkElement focused)
+        {
+            for (DependencyObject? current = focused; current is not null; current = VisualTreeHelper.GetParent(current))
+                if (current is FrameworkElement item && item.DataContext is ListMediaItem listMedia) return listMedia;
+        }
+        return null;
     }
 
     private void RemoveFromSelectedList(ListMediaItem item, string destinationKey)
@@ -692,11 +818,17 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             {
                 if (item.Show is { } show)
                 {
-                    AppServices.Personal.RemoveShowFromCustomList(listId, show.Id);
+                    if (show.Id > 0)
+                        AppServices.Personal.RemoveShowFromCustomList(listId, show.Id);
+                    else if (item.TmdbId is > 0)
+                        AppServices.Personal.RemoveCloudMediaFromCustomList(listId, CustomListMediaKind.Show, item.TmdbId.Value);
                 }
                 else if (item.Movie is { } movie)
                 {
-                    AppServices.Personal.RemoveMovieFromCustomList(listId, movie.Id);
+                    if (movie.Id > 0)
+                        AppServices.Personal.RemoveMovieFromCustomList(listId, movie.Id);
+                    else if (item.TmdbId is > 0)
+                        AppServices.Personal.RemoveCloudMediaFromCustomList(listId, CustomListMediaKind.Movie, item.TmdbId.Value);
                 }
             }
             else if (destinationKey == "watch-later")
@@ -752,9 +884,70 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             return;
         }
 
-        // The current list's contents changed; reload it and redraw. Other lists and the media are untouched.
-        Invalidate();
-        Refresh();
+        RemoveItemInPlace(item);
+    }
+
+    private void RemoveItemInPlace(ListMediaItem item)
+    {
+        if (_sectionItems is not null)
+        {
+            bool Matches(ListMediaItem x)
+            {
+                if (item.Show is { } s && x.Show is { } xs) return s.Id == xs.Id;
+                if (item.Movie is { } m && x.Movie is { } xm) return m.Id == xm.Id;
+                return x == item;
+            }
+
+            _sectionItems = _sectionItems.Where(x => !Matches(x)).ToList();
+            var targetItem = _displayedItems.FirstOrDefault(Matches);
+            if (targetItem is not null)
+            {
+                _displayedItems.Remove(targetItem);
+            }
+
+            var count = _displayedItems.Count;
+            ListCountText.Text = FormatCount(count);
+            ListCountText.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            UpdateActiveTabBadge(count);
+
+            var isEmpty = count == 0;
+            if (isEmpty)
+            {
+                ListCountText.Visibility = Visibility.Collapsed;
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(200);
+                    DispatcherQueue?.TryEnqueue(() =>
+                    {
+                        if (!_isActivated || !IsLoaded || _displayedItems.Count > 0) return;
+                        ListGrid.Visibility = Visibility.Collapsed;
+                        EmptyState.Visibility = Visibility.Visible;
+
+                        var isCustom = _selectedKey.StartsWith("custom:", StringComparison.Ordinal);
+                        var searching = _query.Length > 0;
+                        EmptyState.Kind = searching ? Controls.EmptyStateKind.NoResults : Controls.EmptyStateKind.EmptyLists;
+                        EmptyState.Title = LocalizationService.Text(searching ? "NoResults" : "ListEmpty");
+                        EmptyState.Message = LocalizationService.Text(
+                            searching ? "NoResultsHelp" : isCustom ? "CustomListEmptyHelp" : "ListEmptyHelp");
+                        if (searching)
+                        {
+                            EmptyState.ActionText = LocalizationService.Text("ClearSearch");
+                            EmptyState.IsActionVisible = true;
+                        }
+                        else
+                        {
+                            EmptyState.ActionText = LocalizationService.Text("AddMovies");
+                            EmptyState.IsActionVisible = true;
+                        }
+                    });
+                });
+            }
+        }
+        else
+        {
+            Invalidate();
+            Refresh();
+        }
     }
 
     // APPEND_MARKER4
@@ -826,9 +1019,13 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         }
 
         // The selection key is the id, so it survives the rename.
-        Invalidate();
-        RebuildTabs();
-        Refresh();
+        _customLists = _customLists.Select(c => c.Id == list.Id ? c with { Name = name } : c).ToList();
+        var tab = _dynamicTabs.FirstOrDefault(t => t.ListId == list.Id);
+        if (tab.Label is not null)
+        {
+            tab.Label.Text = name;
+        }
+        ListNameText.Text = name;
     }
 
     /// <summary>Deletes the selected custom list and its membership rows. No movie or file is touched.</summary>
@@ -980,9 +1177,61 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             await ReportAsync(error);
         }
 
-        Invalidate();
-        RebuildTabs();
-        Refresh();
+        if (_sectionItems is not null)
+        {
+            var addedItems = new List<ListMediaItem>();
+            foreach (var pick in picks)
+            {
+                if (pick.Kind == CustomListMediaKind.Movie)
+                {
+                    try
+                    {
+                        var movie = AppServices.Library.GetMovieItem(pick.Id);
+                        var card = LibraryProjection.ToCard(movie);
+                        var isLocal = card.HasLocalFile;
+                        addedItems.Add(new ListMediaItem(card, false, isLocal, LocalizationService.Text(isLocal ? "Local" : "MissingFile")));
+                    }
+                    catch { }
+                }
+                else
+                {
+                    try
+                    {
+                        var showDetails = AppServices.Tv.GetShowDetails(pick.Id);
+                        var card = TvProjection.ToDetails(showDetails);
+                        var isLocal = card.LocalEpisodeCount > 0;
+                        addedItems.Add(new ListMediaItem(card, false, isLocal, LocalizationService.Text(isLocal ? "Local" : "MissingFile")));
+                    }
+                    catch { }
+                }
+            }
+
+            _sectionItems = [.. _sectionItems, .. addedItems];
+            foreach (var card in addedItems)
+            {
+                bool matchesQuery = string.IsNullOrEmpty(_query) ||
+                    MediaTitleSearch.Matches(card.Title, card.CanonicalTitle, card.Year, _query);
+                if (matchesQuery)
+                {
+                    _displayedItems.Add(card);
+                }
+            }
+
+            var count = _displayedItems.Count;
+            ListCountText.Text = FormatCount(count);
+            ListCountText.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            if (count > 0)
+            {
+                ListGrid.Visibility = Visibility.Visible;
+                EmptyState.Visibility = Visibility.Collapsed;
+            }
+            UpdateActiveTabBadge(count);
+        }
+        else
+        {
+            Invalidate();
+            Refresh();
+        }
     }
 
     /// <summary>

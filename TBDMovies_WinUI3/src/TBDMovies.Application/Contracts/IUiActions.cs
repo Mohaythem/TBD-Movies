@@ -94,6 +94,9 @@ public interface IPersonalLibraryUiActions
     /// <summary>Removes a TV show from a custom list. Returns the show's list ids after.</summary>
     IReadOnlySet<int> RemoveShowFromCustomList(int listId, int showId);
 
+    /// <summary>Removes a cloud-only media item (by TMDB ID) from a custom list.</summary>
+    void RemoveCloudMediaFromCustomList(int listId, TBDMovies.Domain.Library.Personal.CustomListMediaKind kind, int tmdbId) { }
+
     /// <summary>The ids of the custom lists a TV show belongs to (for showing membership in TV Details).</summary>
     IReadOnlySet<int> GetCustomListIdsForShow(int showId);
 

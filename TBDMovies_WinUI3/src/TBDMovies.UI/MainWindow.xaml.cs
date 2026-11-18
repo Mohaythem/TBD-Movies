@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Threading.Tasks;
 using TBDMovies.UI.Models;
 using TBDMovies.UI.Services;
 using TBDMovies.UI.Views;
@@ -10,6 +12,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using WinRT.Interop;
 
 namespace TBDMovies.UI;
@@ -36,12 +39,17 @@ public sealed partial class MainWindow : Window
     private readonly ResourceDictionary _slatePaletteResources = CreateSlatePaletteResources();
     private readonly Windows.UI.ViewManagement.AccessibilitySettings _accessibilitySettings = new();
     private readonly Windows.UI.ViewManagement.UISettings _uiSettings = new();
+    private Storyboard? _activeTransitionStoryboard;
+    private Page? _transitioningPage;
+    private Storyboard? _splashStoryboard;
+    private bool _isClosed;
 
     public MainWindow()
     {
         // The stored theme and language are applied before the pages are localized or themed, so the
         // shell opens the way the user left it instead of flashing the defaults first.
-        var (theme, language) = AppServices.RestorePreferences();
+        // Uses isolated fast-path database query without waiting for full services initialization.
+        var (theme, language) = AppServices.RestorePreferencesFast();
         ThemeService.Restore(theme);
         LocalizationService.Restore(language);
 
@@ -53,6 +61,11 @@ public sealed partial class MainWindow : Window
         };
         settingsShortcut.Invoked += (_, args) =>
         {
+            if (StartupSplashOverlay.Visibility == Visibility.Visible || !AppServices.IsAvailable)
+            {
+                args.Handled = true;
+                return;
+            }
             Navigate("settings");
             args.Handled = true;
         };
@@ -75,7 +88,9 @@ public sealed partial class MainWindow : Window
         // stored language was restored above. Re-localizing them here is what makes a shell that
         // starts in Arabic actually open in Arabic instead of English text inside a mirrored shell.
         LocalizeViews();
-        Navigate("home");
+
+        // Lock navigation controls while background initialization is in flight
+        ShellNavigation.IsEnabled = false;
 
         // The composition root owns the journal store's long-lived SQLite connection. Closing the
         // shell is this app's shutdown - it is the only window - so that is where the stack is closed
@@ -85,6 +100,7 @@ public sealed partial class MainWindow : Window
 
     private void OnWindowClosed(object sender, WindowEventArgs args)
     {
+        _isClosed = true;
         Closed -= OnWindowClosed;
         _minimumWindowSize?.Dispose();
         ShellNavigation.SizeChanged -= ShellNavigation_SizeChanged;
@@ -92,7 +108,136 @@ public sealed partial class MainWindow : Window
         LocalizationService.LanguageChanged -= OnLanguageChanged;
         ThemeService.ThemeChanged -= OnThemeChanged;
         _uiSettings.ColorValuesChanged -= OnSystemColorsChanged;
+        _activeTransitionStoryboard?.Stop();
+        _activeTransitionStoryboard = null;
+        _transitioningPage = null;
+        _splashStoryboard?.Stop();
+        _splashStoryboard = null;
         AppServices.Shutdown();
+    }
+
+    /// <summary>
+    /// Awaits background service and database initialization, hydrates the home page,
+    /// dismisses the startup splash overlay with a smooth micro-fade, unlocks navigation,
+    /// and records precision telemetry.
+    /// </summary>
+    public async Task CompleteStartupAsync(Task initServicesTask)
+    {
+        var splashStopwatch = Stopwatch.StartNew();
+        var servicesSw = Stopwatch.StartNew();
+
+        try
+        {
+            // 1. Force the UI thread to yield to the WinUI 3 message pump so that the compositor
+            //    measures, arranges, and renders the initial splash frame (icon, title, progress bar)
+            //    before any synchronous data hydration takes place.
+            await Task.Delay(30);
+            if (_isClosed) return;
+
+            // 2. Await background database migrations and services wiring
+            await initServicesTask;
+            if (_isClosed) return;
+            servicesSw.Stop();
+
+            // 3. Hydrate Home Page while StartupSplashOverlay remains visible on top (Z-order)
+            var homeSw = Stopwatch.StartNew();
+            Navigate("home");
+            homeSw.Stop();
+            if (_isClosed) return;
+
+            // 4. Perceptual threshold: Ensure splash is visible for at least 700ms total from window
+            //    activation to allow comfortable perception of branding and indeterminate progress.
+            if (_uiSettings.AnimationsEnabled)
+            {
+                const int MinSplashDwellMs = 700;
+                var elapsed = splashStopwatch.ElapsedMilliseconds;
+                if (elapsed < MinSplashDwellMs)
+                {
+                    await Task.Delay((int)(MinSplashDwellMs - elapsed));
+                    if (_isClosed) return;
+                }
+            }
+
+            // 5. Smooth micro fade-out transition matching Fluent design system
+            await DismissSplashAsync();
+
+            // 6. Record segmented precision telemetry
+            StartupTelemetry.Complete(servicesSw.ElapsedMilliseconds, homeSw.ElapsedMilliseconds);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Startup] Error during startup sequence: {ex}");
+        }
+        finally
+        {
+            // Absolute defensive invariant: never leave navigation locked or splash blocking if window is active
+            if (!_isClosed)
+            {
+                StartupSplashOverlay.Visibility = Visibility.Collapsed;
+                StartupSplashOverlay.Opacity = 0.0;
+                ShellNavigation.IsEnabled = true;
+                if (_currentPage is not null)
+                {
+                    _currentPage.Opacity = 1.0;
+                }
+            }
+        }
+    }
+
+    private async Task DismissSplashAsync()
+    {
+        if (_isClosed) return;
+
+        if (!_uiSettings.AnimationsEnabled)
+        {
+            StartupSplashOverlay.Visibility = Visibility.Collapsed;
+            StartupSplashOverlay.Opacity = 0.0;
+            ShellNavigation.IsEnabled = true;
+            return;
+        }
+
+        var tcs = new TaskCompletionSource();
+        var storyboard = new Storyboard();
+        var fadeAnim = new DoubleAnimation
+        {
+            From = 1.0,
+            To = 0.0,
+            Duration = new Duration(TimeSpan.FromMilliseconds(200)),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+
+        Storyboard.SetTarget(fadeAnim, StartupSplashOverlay);
+        Storyboard.SetTargetProperty(fadeAnim, "Opacity");
+        storyboard.Children.Add(fadeAnim);
+
+        storyboard.Completed += (_, _) =>
+        {
+            if (!_isClosed)
+            {
+                StartupSplashOverlay.Visibility = Visibility.Collapsed;
+                StartupSplashOverlay.Opacity = 0.0;
+                ShellNavigation.IsEnabled = true;
+            }
+            _splashStoryboard = null;
+            tcs.TrySetResult();
+        };
+
+        _splashStoryboard = storyboard;
+        try
+        {
+            storyboard.Begin();
+            await Task.WhenAny(tcs.Task, Task.Delay(350));
+        }
+        catch
+        {
+            if (!_isClosed)
+            {
+                StartupSplashOverlay.Visibility = Visibility.Collapsed;
+                StartupSplashOverlay.Opacity = 0.0;
+                ShellNavigation.IsEnabled = true;
+            }
+            _splashStoryboard = null;
+        }
     }
 
     /// <summary>
@@ -227,7 +372,17 @@ public sealed partial class MainWindow : Window
         {
             _movieDetailsPage = new MovieDetailsPage();
             _movieDetailsPage.BackRequested += (_, _) => Navigate(_detailsReturnDestination);
-            _movieDetailsPage.MediaPathChanged += (_, _) => _libraryPage?.InvalidateCatalog();
+            _movieDetailsPage.MediaPathChanged += (_, _) =>
+            {
+                if (_libraryPage is not null && _movieDetailsPage.CurrentMovieId is int id && id > 0)
+                {
+                    _libraryPage.PatchMovieFileChanged(id);
+                }
+                else
+                {
+                    _libraryPage?.InvalidateCatalog();
+                }
+            };
             _movieDetailsPage.ShowRequested += OpenShowById;
             HostLazyPage(_movieDetailsPage);
         }
@@ -416,6 +571,12 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private void EscAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
+        if (StartupSplashOverlay.Visibility == Visibility.Visible || !AppServices.IsAvailable)
+        {
+            args.Handled = true;
+            return;
+        }
+
         if (_currentPage is LibraryPage { SelectedCount: > 0 } libraryPage)
         {
             libraryPage.ClearSelection();
@@ -520,6 +681,7 @@ public sealed partial class MainWindow : Window
 
             page.Visibility = Visibility.Visible;
             _currentPage = page;
+            PlayPageTransition(page);
         }
 
         var selected = destination switch
@@ -552,6 +714,104 @@ public sealed partial class MainWindow : Window
         if (page is IActivatableView activatable)
         {
             activatable.Activate();
+        }
+    }
+
+    /// <summary>
+    /// Smooth micro-transition (120ms fade-in and subtle slide) for page switches.
+    /// Resets transforms cleanly on cancellation and respects Windows accessibility animations setting.
+    /// </summary>
+    private void PlayPageTransition(Page page)
+    {
+        // Cancel any in-flight transition and reset the previous page state to avoid leaving it partially transparent
+        if (_activeTransitionStoryboard is not null)
+        {
+            _activeTransitionStoryboard.Stop();
+            _activeTransitionStoryboard = null;
+            if (_transitioningPage is not null)
+            {
+                _transitioningPage.Opacity = 1.0;
+                if (_transitioningPage.RenderTransform is TranslateTransform prevTt)
+                {
+                    prevTt.Y = 0;
+                }
+                _transitioningPage = null;
+            }
+        }
+
+        // Set up TranslateTransform if not present
+        TranslateTransform translateTransform;
+        if (page.RenderTransform is TranslateTransform existing)
+        {
+            translateTransform = existing;
+        }
+        else
+        {
+            translateTransform = new TranslateTransform();
+            page.RenderTransform = translateTransform;
+        }
+
+        // Fast-path: If user disabled animations in Windows settings, apply immediate snap
+        if (!_uiSettings.AnimationsEnabled)
+        {
+            page.Opacity = 1.0;
+            translateTransform.Y = 0;
+            return;
+        }
+
+        _transitioningPage = page;
+        page.Opacity = 0.0;
+        translateTransform.Y = 15.0;
+
+        var duration = TimeSpan.FromMilliseconds(150);
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+
+        var opacityAnim = new DoubleAnimation
+        {
+            From = 0.0,
+            To = 1.0,
+            Duration = duration,
+            EasingFunction = ease
+        };
+        Storyboard.SetTarget(opacityAnim, page);
+        Storyboard.SetTargetProperty(opacityAnim, "Opacity");
+
+        var slideAnim = new DoubleAnimation
+        {
+            From = 15.0,
+            To = 0.0,
+            Duration = duration,
+            EasingFunction = ease
+        };
+        Storyboard.SetTarget(slideAnim, translateTransform);
+        Storyboard.SetTargetProperty(slideAnim, "Y");
+
+        var storyboard = new Storyboard();
+        storyboard.Children.Add(opacityAnim);
+        storyboard.Children.Add(slideAnim);
+
+        storyboard.Completed += (_, _) =>
+        {
+            page.Opacity = 1.0;
+            translateTransform.Y = 0;
+            if (ReferenceEquals(_activeTransitionStoryboard, storyboard))
+            {
+                _activeTransitionStoryboard = null;
+                _transitioningPage = null;
+            }
+        };
+
+        _activeTransitionStoryboard = storyboard;
+        try
+        {
+            storyboard.Begin();
+        }
+        catch
+        {
+            page.Opacity = 1.0;
+            translateTransform.Y = 0;
+            _activeTransitionStoryboard = null;
+            _transitioningPage = null;
         }
     }
 

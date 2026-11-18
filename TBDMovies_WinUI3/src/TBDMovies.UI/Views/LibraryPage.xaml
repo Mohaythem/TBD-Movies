@@ -499,24 +499,44 @@
                         Tag="shows" />
                 </StackPanel>
 
-                <!-- Single View Mode Toggle Button -->
-                <Button
-                    x:Name="ViewModeToggleButton"
-                    AutomationProperties.AutomationId="LibraryViewModeToggle"
-                    Click="ViewModeToggleButton_Click"
-                    Style="{StaticResource SubtleControlButtonStyle}"
-                    CornerRadius="8"
-                    Height="32"
-                    Width="36"
-                    Padding="0"
+                <!-- Actions on trailing edge: Random Picker + View Mode Toggle -->
+                <StackPanel
                     HorizontalAlignment="Right"
-                    VerticalAlignment="Center">
-                    <FontIcon
-                        x:Name="ViewModeToggleIcon"
-                        FontFamily="{StaticResource SymbolThemeFontFamily}"
-                        FontSize="16"
-                        Glyph="&#xEA37;" />
-                </Button>
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal"
+                    Spacing="8">
+                    <Button
+                        x:Name="RandomPickerButton"
+                        AutomationProperties.AutomationId="LibraryRandomPickerButton"
+                        Click="RandomPickerButton_Click"
+                        Style="{StaticResource SubtleControlButtonStyle}"
+                        CornerRadius="8"
+                        Height="32"
+                        Width="36"
+                        Padding="0"
+                        VerticalAlignment="Center">
+                        <FontIcon
+                            FontFamily="{StaticResource SymbolThemeFontFamily}"
+                            FontSize="16"
+                            Glyph="&#xE8B1;" />
+                    </Button>
+                    <Button
+                        x:Name="ViewModeToggleButton"
+                        AutomationProperties.AutomationId="LibraryViewModeToggle"
+                        Click="ViewModeToggleButton_Click"
+                        Style="{StaticResource SubtleControlButtonStyle}"
+                        CornerRadius="8"
+                        Height="32"
+                        Width="36"
+                        Padding="0"
+                        VerticalAlignment="Center">
+                        <FontIcon
+                            x:Name="ViewModeToggleIcon"
+                            FontFamily="{StaticResource SymbolThemeFontFamily}"
+                            FontSize="16"
+                            Glyph="&#xEA37;" />
+                    </Button>
+                </StackPanel>
 
                 <!-- Hidden SelectorBar for backward compatibility with LibraryViewModeTests assertions -->
                 <SelectorBar

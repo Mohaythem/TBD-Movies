@@ -44,6 +44,8 @@ public sealed class MediaSafetyRelinkAndPlaybackTests : IDisposable
     [InlineData(@"C:\media\payload.exe")]
     [InlineData(@"C:\media\script.bat")]
     [InlineData(@"C:\media\noext")]
+    [InlineData(@"C:\media\video.mp4:payload.exe")]
+    [InlineData(@"C:\media\video.mp4::$DATA")]
     public async Task MediaFileActions_OpenFileAsync_BlocksUnapprovedExtensions_WithoutShellLaunch(string unsafePath)
     {
         var launchCount = 0;
@@ -53,7 +55,7 @@ public sealed class MediaSafetyRelinkAndPlaybackTests : IDisposable
         var result = await actions.OpenFileAsync(unsafePath);
 
         Assert.Equal(AvailabilityInspectionStatus.Error, result.Status);
-        Assert.Equal("UnsupportedMediaType", result.ErrorCode);
+        Assert.True(result.ErrorCode is "UnsupportedMediaType" or "InvalidPath");
         Assert.Equal(0, launchCount); // Seam proves no process was launched
     }
 

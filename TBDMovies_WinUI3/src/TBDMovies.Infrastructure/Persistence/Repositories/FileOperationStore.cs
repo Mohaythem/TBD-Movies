@@ -29,7 +29,7 @@ public sealed class FileOperationStore : IFileOperationStore, IDisposable
         if (_connection.State != System.Data.ConnectionState.Open) _connection.Open();
         _connectionString = _connection.ConnectionString;
         using var command = _connection.CreateCommand();
-        command.CommandText = "PRAGMA foreign_keys = ON; PRAGMA synchronous = FULL;";
+        command.CommandText = "PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL;";
         command.ExecuteNonQuery();
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }

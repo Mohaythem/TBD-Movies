@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using TBDMovies.Application.Repositories;
+using TBDMovies.Domain.Library.Personal;
 
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("TBDMovies.Tests")]
 
@@ -602,6 +603,18 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                 // Step 5: Downstream Watched Reconciliation (Trakt -> Local) strictly for available local media
                 EnsureOperationValid(currentGen, uuid, opToken);
                 await ReconcileDownstreamWatchedAsync(uuid, opToken).ConfigureAwait(false);
+
+                // Step 6: Downstream & Upstream Custom Lists Reconciliation (Trakt <-> Local)
+                EnsureOperationValid(currentGen, uuid, opToken);
+                await ReconcileCustomListsAsync(uuid, userListsSuccess, opToken).ConfigureAwait(false);
+
+                // Step 7: Favorites Two-Way Full Union Reconciliation (Trakt <-> Local)
+                EnsureOperationValid(currentGen, uuid, opToken);
+                await ReconcileFavoritesAsync(uuid, opToken).ConfigureAwait(false);
+
+                // Step 8: Local Library Collection Upstream Reconciliation (Local -> Trakt Collection)
+                EnsureOperationValid(currentGen, uuid, opToken);
+                await ReconcileCollectionAsync(uuid, opToken).ConfigureAwait(false);
 
                 // Blocker 8: Recheck cancel and generation before publishing success state
                 EnsureOperationValid(currentGen, uuid, opToken);
@@ -1327,7 +1340,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                     }
                 }
 
-                await Task.Delay(TimeSpan.FromMinutes(15), ct).ConfigureAwait(false);
+                await Task.Delay(TimeSpan.FromMinutes(3), ct).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
@@ -1455,6 +1468,587 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Downstream watched reconciliation failed: {ex.Message}");
+        }
+    }
+
+    private async Task ReconcileCustomListsAsync(string accountId, bool userListsSuccess, CancellationToken cancellationToken)
+    {
+        if (_personalLibraryRepository is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var now = _timeProvider.GetUtcNow();
+
+            // 0. Upstream List Creation (Local Lists without trakt_list_id -> Trakt)
+            if (_dataClient is ITraktListWriter listWriter)
+            {
+                var unlinkedLists = _personalLibraryRepository.ListUnlinkedCustomLists();
+                if (unlinkedLists.Count > 0)
+                {
+                    var token = await _authService.GetAccessTokenAsync(forceRefresh: false, cancellationToken: cancellationToken);
+                    foreach (var unlinked in unlinkedLists)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        try
+                        {
+                            var createdElement = await listWriter.CreateCustomListAsync(
+                                unlinked.Name, null, "private", _config.ClientId, token, cancellationToken);
+
+                            if (createdElement.ValueKind == JsonValueKind.Object &&
+                                createdElement.TryGetProperty("ids", out var idsObj) &&
+                                idsObj.TryGetProperty("trakt", out var traktIdProp) &&
+                                idsObj.TryGetProperty("slug", out var slugProp))
+                            {
+                                var traktListId = traktIdProp.GetInt64();
+                                var traktSlug = slugProp.GetString() ?? unlinked.Name.ToLowerInvariant().Replace(' ', '-');
+
+                                _personalLibraryRepository.LinkTraktCustomList(unlinked.Id, traktListId, traktSlug, now);
+
+                                // Delete any pending CREATE_LIST action for this list
+                                var listPending = _personalLibraryRepository.ListPendingActions(unlinked.Id);
+                                foreach (var pa in listPending.Where(a => string.Equals(a.ActionType, "CREATE_LIST", StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    _personalLibraryRepository.DeletePendingAction(pa.Id);
+                                }
+
+                                // Push any existing local items with tmdb_id to Trakt
+                                var localMembers = _personalLibraryRepository.ListLocalMembersWithTmdb(unlinked.Id);
+                                foreach (var member in localMembers)
+                                {
+                                    cancellationToken.ThrowIfCancellationRequested();
+                                    try
+                                    {
+                                        if (member.Kind == CustomListMediaKind.Movie)
+                                        {
+                                            await listWriter.AddMovieToListAsync(traktListId, member.TmdbId, _config.ClientId, token, cancellationToken);
+                                        }
+                                        else if (member.Kind == CustomListMediaKind.Show)
+                                        {
+                                            await listWriter.AddShowToListAsync(traktListId, member.TmdbId, _config.ClientId, token, cancellationToken);
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to push existing member {member.TmdbId} to Trakt list {traktListId}: {ex.Message}");
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to create Trakt list for local list {unlinked.Id} '{unlinked.Name}': {ex.Message}");
+                        }
+                    }
+                }
+            }
+
+            // 1. Drain offline pending actions queue (Upstream Sync Local -> Trakt)
+            var pendingActions = _personalLibraryRepository.ListPendingActions();
+            if (pendingActions.Count > 0 && _dataClient is ITraktListWriter writer)
+            {
+                // Filter out any standalone CREATE_LIST actions that were already fulfilled
+                var itemActions = pendingActions.Where(a => !string.Equals(a.ActionType, "CREATE_LIST", StringComparison.OrdinalIgnoreCase)).ToList();
+
+                // Queue Compaction: cancel conflicting actions (ADD + REMOVE) for the same item in the same queue
+                var grouped = itemActions.GroupBy(a => (a.ListId, a.MediaKind, a.TmdbId)).ToList();
+                var compactedToReplay = new List<CustomListPendingAction>();
+
+                foreach (var group in grouped)
+                {
+                    var hasAdd = group.Any(a => string.Equals(a.ActionType, "ADD", StringComparison.OrdinalIgnoreCase));
+                    var hasRemove = group.Any(a => string.Equals(a.ActionType, "REMOVE", StringComparison.OrdinalIgnoreCase));
+
+                    if (hasAdd && hasRemove)
+                    {
+                        // Conflicting pair in same offline window: delete all actions in this group (No-Op)
+                        foreach (var action in group)
+                        {
+                            _personalLibraryRepository.DeletePendingAction(action.Id);
+                        }
+                    }
+                    else
+                    {
+                        compactedToReplay.AddRange(group);
+                    }
+                }
+
+                // Strict Chronological FIFO replay for surviving actions
+                compactedToReplay.Sort((x, y) => x.CreatedAt.CompareTo(y.CreatedAt));
+
+                var localLists = _personalLibraryRepository.ListCustomLists().ToDictionary(l => l.Id);
+                var token = await _authService.GetAccessTokenAsync(forceRefresh: false, cancellationToken: cancellationToken);
+
+                foreach (var action in compactedToReplay)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    if (!localLists.TryGetValue(action.ListId, out var localList) || !localList.TraktListId.HasValue || !action.TmdbId.HasValue || !action.MediaKind.HasValue)
+                    {
+                        // List deleted, unlinked, or action lacks tmdb identity; discard action
+                        _personalLibraryRepository.DeletePendingAction(action.Id);
+                        continue;
+                    }
+
+                    try
+                    {
+                        if (action.MediaKind.Value == CustomListMediaKind.Movie)
+                        {
+                            if (string.Equals(action.ActionType, "ADD", StringComparison.OrdinalIgnoreCase))
+                            {
+                                await writer.AddMovieToListAsync(localList.TraktListId.Value, action.TmdbId.Value, _config.ClientId, token, cancellationToken);
+                            }
+                            else if (string.Equals(action.ActionType, "REMOVE", StringComparison.OrdinalIgnoreCase))
+                            {
+                                await writer.RemoveMovieFromListAsync(localList.TraktListId.Value, action.TmdbId.Value, _config.ClientId, token, cancellationToken);
+                            }
+                        }
+                        else if (action.MediaKind.Value == CustomListMediaKind.Show)
+                        {
+                            if (string.Equals(action.ActionType, "ADD", StringComparison.OrdinalIgnoreCase))
+                            {
+                                await writer.AddShowToListAsync(localList.TraktListId.Value, action.TmdbId.Value, _config.ClientId, token, cancellationToken);
+                            }
+                            else if (string.Equals(action.ActionType, "REMOVE", StringComparison.OrdinalIgnoreCase))
+                            {
+                                await writer.RemoveShowFromListAsync(localList.TraktListId.Value, action.TmdbId.Value, _config.ClientId, token, cancellationToken);
+                            }
+                        }
+
+                        _personalLibraryRepository.DeletePendingAction(action.Id);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Pending action replay failed for action {action.Id}: {ex.Message}");
+                    }
+                }
+            }
+
+            // 1.5 Handle locally deleted lists (is_deleted = 1 / PENDING_DELETE)
+            var deletedLocalLists = _personalLibraryRepository.ListDeletedCustomLists();
+            var locallyDeleted = deletedLocalLists.Where(l => string.Equals(l.SyncStatus, "PENDING_DELETE", StringComparison.OrdinalIgnoreCase) && l.TraktListId.HasValue).ToList();
+            if (locallyDeleted.Count > 0 && _dataClient is ITraktListWriter listDeleter)
+            {
+                var token = await _authService.GetAccessTokenAsync(forceRefresh: false, cancellationToken: cancellationToken);
+                foreach (var del in locallyDeleted)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var remoteDeletedSuccessfully = false;
+                    try
+                    {
+                        await listDeleter.DeleteCustomListAsync(del.TraktListId!.Value, _config.ClientId, token, cancellationToken);
+                        remoteDeletedSuccessfully = true;
+                    }
+                    catch (HttpRequestException httpEx) when (httpEx.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    {
+                        // 404 Not Found means the list is already deleted on Trakt
+                        remoteDeletedSuccessfully = true;
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to delete remote list {del.TraktListId}: {ex.Message}");
+                    }
+
+                    if (remoteDeletedSuccessfully)
+                    {
+                        _personalLibraryRepository.DeleteCustomListCascade(del.Id);
+                    }
+                }
+            }
+
+            // 2. Downstream Lists Reconciliation (Trakt -> Local)
+            if (!userListsSuccess)
+            {
+                System.Diagnostics.Debug.WriteLine("[TraktSyncService] Skipping downstream lists reconciliation: user lists fetch did not succeed.");
+                return;
+            }
+
+            var remoteLists = GetLists(accountId);
+            var remoteTraktIds = remoteLists.Select(l => l.TraktId).ToHashSet();
+
+            // Detect remotely deleted lists: local lists with trakt_list_id that no longer exist on Trakt
+            var localLinkedLists = _personalLibraryRepository.ListCustomLists()
+                .Where(l => l.TraktListId.HasValue && !string.Equals(l.SyncStatus, "PENDING_DELETE", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            foreach (var local in localLinkedLists)
+            {
+                if (!remoteTraktIds.Contains(local.TraktListId!.Value))
+                {
+                    _personalLibraryRepository.DeleteCustomListCascade(local.Id);
+                }
+            }
+
+            foreach (var remoteList in remoteLists)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var localListId = _personalLibraryRepository.UpsertTraktCustomList(
+                    remoteList.Name, remoteList.TraktId, remoteList.Slug, now);
+
+                var remoteItems = GetListItems(remoteList.TraktId, accountId);
+                foreach (var item in remoteItems)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var type = item.Type?.ToLowerInvariant();
+                    if (type != "movie" && type != "show") continue;
+
+                    var kind = type == "movie" ? CustomListMediaKind.Movie : CustomListMediaKind.Show;
+
+                    // Extract TMDB ID from raw element
+                    int? tmdbId = null;
+                    if (item.RawElement.ValueKind == JsonValueKind.Object &&
+                        item.RawElement.TryGetProperty(type!, out var mediaObj) &&
+                        mediaObj.ValueKind == JsonValueKind.Object &&
+                        mediaObj.TryGetProperty("ids", out var idsObj) &&
+                        idsObj.ValueKind == JsonValueKind.Object &&
+                        idsObj.TryGetProperty("tmdb", out var tmdbProp) &&
+                        tmdbProp.ValueKind == JsonValueKind.Number &&
+                        tmdbProp.TryGetInt32(out var parsedTmdb) &&
+                        parsedTmdb > 0)
+                    {
+                        tmdbId = parsedTmdb;
+                    }
+
+                    if (tmdbId.HasValue && tmdbId.Value > 0)
+                    {
+                        _personalLibraryRepository.AddCloudMediaToCustomList(
+                            localListId, kind, tmdbId.Value, now, item.Title, item.Year);
+                    }
+                }
+
+                _personalLibraryRepository.SetListLastSynced(localListId, now);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Custom lists reconciliation failed: {ex.Message}");
+        }
+    }
+
+    private const string PendingFavoriteActionsSettingsKey = "trakt_pending_favorite_actions";
+    private readonly object _pendingFavoritesLock = new();
+
+    private List<TraktPendingFavoriteAction> LoadPendingFavoriteActions()
+    {
+        lock (_pendingFavoritesLock)
+        {
+            var raw = _settingsRepository?.Get(PendingFavoriteActionsSettingsKey);
+            if (string.IsNullOrWhiteSpace(raw)) return new List<TraktPendingFavoriteAction>();
+            try
+            {
+                return JsonSerializer.Deserialize<List<TraktPendingFavoriteAction>>(raw) ?? new List<TraktPendingFavoriteAction>();
+            }
+            catch
+            {
+                return new List<TraktPendingFavoriteAction>();
+            }
+        }
+    }
+
+    private void SavePendingFavoriteActions(List<TraktPendingFavoriteAction> actions)
+    {
+        lock (_pendingFavoritesLock)
+        {
+            var json = JsonSerializer.Serialize(actions);
+            _settingsRepository?.Set(PendingFavoriteActionsSettingsKey, json, _timeProvider.GetUtcNow());
+        }
+    }
+
+    private void EnqueuePendingFavoriteAction(string mediaKind, int tmdbId, string action)
+    {
+        lock (_pendingFavoritesLock)
+        {
+            var actions = LoadPendingFavoriteActions();
+            actions.RemoveAll(a => string.Equals(a.MediaKind, mediaKind, StringComparison.OrdinalIgnoreCase) && a.TmdbId == tmdbId);
+            actions.Add(new TraktPendingFavoriteAction(mediaKind, tmdbId, action, _timeProvider.GetUtcNow()));
+            SavePendingFavoriteActions(actions);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> PushMovieFavoriteAsync(long tmdbId, bool isFavorite, CancellationToken ct = default)
+    {
+        if (tmdbId <= 0) return false;
+        var action = isFavorite ? "ADD" : "REMOVE";
+        var auth = _authService.GetAuthState();
+        if (!auth.IsConnected || auth.RequiresReconnect)
+        {
+            EnqueuePendingFavoriteAction("MOVIE", (int)tmdbId, action);
+            return true;
+        }
+
+        try
+        {
+            var token = await _authService.GetAccessTokenAsync(cancellationToken: ct).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                EnqueuePendingFavoriteAction("MOVIE", (int)tmdbId, action);
+                return true;
+            }
+
+            var result = isFavorite
+                ? await _dataClient.AddFavoriteAsync(tmdbId, TraktMediaKind.Movie, token, ct).ConfigureAwait(false)
+                : await _dataClient.RemoveFavoriteAsync(tmdbId, TraktMediaKind.Movie, token, ct).ConfigureAwait(false);
+
+            if (!result.Success)
+            {
+                EnqueuePendingFavoriteAction("MOVIE", (int)tmdbId, action);
+            }
+            else
+            {
+                try { SyncCompleted?.Invoke(this, EventArgs.Empty); } catch { }
+            }
+            return result.Success;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] PushMovieFavoriteAsync error, enqueued offline: {ex.Message}");
+            EnqueuePendingFavoriteAction("MOVIE", (int)tmdbId, action);
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> PushShowFavoriteAsync(long tmdbId, bool isFavorite, CancellationToken ct = default)
+    {
+        if (tmdbId <= 0) return false;
+        var action = isFavorite ? "ADD" : "REMOVE";
+        var auth = _authService.GetAuthState();
+        if (!auth.IsConnected || auth.RequiresReconnect)
+        {
+            EnqueuePendingFavoriteAction("SHOW", (int)tmdbId, action);
+            return true;
+        }
+
+        try
+        {
+            var token = await _authService.GetAccessTokenAsync(cancellationToken: ct).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                EnqueuePendingFavoriteAction("SHOW", (int)tmdbId, action);
+                return true;
+            }
+
+            var result = isFavorite
+                ? await _dataClient.AddFavoriteAsync(tmdbId, TraktMediaKind.Show, token, ct).ConfigureAwait(false)
+                : await _dataClient.RemoveFavoriteAsync(tmdbId, TraktMediaKind.Show, token, ct).ConfigureAwait(false);
+
+            if (!result.Success)
+            {
+                EnqueuePendingFavoriteAction("SHOW", (int)tmdbId, action);
+            }
+            else
+            {
+                try { SyncCompleted?.Invoke(this, EventArgs.Empty); } catch { }
+            }
+            return result.Success;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] PushShowFavoriteAsync error, enqueued offline: {ex.Message}");
+            EnqueuePendingFavoriteAction("SHOW", (int)tmdbId, action);
+            return false;
+        }
+    }
+
+    private async Task ReconcileFavoritesAsync(string accountId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var now = _timeProvider.GetUtcNow();
+
+            // 1. Drain offline pending favorites queue (Upstream FIFO replay)
+            var pendingFavorites = LoadPendingFavoriteActions();
+            if (pendingFavorites.Count > 0)
+            {
+                var token = await _authService.GetAccessTokenAsync(forceRefresh: false, cancellationToken: cancellationToken);
+                var surviving = new List<TraktPendingFavoriteAction>();
+                foreach (var action in pendingFavorites)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        var kind = string.Equals(action.MediaKind, "SHOW", StringComparison.OrdinalIgnoreCase)
+                            ? TraktMediaKind.Show
+                            : TraktMediaKind.Movie;
+                        var res = string.Equals(action.Action, "ADD", StringComparison.OrdinalIgnoreCase)
+                            ? await _dataClient.AddFavoriteAsync(action.TmdbId, kind, token, cancellationToken)
+                            : await _dataClient.RemoveFavoriteAsync(action.TmdbId, kind, token, cancellationToken);
+                        if (!res.Success)
+                        {
+                            surviving.Add(action);
+                        }
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Drain favorite action failed: {ex.Message}");
+                        surviving.Add(action);
+                    }
+                }
+                SavePendingFavoriteActions(surviving);
+            }
+
+            // 2. Fetch remote favorites for Movies and Shows
+            var movieSpec = TraktResourceSpec.FavoriteMovies();
+            var showSpec = TraktResourceSpec.FavoriteShows();
+            var authToken = await _authService.GetAccessTokenAsync(forceRefresh: false, cancellationToken: cancellationToken);
+
+            JsonElement remoteMoviesJson;
+            JsonElement remoteShowsJson;
+            try
+            {
+                remoteMoviesJson = await _dataClient.GetResourceAsync(movieSpec, _config.ClientId, authToken, cancellationToken);
+                remoteShowsJson = await _dataClient.GetResourceAsync(showSpec, _config.ClientId, authToken, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to fetch remote favorites: {ex.Message}");
+                return;
+            }
+
+            var remoteFavMovies = TraktDataProjections.ParseFavorites(remoteMoviesJson);
+            var remoteFavShows = TraktDataProjections.ParseFavorites(remoteShowsJson);
+
+            var remoteFavMovieTmdb = remoteFavMovies.Where(m => m.TmdbId.HasValue).Select(m => (int)m.TmdbId!.Value).ToHashSet();
+            var remoteFavShowTmdb = remoteFavShows.Where(s => s.TmdbId.HasValue).Select(s => (int)s.TmdbId!.Value).ToHashSet();
+
+            // 3. Downstream & Upstream Full Union
+            if (_snapshotBuilder != null)
+            {
+                var snapshot = await _snapshotBuilder.BuildSnapshotAsync(cancellationToken);
+
+                // Downstream movies: mark remote favorites as Liked in local DB
+                if (_personalLibraryRepository != null)
+                {
+                    foreach (var cand in snapshot.ForKind(TraktMediaKind.Movie))
+                    {
+                        if (cand.Identity.TmdbId.HasValue && remoteFavMovieTmdb.Contains(cand.Identity.TmdbId.Value))
+                        {
+                            try
+                            {
+                                var current = _personalLibraryRepository.GetState(cand.LocalId);
+                                if (current.Preference != PersonalPreference.Liked)
+                                {
+                                    _personalLibraryRepository.SetPreference(cand.LocalId, PersonalPreference.Liked, now);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to set favorite for movie {cand.LocalId}: {ex.Message}");
+                            }
+                        }
+                    }
+
+                    // Upstream movies: upload local favorites missing from Trakt
+                    var localLiked = _personalLibraryRepository.ListMovies(PersonalLibrarySection.Liked, 10000, 0);
+                    var candidateMap = snapshot.ForKind(TraktMediaKind.Movie)
+                        .Where(c => c.Identity.TmdbId.HasValue)
+                        .ToDictionary(c => c.LocalId, c => c.Identity.TmdbId!.Value);
+
+                    foreach (var item in localLiked)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        if (candidateMap.TryGetValue(item.Movie.Id, out var tmdbId) && !remoteFavMovieTmdb.Contains(tmdbId))
+                        {
+                            try
+                            {
+                                await _dataClient.AddFavoriteAsync(tmdbId, TraktMediaKind.Movie, authToken, cancellationToken);
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to push local movie favorite {tmdbId} to Trakt: {ex.Message}");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] ReconcileFavoritesAsync error: {ex.Message}");
+        }
+    }
+
+    private async Task ReconcileCollectionAsync(string accountId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (_snapshotBuilder is null) return;
+            var authToken = await _authService.GetAccessTokenAsync(forceRefresh: false, cancellationToken: cancellationToken);
+
+            var movieSpec = TraktResourceSpec.CollectionMovies();
+            var showSpec = TraktResourceSpec.CollectionShows();
+
+            JsonElement remoteMoviesJson;
+            JsonElement remoteShowsJson;
+            try
+            {
+                remoteMoviesJson = await _dataClient.GetResourceAsync(movieSpec, _config.ClientId, authToken, cancellationToken);
+                remoteShowsJson = await _dataClient.GetResourceAsync(showSpec, _config.ClientId, authToken, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to fetch remote collection: {ex.Message}");
+                return;
+            }
+
+            var remoteColMovies = TraktDataProjections.ParseCollection(remoteMoviesJson);
+            var remoteColShows = TraktDataProjections.ParseCollection(remoteShowsJson);
+
+            var remoteColMovieTmdb = remoteColMovies.Where(m => m.TmdbId.HasValue).Select(m => (int)m.TmdbId!.Value).ToHashSet();
+            var remoteColShowTmdb = remoteColShows.Where(s => s.TmdbId.HasValue).Select(s => (int)s.TmdbId!.Value).ToHashSet();
+
+            var snapshot = await _snapshotBuilder.BuildSnapshotAsync(cancellationToken);
+
+            var localMoviesToPush = snapshot.ForKind(TraktMediaKind.Movie)
+                .Where(c => c.Availability == TraktAvailability.Available && c.Identity.TmdbId.HasValue && !remoteColMovieTmdb.Contains(c.Identity.TmdbId.Value))
+                .Select(c => (long)c.Identity.TmdbId!.Value)
+                .Distinct()
+                .ToList();
+
+            var localShowsToPush = snapshot.ForKind(TraktMediaKind.Show)
+                .Where(c => c.Availability == TraktAvailability.Available && c.Identity.TmdbId.HasValue && !remoteColShowTmdb.Contains(c.Identity.TmdbId.Value))
+                .Select(c => (long)c.Identity.TmdbId!.Value)
+                .Distinct()
+                .ToList();
+
+            if (localMoviesToPush.Count > 0 || localShowsToPush.Count > 0)
+            {
+                await _dataClient.AddCollectionBatchAsync(localMoviesToPush, localShowsToPush, authToken, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] ReconcileCollectionAsync error: {ex.Message}");
         }
     }
 }

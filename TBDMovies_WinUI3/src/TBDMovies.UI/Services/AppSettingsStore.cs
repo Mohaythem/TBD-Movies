@@ -1,4 +1,4 @@
-﻿using System.Linq;
+using System.Linq;
 
 namespace TBDMovies.UI.Services;
 
@@ -24,6 +24,11 @@ internal static class AppSettingsStore
     private const string ShowFolderKey = "ui_show_folder";   // legacy, imported once
     private const string LibraryViewModeKey = "ui_library_view_mode";
     private const string WideNavigationPaneOpenKey = "ui_navigation_wide_pane_open";
+    private const string SubDlApiKeyKey = "subdl_api_key";
+
+    public static string? ReadSubDlApiKey() => Read(SubDlApiKeyKey);
+
+    public static void WriteSubDlApiKey(string? apiKey) => Write(SubDlApiKeyKey, apiKey);
 
     public static bool ReadWideNavigationPaneOpen() =>
         NavigationPaneState.ParseWidePreference(Read(WideNavigationPaneOpenKey));

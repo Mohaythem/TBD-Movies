@@ -128,7 +128,7 @@ dotnet test tests/TBD Movies.Tests/TBD Movies.Tests.csproj --no-restore --filter
 ## 10. Real-world verification still needed
 
 - **Covered by automated fixtures only:** old catalog upgrade, malformed-schema refusal, late transaction failure/retry, backup retention/recovery copy, concurrent migrator calls, guard release, WAL snapshot, and reopen.
-- Later QA should launch the updated app against an isolated `TBD Movies_TEST_DATA_ROOT`, populated with a disposable historical fixture. Check startup, exact catalog/history/list values, close/relaunch, and safe failure/retry.
+- Later QA should launch the updated app against an isolated `TBDMOVIES_TEST_DATA_ROOT`, populated with a disposable historical fixture. Check startup, exact catalog/history/list values, close/relaunch, and safe failure/retry.
 - Run two actual app processes against that isolated root. Confirm the second refuses ownership and can start after the first exits.
 - Inject process termination at migration boundaries on disposable databases; verify version, FK/integrity checks, WAL reopen, and backup retention. Sudden power loss and large-library timing remain unverified.
 - The existing installer was not rebuilt and therefore does not contain these source changes.

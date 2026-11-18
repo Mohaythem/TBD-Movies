@@ -31,7 +31,7 @@ existing protected value takes precedence. Migration failure retains the legacy
 row for recovery. This deletes the logical setting; it does not rewrite old
 database backups or promise forensic erasure of historical SQLite pages.
 
-An isolated `TBD Movies_TEST_DATA_ROOT` selects a separate Credential Manager target
+An isolated `TBDMOVIES_TEST_DATA_ROOT` selects a separate Credential Manager target
 derived from that profile path. QA never reads, replaces, or deletes the normal
 profile's credential. Native round-trip tests use unique isolated profiles and
 synthetic values. Reports, screenshots, and logs must never contain real secrets.

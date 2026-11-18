@@ -1,8 +1,10 @@
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using TBDMovies.Application.Playback;
 using TBDMovies.Application.Services;
 using TBDMovies.Application.Trakt;
+using TBDMovies.Domain.Playback;
 using TBDMovies.UI.Models;
 using TBDMovies.UI.Services;
 using TBDMovies.Domain.Media;
@@ -12,6 +14,7 @@ using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace TBDMovies.UI.Views;
@@ -42,6 +45,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
     private readonly PostHandoffRequestLifetime _enrichmentRequests = new();
     private readonly PostHandoffRequestLifetime _availabilityRequests = new();
     private readonly PostHandoffRequestLifetime _actionRequests = new();
+    private readonly PostHandoffRequestLifetime _subtitleRequests = new();
     private static readonly Dictionary<int, int> _selectedSeasonByShowId = new();
     private int _activeSeasonNumber;
     public int ActiveSeasonNumber => _activeSeasonNumber;
@@ -51,6 +55,9 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
     private readonly TitleInteractionController _titleController;
     private DispatcherTimer? _pathCopiedTimer;
     private (int SeasonNumber, EpisodeRecord? Episode) _nextMissingEpisode;
+    private readonly Windows.UI.ViewManagement.UISettings _uiSettings = new();
+    private Storyboard? _activeSeasonTransitionStoryboard;
+    private string _currentVisualState = string.Empty;
 
     public TVShowDetailsPage()
     {
@@ -73,6 +80,13 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
             _ = ShowMessageAsync(LocalizationService.Text("Failed"), error);
         };
         _titleController.ErrorMessageProvider = key => LocalizationService.Text(key);
+        Root.SizeChanged += (_, _) => UpdateDetailsLayout();
+        Loaded += (_, _) =>
+        {
+            AppServices.PlaybackTracking.PlaybackEnded -= OnPlaybackEnded;
+            AppServices.PlaybackTracking.PlaybackEnded += OnPlaybackEnded;
+            UpdateDetailsLayout();
+        };
         Unloaded += (_, _) => Deactivate();
         _titleController.OnDisplayTitleChanged = title =>
         {
@@ -119,13 +133,43 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
 
     public void Deactivate()
     {
+        if (AppServices.IsAvailable)
+        {
+            AppServices.PlaybackTracking.PlaybackEnded -= OnPlaybackEnded;
+        }
         _metadataRequests.Cancel();
         _posterRequests.Cancel();
         _enrichmentRequests.Cancel();
         _availabilityRequests.Cancel();
         _actionRequests.Cancel();
+        _subtitleRequests.Cancel();
         _pathCopiedTimer?.Stop();
+        _activeSeasonTransitionStoryboard?.Stop();
+        _activeSeasonTransitionStoryboard = null;
+        EpisodesRepeater.Opacity = 1.0;
+        if (EpisodesRepeater.RenderTransform is TranslateTransform tt)
+        {
+            tt.Y = 0;
+        }
         _titleController.Dispose();
+    }
+
+    private void OnPlaybackEnded(object? sender, int mediaFileId)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (_seasons.Count > 0)
+            {
+                var allEpisodes = _seasons.SelectMany(s => s.Episodes).ToList();
+                var episodeIds = allEpisodes.Select(e => e.EpisodeId).ToList();
+                var progressMap = AppServices.PlaybackProgress.GetForEpisodes(episodeIds);
+                foreach (var ep in allEpisodes)
+                {
+                    ep.PlaybackProgress = progressMap.GetValueOrDefault(ep.EpisodeId);
+                }
+            }
+            UpdateShowSummary();
+        });
     }
 
     public void SetReturnDestination(string destination)
@@ -159,6 +203,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         _enrichmentRequests.Cancel();
         _availabilityRequests.Cancel();
         _actionRequests.Cancel();
+        _subtitleRequests.Cancel();
         SetMatchingState(false);
         _show = show;
         ReloadShowPersonalState();
@@ -230,13 +275,55 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         }
 
         ProgressValueText.Text = _show.ProgressLine;
+        
+        PlayNextFromBeginningMenuItem.Text = LocalizationService.Text("PlayFromBeginning");
+        ClearNextResumeMenuItem.Text = LocalizationService.Text("ClearResumePoint");
+        
+        // Keep menu items visible in visual tree to eliminate empty flyout
+        PlayNextFromBeginningMenuItem.Visibility = Visibility.Visible;
+        ClearNextResumeMenuItem.Visibility = Visibility.Visible;
+
         var next = _show.NextPlayableEpisode;
         if (next is not null)
         {
             _nextMissingEpisode = default;
             PlayNextButton.IsEnabled = true;
             PlayNextGlyph.Glyph = "\uE768";
-            PlayNextText.Text = LocalizationService.Text("PlayNextEpisode");
+            
+            // Dual query: check episode file first, then fallback to GetForEpisode
+            var epFiles = SafeEpisodeFiles(next.Episode.Id);
+            var epMediaFileId = epFiles.FirstOrDefault()?.Id;
+            var nextProgress = epMediaFileId.HasValue ? AppServices.PlaybackProgress.GetByMediaFileId(epMediaFileId.Value) : null;
+            if (nextProgress?.HasResumePosition != true)
+            {
+                nextProgress = AppServices.PlaybackProgress.GetForEpisode(next.Episode.Id);
+            }
+
+            if (nextProgress?.HasResumePosition == true)
+            {
+                var resumeLabel = LocalizationService.Format("ResumeFrom", nextProgress.FormattedResumeTime);
+                PlayNextText.Text = resumeLabel;
+                PosterProgressBar.Value = nextProgress.ProgressPercentage;
+                PosterProgressBar.Visibility = Visibility.Visible;
+
+                PlayNextFromBeginningMenuItem.IsEnabled = next.Episode.HasLocalFile;
+                ClearNextResumeMenuItem.IsEnabled = true;
+
+                ToolTipService.SetToolTip(PlayNextButton, resumeLabel);
+                PlayNextButton.SetValue(AutomationProperties.NameProperty, resumeLabel);
+            }
+            else
+            {
+                var playLabel = LocalizationService.Text("PlayNextEpisode");
+                PlayNextText.Text = playLabel;
+                PosterProgressBar.Visibility = Visibility.Collapsed;
+
+                PlayNextFromBeginningMenuItem.IsEnabled = next.Episode.HasLocalFile;
+                ClearNextResumeMenuItem.IsEnabled = false;
+
+                ToolTipService.SetToolTip(PlayNextButton, playLabel);
+                PlayNextButton.SetValue(AutomationProperties.NameProperty, playLabel);
+            }
             PlayNextEpisodeText.Text = LocalizationService.Digits(LocalizationService.Format(
                 "HomeContinueEpisodeFormat",
                 next.SeasonNumber,
@@ -246,6 +333,10 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         }
         else
         {
+            PosterProgressBar.Visibility = Visibility.Collapsed;
+            PlayNextFromBeginningMenuItem.IsEnabled = false;
+            ClearNextResumeMenuItem.IsEnabled = false;
+
             var missingEp = _show.Seasons
                 .SelectMany(s => s.Episodes.Select(e => (SeasonNumber: s.Number, Episode: (EpisodeRecord?)e)))
                 .FirstOrDefault(pair => pair.Episode is not null && (pair.Episode.IsFileMissing || (!pair.Episode.HasLocalFile && SafeEpisodeFiles(pair.Episode.Id).Any(f => f.Status == MediaFileStatus.Missing || !File.Exists(f.CurrentPath)))));
@@ -262,6 +353,9 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
                     missingEp.Episode.Number,
                     missingEp.Episode.Title));
                 PlayNextEpisodeText.Visibility = Visibility.Visible;
+
+                ToolTipService.SetToolTip(PlayNextButton, LocalizationService.Text("RelinkTitle"));
+                PlayNextButton.SetValue(AutomationProperties.NameProperty, LocalizationService.Text("RelinkTitle"));
             }
             else
             {
@@ -271,6 +365,9 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
                 PlayNextText.Text = LocalizationService.Text("PlayNextEpisode");
                 PlayNextEpisodeText.Text = string.Empty;
                 PlayNextEpisodeText.Visibility = Visibility.Collapsed;
+
+                ToolTipService.SetToolTip(PlayNextButton, LocalizationService.Text("PlayNextEpisode"));
+                PlayNextButton.SetValue(AutomationProperties.NameProperty, LocalizationService.Text("PlayNextEpisode"));
             }
         }
     }
@@ -325,23 +422,27 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
             _showPersonalAvailable = true;
             UpdateShowPersonalVisuals();
 
-            if (!favorite)
+            int? showTmdbId = (int.TryParse(_show.ExternalId, out var parsedId) && parsedId > 0 ? (int?)parsedId : null) ?? AppServices.GetShowTmdbId(_show.Id);
+            if (showTmdbId is > 0 && AppServices.Trakt is { } trakt)
             {
-                int? showTmdbId = (int.TryParse(_show.ExternalId, out var parsedId) && parsedId > 0 ? (int?)parsedId : null) ?? AppServices.GetShowTmdbId(_show.Id);
-                if (showTmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+                _ = Task.Run(async () =>
                 {
-                    _ = Task.Run(async () =>
+                    try
                     {
-                        try
+                        if (favorite)
+                        {
+                            await trakt.PushShowFavoriteAsync(showTmdbId.Value, _showFavorite).ConfigureAwait(false);
+                        }
+                        else if (trakt.GetSyncState().AuthState.IsConnected)
                         {
                             await trakt.PushShowWatchlistAsync(showTmdbId.Value, _showWatchLater).ConfigureAwait(false);
                         }
-                        catch (Exception ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[TVShowDetailsPage] Trakt PushShowWatchlistAsync failed: {ex.Message}");
-                        }
-                    });
-                }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[TVShowDetailsPage] Trakt PushShowFavorite/Watchlist failed: {ex.Message}");
+                    }
+                });
             }
         }
         catch (Exception error)
@@ -605,7 +706,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
     }
 
     /// <summary>Plays the first episode of the show that has a file on disk, or relinks if missing.</summary>
-    private async void PlayNextButton_Click(object sender, RoutedEventArgs e)
+    private async void PlayNextButton_Click(SplitButton sender, SplitButtonClickEventArgs e)
     {
         if (_nextMissingEpisode.Episode is not null)
         {
@@ -615,7 +716,29 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
 
         if (_show.NextPlayableEpisode is { } selection)
         {
-            await PlayEpisodeAsync(selection.Episode);
+            await PlayEpisodeAsync(selection.Episode, resume: true);
+        }
+    }
+
+    private async void PlayNextFromBeginningMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (_show.NextPlayableEpisode is { } selection)
+        {
+            await PlayEpisodeAsync(selection.Episode, resume: false);
+        }
+    }
+
+    private void ClearNextResumeMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (_show.NextPlayableEpisode is { } selection)
+        {
+            AppServices.PlaybackProgress.DeleteProgressForEpisode(selection.Episode.Id);
+            var row = _seasons.SelectMany(s => s.Episodes).FirstOrDefault(ep => ep.EpisodeId == selection.Episode.Id);
+            if (row is not null)
+            {
+                row.PlaybackProgress = null;
+            }
+            UpdateShowSummary();
         }
     }
 
@@ -736,14 +859,79 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
             targetSeasonNumber = seasons[0].Number;
         }
 
-        SelectSeason(targetSeasonNumber);
+        SelectSeason(targetSeasonNumber, animate: false);
+        PopulateEpisodesSubtitlesAsync(seasons);
     }
 
-    private void SelectSeason(int seasonNumber)
+    private void PopulateEpisodesSubtitlesAsync(IReadOnlyList<SeasonDisplayRecord> seasons)
+    {
+        var request = _subtitleRequests.Begin();
+        var currentShowId = _show.Id;
+
+        var episodesToScan = seasons
+            .SelectMany(s => s.Episodes)
+            .Where(e => e.HasLocalFile && !string.IsNullOrWhiteSpace(e.FilePath))
+            .ToList();
+
+        if (episodesToScan.Count == 0) return;
+
+        _ = Task.Run(() =>
+        {
+            foreach (var ep in episodesToScan)
+            {
+                if (request.Token.IsCancellationRequested) return;
+
+                try
+                {
+                    if (ep.FilePath is not null)
+                    {
+                        var subs = AppServices.Subtitles.DetectSubtitles(ep.FilePath, ep.SeasonNumber, ep.EpisodeNumber);
+                        if (subs.Count > 0)
+                        {
+                            DispatcherQueue.TryEnqueue(() =>
+                            {
+                                if (!request.IsCurrent || _show.Id != currentShowId) return;
+                                ep.Subtitles = subs;
+                            });
+                        }
+                    }
+                }
+                catch
+                {
+                    // Subtitle detection is purely additive; failures must never block details
+                }
+            }
+        });
+    }
+
+    private async void EpisodeDownloadSubtitles_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: EpisodeDisplayRecord ep } && !string.IsNullOrWhiteSpace(ep.FilePath))
+        {
+            var epTitle = $"{_show.CanonicalTitle ?? _show.Title} - S{ep.SeasonNumber:D2}E{ep.EpisodeNumber:D2}";
+            var success = await SubtitleDialog.ShowAsync(
+                parent: this,
+                title: epTitle,
+                targetMediaFilePath: ep.FilePath,
+                externalId: _show.ExternalId,
+                mediaType: "tv",
+                season: ep.SeasonNumber,
+                episode: ep.EpisodeNumber);
+
+            if (success)
+            {
+                var subs = AppServices.Subtitles.DetectSubtitles(ep.FilePath, ep.SeasonNumber, ep.EpisodeNumber);
+                ep.Subtitles = subs;
+            }
+        }
+    }
+
+    private void SelectSeason(int seasonNumber, bool animate = true)
     {
         var target = _seasons.FirstOrDefault(s => s.Number == seasonNumber) ?? _seasons.FirstOrDefault();
         if (target is null) return;
 
+        var seasonChanged = _activeSeasonNumber != target.Number;
         _activeSeasonNumber = target.Number;
 
         if (_show.Id > 0)
@@ -787,13 +975,100 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         {
             BringSeasonTabIntoView(targetIndex);
         }
+
+        if (animate && seasonChanged)
+        {
+            PlaySeasonTransition();
+        }
+    }
+
+    /// <summary>
+    /// Smooth micro-transition (120ms fade-in and subtle slide) when switching seasons.
+    /// Resets transforms cleanly on cancellation and respects Windows accessibility animations setting.
+    /// </summary>
+    private void PlaySeasonTransition()
+    {
+        // Cancel any in-flight transition and reset previous state cleanly
+        if (_activeSeasonTransitionStoryboard is not null)
+        {
+            _activeSeasonTransitionStoryboard.Stop();
+            _activeSeasonTransitionStoryboard = null;
+            EpisodesRepeater.Opacity = 1.0;
+            if (EpisodesRepeater.RenderTransform is TranslateTransform prevTt)
+            {
+                prevTt.Y = 0;
+            }
+        }
+
+        // Set up TranslateTransform if not present
+        TranslateTransform translateTransform;
+        if (EpisodesRepeater.RenderTransform is TranslateTransform existing)
+        {
+            translateTransform = existing;
+        }
+        else
+        {
+            translateTransform = new TranslateTransform();
+            EpisodesRepeater.RenderTransform = translateTransform;
+        }
+
+        // Fast-path: If user disabled animations in Windows settings, apply immediate snap
+        if (!_uiSettings.AnimationsEnabled)
+        {
+            EpisodesRepeater.Opacity = 1.0;
+            translateTransform.Y = 0;
+            return;
+        }
+
+        EpisodesRepeater.Opacity = 0.0;
+        translateTransform.Y = 15.0;
+
+        var duration = TimeSpan.FromMilliseconds(150);
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+
+        var opacityAnim = new DoubleAnimation
+        {
+            From = 0.0,
+            To = 1.0,
+            Duration = duration,
+            EasingFunction = ease
+        };
+        Storyboard.SetTarget(opacityAnim, EpisodesRepeater);
+        Storyboard.SetTargetProperty(opacityAnim, "Opacity");
+
+        var slideAnim = new DoubleAnimation
+        {
+            From = 15.0,
+            To = 0.0,
+            Duration = duration,
+            EasingFunction = ease
+        };
+        Storyboard.SetTarget(slideAnim, translateTransform);
+        Storyboard.SetTargetProperty(slideAnim, "Y");
+
+        var storyboard = new Storyboard();
+        storyboard.Children.Add(opacityAnim);
+        storyboard.Children.Add(slideAnim);
+
+        storyboard.Completed += (_, _) =>
+        {
+            EpisodesRepeater.Opacity = 1.0;
+            translateTransform.Y = 0;
+            if (ReferenceEquals(_activeSeasonTransitionStoryboard, storyboard))
+            {
+                _activeSeasonTransitionStoryboard = null;
+            }
+        };
+
+        _activeSeasonTransitionStoryboard = storyboard;
+        storyboard.Begin();
     }
 
     private void SeasonTab_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: SeasonTabItem tab })
         {
-            SelectSeason(tab.SeasonNumber);
+            SelectSeason(tab.SeasonNumber, animate: true);
         }
     }
 
@@ -882,7 +1157,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
 
         if (newIndex != currentIndex)
         {
-            SelectSeason(_seasons[newIndex].Number);
+            SelectSeason(_seasons[newIndex].Number, animate: true);
             BringSeasonTabIntoView(newIndex);
             FocusSeasonTab(newIndex);
         }
@@ -1116,6 +1391,34 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         var episode = FindEpisode(row);
         var flyout = new MenuFlyout();
 
+        if (row.HasResume)
+        {
+            var playFromBeginningItem = new MenuFlyoutItem
+            {
+                Text = LocalizationService.Text("PlayFromBeginning"),
+                Icon = new FontIcon { Glyph = "\uE777" }
+            };
+            playFromBeginningItem.Click += async (_, _) =>
+            {
+                await PlayEpisodeAsync(episode, row, resume: false);
+            };
+            flyout.Items.Add(playFromBeginningItem);
+
+            var clearResumeItem = new MenuFlyoutItem
+            {
+                Text = LocalizationService.Text("ClearResumePoint"),
+                Icon = new FontIcon { Glyph = "\uE74D" }
+            };
+            clearResumeItem.Click += (_, _) =>
+            {
+                AppServices.PlaybackProgress.DeleteProgressForEpisode(row.EpisodeId);
+                row.PlaybackProgress = null;
+                UpdateShowSummary();
+            };
+            flyout.Items.Add(clearResumeItem);
+            flyout.Items.Add(new MenuFlyoutSeparator());
+        }
+
         var files = episode != null ? SafeEpisodeFiles(episode.Id) : [];
         var paths = files.Select(f => f.CurrentPath).Where(p => !string.IsNullOrWhiteSpace(p)).Distinct().ToList();
 
@@ -1178,7 +1481,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         }
     }
 
-    private async Task PlayEpisodeAsync(EpisodeRecord? episode, EpisodeDisplayRecord? row = null)
+    private async Task PlayEpisodeAsync(EpisodeRecord? episode, EpisodeDisplayRecord? row = null, bool resume = true)
     {
         if (episode?.FilePath is not { Length: > 0 } path)
         {
@@ -1186,21 +1489,44 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
             return;
         }
 
+        var files = SafeEpisodeFiles(episode.Id);
+        var mediaFile = files.FirstOrDefault(f => f.CurrentPath == path) ?? files.FirstOrDefault();
+        int mediaFileId = mediaFile?.Id ?? 0;
+        int? showTmdbId = (int.TryParse(_show.ExternalId, out var parsedId) && parsedId > 0 ? (int?)parsedId : null) ?? AppServices.GetShowTmdbId(_show.Id);
+
+        var target = new PlaybackMediaTarget(
+            MediaFileId: mediaFileId,
+            FilePath: path,
+            TotalDurationSeconds: null,
+            IsMovie: false,
+            EpisodeId: episode.Id,
+            ShowTmdbId: showTmdbId,
+            ShowTitle: _show.Title,
+            ShowYear: _show.Year > 0 ? _show.Year : null,
+            SeasonNumber: row?.SeasonNumber ?? 1,
+            EpisodeNumber: episode.Number,
+            EpisodeTitle: episode.Title);
+
         var request = _actionRequests.Begin();
         try
         {
-            var result = await AppServices.PlayMediaFileAsync(path, request.Token);
+            var started = await AppServices.PlaybackTracking.StartPlaybackAsync(target, resume, CancellationToken.None);
             if (!request.IsCurrent) return;
-            if (result.ErrorCode == "PlaybackActivityNotSaved")
+            if (!started)
             {
-                await ShowMessageAsync(LocalizationService.Text("Failed"), LocalizationService.Text("PlaybackActivityNotSaved"));
-                return;
+                var result = await AppServices.PlayMediaFileAsync(path, request.Token);
+                if (!request.IsCurrent) return;
+                if (result.ErrorCode == "PlaybackActivityNotSaved")
+                {
+                    await ShowMessageAsync(LocalizationService.Text("Failed"), LocalizationService.Text("PlaybackActivityNotSaved"));
+                    return;
+                }
+                if (result.Status == TBDMovies.Domain.Library.Availability.AvailabilityInspectionStatus.Missing && row is not null)
+                {
+                    HandleEpisodeFileMissing(row, episode);
+                }
+                await PresentActionResultAsync(result.Status);
             }
-            if (result.Status == TBDMovies.Domain.Library.Availability.AvailabilityInspectionStatus.Missing && row is not null)
-            {
-                HandleEpisodeFileMissing(row, episode);
-            }
-            await PresentActionResultAsync(result.Status);
         }
         catch (OperationCanceledException) { }
         catch (Exception error)
@@ -1272,6 +1598,9 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
             LocalizationService.Text("UnmarkWatched"),
             LocalizationService.Text("Relink"));
 
+        var allEpisodeIds = show.Seasons.SelectMany(s => s.Episodes).Select(e => e.Id).ToList();
+        var progressMap = AppServices.PlaybackProgress.GetForEpisodes(allEpisodeIds);
+
         return
         [
             // Requirement 3: Ensure Season 0 ("Specials") is ONLY shown if season.LocalCount > 0.
@@ -1306,7 +1635,8 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
                         overview: episode.Overview,
                         airDate: episode.AirDate,
                         fallbackArtReferences: [show.BackdropReference, show.PosterReference],
-                        filePath: episode.FilePath)),
+                        filePath: episode.FilePath,
+                        playbackProgress: progressMap.GetValueOrDefault(episode.Id))),
                 ])),
         ];
     }
@@ -1556,5 +1886,22 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
     private void ShowTitleEditBox_LostFocus(object sender, RoutedEventArgs e)
     {
         _titleController.HandleBlur(ShowTitleEditBox.Text);
+    }
+
+    private void UpdateDetailsLayout()
+    {
+        // Use a constant baseline horizontal padding (32 + 32 = 64) to prevent visual state oscillation (hysteresis) across breakpoints.
+        const double BaseHorizontalPadding = 64.0;
+        var available = Math.Max(0, Root.ActualWidth - BaseHorizontalPadding);
+        var targetState = available >= 950 ? "ShowWideState"
+                        : available >= 700 ? "ShowMediumState"
+                        : available >= 540 ? "ShowNarrowState"
+                        : "ShowCompactState";
+
+        if (_currentVisualState != targetState)
+        {
+            _currentVisualState = targetState;
+            VisualStateManager.GoToState(this, targetState, false);
+        }
     }
 }

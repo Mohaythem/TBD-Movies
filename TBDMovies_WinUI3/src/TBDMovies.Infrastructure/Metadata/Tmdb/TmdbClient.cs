@@ -38,9 +38,13 @@ public sealed class TmdbClient : IMetadataProvider, ITmdbCredentialValidator, ID
         _imageBaseUrl = imageBaseUrl ?? "https://image.tmdb.org/t/p/";
         _authenticationResult = authenticationResult;
 
-        if (httpClient == null)
+        if (httpClient is null)
         {
-            _httpClient = new HttpClient();
+            var handler = new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false
+            };
+            _httpClient = new HttpClient(handler, disposeHandler: true);
             _ownsHttpClient = true;
         }
         else
@@ -690,6 +694,58 @@ public sealed class TmdbClient : IMetadataProvider, ITmdbCredentialValidator, ID
         !string.IsNullOrEmpty(token) &&
         token.Length == 32 &&
         token.All(c => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'));
+
+    public async Task<string?> GetImdbIdAsync(string mediaType, string externalId, int? season = null, int? episode = null, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(externalId)) return null;
+        var trimmed = externalId.Trim();
+        if (trimmed.StartsWith("tt", StringComparison.OrdinalIgnoreCase)) return trimmed;
+        if (!IsConfigured) return null;
+
+        try
+        {
+            string path;
+            if (string.Equals(mediaType, "tv", StringComparison.OrdinalIgnoreCase))
+            {
+                if (season.HasValue && episode.HasValue)
+                {
+                    path = $"3/tv/{Uri.EscapeDataString(trimmed)}/season/{season.Value}/episode/{episode.Value}/external_ids";
+                    using var epResp = await SendWithRetryAsync(HttpMethod.Get, path, cancellationToken);
+                    if (epResp.IsSuccessStatusCode)
+                    {
+                        var epJson = await epResp.Content.ReadAsStringAsync(cancellationToken);
+                        using var epDoc = JsonDocument.Parse(epJson);
+                        if (epDoc.RootElement.TryGetProperty("imdb_id", out var epImdb) && epImdb.ValueKind == JsonValueKind.String)
+                        {
+                            var val = epImdb.GetString();
+                            if (!string.IsNullOrWhiteSpace(val)) return val.Trim();
+                        }
+                    }
+                }
+                path = $"3/tv/{Uri.EscapeDataString(trimmed)}/external_ids";
+            }
+            else
+            {
+                path = $"3/movie/{Uri.EscapeDataString(trimmed)}/external_ids";
+            }
+
+            using var response = await SendWithRetryAsync(HttpMethod.Get, path, cancellationToken);
+            if (!response.IsSuccessStatusCode) return null;
+
+            var json = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("imdb_id", out var imdbProp) && imdbProp.ValueKind == JsonValueKind.String)
+            {
+                var val = imdbProp.GetString();
+                return string.IsNullOrWhiteSpace(val) ? null : val.Trim();
+            }
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     public void Dispose()
     {

@@ -55,64 +55,45 @@ public sealed class WindowsTraktCredentialStore : ITraktCredentialStore
             }
         }
 
-        if (nativePayload is not null)
-        {
-            if (_settings is not null)
-            {
-                try
-                {
-                    if (string.IsNullOrWhiteSpace(_settings.Get("trakt_credential_dpapi")))
-                    {
-                        var json = JsonSerializer.Serialize(nativePayload);
-                        var cipher = EncryptDpapi(json);
-                        if (cipher is not null) _settings.Set("trakt_credential_dpapi", cipher, DateTimeOffset.UtcNow);
-                    }
-                }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to backup Trakt token to DPAPI: {ex.Message}"); }
-            }
-            return nativePayload;
-        }
+        return nativePayload;
+    }
 
-        if (_settings is not null)
+    public static bool MigrateLegacyDpapi(ISettingsRepository settings, string? isolatedProfileRoot = null)
+    {
+        var cipher = settings.Get("trakt_credential_dpapi");
+        if (string.IsNullOrWhiteSpace(cipher)) return false;
+
+        try
         {
-            try
+            var store = new WindowsTraktCredentialStore(isolatedProfileRoot);
+            if (store.Read() is null)
             {
-                var cipher = _settings.Get("trakt_credential_dpapi");
-                var recoveredJson = DecryptDpapi(cipher, out var migratedFromLegacy);
+                var recoveredJson = DecryptDpapi(cipher, out _);
                 if (!string.IsNullOrWhiteSpace(recoveredJson))
                 {
                     var recovered = JsonSerializer.Deserialize<TraktCredentialPayload>(recoveredJson);
                     if (recovered is not null)
                     {
-                        if (migratedFromLegacy)
-                        {
-                            try
-                            {
-                                var reencrypted = EncryptDpapi(recoveredJson);
-                                if (reencrypted is not null)
-                                {
-                                    _settings.Set("trakt_credential_dpapi", reencrypted, DateTimeOffset.UtcNow);
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                System.Diagnostics.Debug.WriteLine($"Failed to migrate Trakt DPAPI credential to entropy: {ex.Message}");
-                            }
-                        }
-
-                        try { Write(recovered); }
-                        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to restore native Trakt credential: {ex.Message}"); }
-                        return recovered;
+                        store.Write(recovered);
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Failed to read Trakt DPAPI credential: {ex.Message}");
-            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to migrate legacy DPAPI Trakt credential: {ex.Message}");
         }
 
-        return null;
+        try
+        {
+            settings.Delete("trakt_credential_dpapi");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Failed to delete legacy DPAPI Trakt credential row: {ex.Message}");
+            return false;
+        }
     }
 
     private static TraktCredentialPayload? TryReadTarget(string target)
@@ -180,16 +161,6 @@ public sealed class WindowsTraktCredentialStore : ITraktCredentialStore
             };
             if (!CredWriteW(ref native, 0)) throw StorageError();
 
-            if (_settings is not null)
-            {
-                try
-                {
-                    var cipher = EncryptDpapi(json);
-                    if (cipher is not null) _settings.Set("trakt_credential_dpapi", cipher, DateTimeOffset.UtcNow);
-                }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to backup Trakt credential: {ex.Message}"); }
-            }
-
             // Native store roundtrip verification
             var roundtrip = Read();
             if (roundtrip is null || !string.Equals(roundtrip.ClientId, payload.ClientId, StringComparison.Ordinal))
@@ -210,11 +181,6 @@ public sealed class WindowsTraktCredentialStore : ITraktCredentialStore
 
     public void Delete()
     {
-        if (_settings is not null)
-        {
-            try { _settings.Delete("trakt_credential_dpapi"); }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to delete DPAPI backup: {ex.Message}"); }
-        }
         if (!CredDeleteW(_target, Generic, 0) && Marshal.GetLastWin32Error() != NotFound)
             throw StorageError();
         if (!string.IsNullOrWhiteSpace(_legacyTarget))

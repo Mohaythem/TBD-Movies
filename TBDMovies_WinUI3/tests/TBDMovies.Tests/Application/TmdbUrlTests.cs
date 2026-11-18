@@ -12,8 +12,8 @@ public sealed class TmdbUrlTests
     [Theory]
     [InlineData("https://www.themoviedb.org/movie/438631-dune", "438631")]
     [InlineData("https://www.themoviedb.org/movie/438631", "438631")]
-    [InlineData("http://themoviedb.org/movie/27205-inception", "27205")]
     [InlineData("themoviedb.org/movie/155-the-dark-knight", "155")]
+    [InlineData("https://themoviedb.org/movie/27205-inception", "27205")]
     [InlineData("https://www.themoviedb.org/movie/438631-dune/watch?locale=US", "438631")]
     public void Movie_links_parse_to_the_numeric_id(string url, string expectedId)
     {
@@ -37,6 +37,9 @@ public sealed class TmdbUrlTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("not a url")]
+    [InlineData("http://themoviedb.org/movie/27205-inception")] // unencrypted HTTP rejected
+    [InlineData("http://www.themoviedb.org/tv/1399")]          // unencrypted HTTP rejected
+    [InlineData("HTTP://themoviedb.org/movie/27205")]          // uppercase HTTP rejected
     [InlineData("https://example.com/movie/123")]              // wrong host
     [InlineData("https://www.themoviedb.org/person/123")]      // not movie/tv
     [InlineData("https://www.themoviedb.org/movie/")]          // no id

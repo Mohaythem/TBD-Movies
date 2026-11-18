@@ -84,9 +84,17 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
     {
         _isActivated = true;
         if (_movies is not null && _moviesRevision != AppServices.CatalogRevision)
+        {
             _movies = null;
+            foreach (var card in _cachedMovieCards.Values) card.Dispose();
+            _cachedMovieCards.Clear();
+        }
         if (_shows is not null && _showsRevision != AppServices.CatalogRevision)
+        {
             _shows = null;
+            foreach (var card in _cachedShowCards.Values) card.Dispose();
+            _cachedShowCards.Clear();
+        }
         Refresh();
         var opened = _recentShowOpened || _recentMovieOpened;
         if (opened && _sort == "recent" && _sortDescending)
@@ -100,19 +108,25 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
 
     public void Deactivate()
     {
+        _isActivated = false;
         _searchDebounceTimer?.Stop();
         _headerNotificationTimer?.Stop();
         HeaderNotificationBadge.Visibility = Visibility.Collapsed;
         ClearSelection();
     }
 
+    private readonly Dictionary<int, LibraryCardItem> _cachedMovieCards = new();
+    private readonly Dictionary<int, LibraryCardItem> _cachedShowCards = new();
+
     public void InvalidateCatalog()
     {
         _movies = null;
         _shows = null;
-        _showsLoadError = false;
-        _showsLoadGeneration++;
         _showCards.Clear();
+        foreach (var card in _cachedMovieCards.Values) card.Dispose();
+        foreach (var card in _cachedShowCards.Values) card.Dispose();
+        _cachedMovieCards.Clear();
+        _cachedShowCards.Clear();
     }
 
     public void RecordMovieOpened(int movieId)
@@ -121,7 +135,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         var openedAt = AppServices.Library.RecordMovieOpened(movieId);
         var after = AppServices.CatalogRevision;
         var movie = _movies?.FirstOrDefault(row => row.Id == movieId);
-        if (movie is not null && _moviesRevision == before && after == before + 1)
+        if (movie is not null)
         {
             movie.RecordOpened(openedAt);
             _moviesRevision = after;
@@ -137,7 +151,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         var openedAt = AppServices.Tv.RecordShowOpened(showId);
         var after = AppServices.CatalogRevision;
         var show = _shows?.FirstOrDefault(row => row.Id == showId);
-        if (show is not null && _showsRevision == before && after == before + 1)
+        if (show is not null)
         {
             show.RecordOpened(openedAt);
             _showsRevision = after;
@@ -147,11 +161,32 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         _recentShowOpened = true;
     }
 
+    public void PatchMovieFileChanged(int movieId)
+    {
+        if (_movies is not null)
+        {
+            try
+            {
+                var updatedItem = AppServices.Library.GetMovieItem(movieId);
+                var updatedRecord = LibraryProjection.ToCard(updatedItem);
+                var list = _movies.Select(m => m.Id == movieId ? updatedRecord : m).ToList();
+                _movies = list;
+                if (_cachedMovieCards.TryGetValue(movieId, out var oldCard)) oldCard.Dispose();
+                _cachedMovieCards[movieId] = new LibraryCardItem(updatedRecord);
+                PopulateLibrary();
+                return;
+            }
+            catch { }
+        }
+
+        InvalidateCatalog();
+        Refresh();
+    }
+
     /// <summary>Entry point for a future library backend to report load progress or failure.</summary>
     public void SetState(LibraryViewState state)
     {
         _state = state;
-        if (state == LibraryViewState.Ready) _showsLoadError = false;
         Refresh();
     }
 
@@ -189,6 +224,9 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         SelectAllButtonText.Text = LocalizationService.Text("SelectAll");
         AddToListButtonText.Text = LocalizationService.Text("AddToList");
         ToolTipService.SetToolTip(ClearSelectionButton, LocalizationService.Text("Cancel"));
+        var randomTooltip = LocalizationService.Text("RandomPicker");
+        ToolTipService.SetToolTip(RandomPickerButton, randomTooltip);
+        RandomPickerButton.SetValue(Microsoft.UI.Xaml.Automation.AutomationProperties.NameProperty, randomTooltip);
         UpdateViewModeToggleButtonVisuals();
         Refresh();
     }
@@ -197,6 +235,142 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
     {
         var newMode = _viewMode == LibraryViewMode.Compact ? LibraryViewMode.Grid : LibraryViewMode.Compact;
         ApplyViewMode(newMode, persist: true);
+    }
+
+    private async void RandomPickerButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_mediaTypeFilter == "movies")
+        {
+            var movies = GetMoviesForRandomPicker();
+            if (movies.Count == 0)
+            {
+                await ShowRandomEmptyMessageAsync();
+                return;
+            }
+            PickRandomMovie(movies);
+        }
+        else if (_mediaTypeFilter == "shows")
+        {
+            var shows = GetShowsForRandomPicker();
+            if (shows.Count == 0)
+            {
+                await ShowRandomEmptyMessageAsync();
+                return;
+            }
+            PickRandomShow(shows);
+        }
+        else
+        {
+            var movies = GetMoviesForRandomPicker();
+            var shows = GetShowsForRandomPicker();
+            if (movies.Count == 0 && shows.Count == 0)
+            {
+                await ShowRandomEmptyMessageAsync();
+                return;
+            }
+
+            if (movies.Count == 0)
+            {
+                PickRandomShow(shows);
+                return;
+            }
+
+            if (shows.Count == 0)
+            {
+                PickRandomMovie(movies);
+                return;
+            }
+
+            var unwatchedMovies = movies.Where(m => !m.Watched).ToList();
+            var unwatchedShows = shows.Where(s => !s.Watched).ToList();
+            var totalUnwatched = unwatchedMovies.Count + unwatchedShows.Count;
+
+            if (totalUnwatched > 0)
+            {
+                if (Random.Shared.Next(totalUnwatched) < unwatchedMovies.Count)
+                {
+                    var selected = unwatchedMovies[Random.Shared.Next(unwatchedMovies.Count)];
+                    MovieSelected?.Invoke(this, selected);
+                }
+                else
+                {
+                    var selected = unwatchedShows[Random.Shared.Next(unwatchedShows.Count)];
+                    ShowSelected?.Invoke(this, selected);
+                }
+            }
+            else
+            {
+                var total = movies.Count + shows.Count;
+                if (Random.Shared.Next(total) < movies.Count)
+                {
+                    var selected = movies[Random.Shared.Next(movies.Count)];
+                    MovieSelected?.Invoke(this, selected);
+                }
+                else
+                {
+                    var selected = shows[Random.Shared.Next(shows.Count)];
+                    ShowSelected?.Invoke(this, selected);
+                }
+            }
+        }
+    }
+
+    private IReadOnlyList<MovieRecord> GetMoviesForRandomPicker()
+    {
+        var movies = _movies;
+        if (movies is null || movies.Count == 0)
+        {
+            movies = LoadMovies();
+        }
+        return [.. movies.Where(m => m.HasLocalFile)];
+    }
+
+    private IReadOnlyList<TVShowRecord> GetShowsForRandomPicker()
+    {
+        var shows = _shows;
+        if (shows is null || shows.Count == 0)
+        {
+            try
+            {
+                shows = [.. AppServices.Tv.ListShows().Select(TvProjection.ToCard)];
+                _shows = shows;
+            }
+            catch
+            {
+                shows = [];
+            }
+        }
+        return [.. shows.Where(s => s.LocalEpisodeCount > 0)];
+    }
+
+    private void PickRandomMovie(IReadOnlyList<MovieRecord> movies)
+    {
+        var unwatched = movies.Where(m => !m.Watched).ToList();
+        var candidates = unwatched.Count > 0 ? unwatched : movies;
+        var selected = candidates[Random.Shared.Next(candidates.Count)];
+        MovieSelected?.Invoke(this, selected);
+    }
+
+    private void PickRandomShow(IReadOnlyList<TVShowRecord> shows)
+    {
+        var unwatched = shows.Where(s => !s.Watched).ToList();
+        var candidates = unwatched.Count > 0 ? unwatched : shows;
+        var selected = candidates[Random.Shared.Next(candidates.Count)];
+        ShowSelected?.Invoke(this, selected);
+    }
+
+    private async Task ShowRandomEmptyMessageAsync()
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            RequestedTheme = ThemeService.ElementTheme,
+            FlowDirection = LocalizationService.FlowDirection,
+            Title = LocalizationService.Text("RandomPicker"),
+            Content = LocalizationService.Text("RandomEmpty"),
+            CloseButtonText = LocalizationService.Text("Close"),
+        };
+        await ContentDialogCoordinator.ShowAsync(dialog);
     }
 
     private void UpdateViewModeToggleButtonVisuals()
@@ -423,16 +597,6 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
 
         var count = PopulateLibrary();
 
-        if (_showsLoading && (_movies is null || _movies.Count == 0))
-        {
-            LoadingPanel.Visibility = Visibility.Visible;
-            MoviesGrid.Visibility = Visibility.Collapsed;
-            ShowsGrid.Visibility = Visibility.Collapsed;
-            EmptyState.Visibility = Visibility.Collapsed;
-            CountText.Text = string.Empty;
-            return;
-        }
-
         // The catalog read can fail after the visibility above was applied; show the error instead
         // of an empty grid that would read as "your library is empty".
         if (_state == LibraryViewState.Error)
@@ -473,13 +637,31 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         var showList = _mediaTypeFilter == "movies" ? (IReadOnlyList<TVShowRecord>)[] : LoadShows();
 
         var movieCards = _mediaTypeFilter == "shows"
-            ? Enumerable.Empty<LibraryCardItem>()
-            : movieList.Select(m => new LibraryCardItem(m));
+            ? []
+            : movieList.Select(m =>
+            {
+                if (!_cachedMovieCards.TryGetValue(m.Id, out var card) || card.Movie != m)
+                {
+                    if (card is not null) card.Dispose();
+                    card = new LibraryCardItem(m);
+                    _cachedMovieCards[m.Id] = card;
+                }
+                return card;
+            }).ToArray();
         var showCards = _mediaTypeFilter == "movies"
-            ? Enumerable.Empty<LibraryCardItem>()
-            : showList.Select(s => new LibraryCardItem(s, GetShowCard(s, s.SeasonCount == 1
-                ? LocalizationService.Format("SeasonAvailableFormat", s.LocalEpisodeCount, s.EpisodeCount)
-                : LocalizationService.Format("SeasonsAvailableFormat", s.SeasonCount, s.LocalEpisodeCount, s.EpisodeCount))));
+            ? []
+            : showList.Select(s =>
+            {
+                if (!_cachedShowCards.TryGetValue(s.Id, out var card) || card.Show != s)
+                {
+                    if (card is not null) card.Dispose();
+                    card = new LibraryCardItem(s, GetShowCard(s, s.SeasonCount == 1
+                        ? LocalizationService.Format("SeasonAvailableFormat", s.LocalEpisodeCount, s.EpisodeCount)
+                        : LocalizationService.Format("SeasonsAvailableFormat", s.SeasonCount, s.LocalEpisodeCount, s.EpisodeCount)));
+                    _cachedShowCards[s.Id] = card;
+                }
+                return card;
+            }).ToArray();
 
         IEnumerable<LibraryCardItem> items = movieCards.Concat(showCards);
 
@@ -533,8 +715,6 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
             var rows = AppServices.Library.ListMovies().Select(LibraryProjection.ToCard).ToArray();
             _movies = rows;
             _moviesRevision = revision;
-            if (_moviesRevision != AppServices.CatalogRevision)
-                _movies = null;
             return rows;
         }
         catch (Exception)
@@ -551,51 +731,27 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
     /// </summary>
     private IReadOnlyList<TVShowRecord>? _shows;
     private long _showsRevision = -1;
-    private bool _showsLoading;
-    private bool _showsLoadError;
-    private int _showsLoadGeneration;
-
-    /// <summary>Reads the shows grid from the catalog; a failure is the page's error state.</summary>
+    /// <summary>
+    /// Reads the shows grid from the catalog synchronously, caching the result in memory for this catalog revision.
+    /// Matches LoadMovies() and HomePage.LoadShows() for instant, flicker-free rendering.
+    /// </summary>
     private IReadOnlyList<TVShowRecord> LoadShows()
     {
         if (_shows is not null) return _shows;
-        if (_showsLoadError)
-        {
-            _state = LibraryViewState.Error;
-            return [];
-        }
 
-        if (!_showsLoading) _ = LoadShowsAsync();
-        return [];
-    }
-
-    private async Task LoadShowsAsync()
-    {
-        _showsLoading = true;
-        var generation = _showsLoadGeneration;
-        var revision = AppServices.CatalogRevision;
         try
         {
-            // Always return to the caller before publishing a completed load/refresh.
-            await Task.Yield();
-            var service = AppServices.Tv;
-            var rows = await Task.Run(() => service.ListShows());
-            if (generation == _showsLoadGeneration && revision == AppServices.CatalogRevision)
-            {
-                _shows = rows.Select(TvProjection.ToCard).ToArray();
-                _showCards.Clear();
-                _showsRevision = revision;
-            }
+            var revision = AppServices.CatalogRevision;
+            var rows = AppServices.Tv.ListShows().Select(TvProjection.ToCard).ToArray();
+            _shows = rows;
+            _showsRevision = revision;
+            return rows;
         }
         catch (Exception)
         {
-            if (generation == _showsLoadGeneration) _showsLoadError = true;
+            _shows = null;
+            return [];
         }
-        finally
-        {
-            _showsLoading = false;
-        }
-        Refresh();
     }
 
     private int PopulateShows() => PopulateLibrary();
@@ -804,7 +960,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
     {
         if (sender is GridView grid)
             MediaCardContextMenu.ShowForContext(grid, e, _viewMode == LibraryViewMode.Compact,
-                onChanged: () => { InvalidateCatalog(); Refresh(); });
+                onChanged: () => { if (_filterWatchedOnly) Refresh(); });
     }
 
     #region Batch Selection & Marquee

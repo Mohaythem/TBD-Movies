@@ -241,7 +241,7 @@ The user supplied four actionable review findings after an independent read-only
 - Added seven account-scoped JSON Trakt resource snapshots:21watchlist items,2custom remote lists,watched movies/shows/history. Nonsecret placeholder registration enables offline cache composition, with no stored token or connected account. Live login requires replacing placeholder registration with a real public client ID/registered redirect URI.
 - QaSeed verify after fixture preparation:integrity_check=ok,user_version18,fk_violations0,duplicate members0,bad member rows0,orphan members0. Actual catalog libcheck=PASS:24movies,6shows.
 - Debug x64 Visual Studio MSBuild exit0 after button source fix. git diff --check passed. No automated UI check was performed; no extra test that merely mirrors this presentation branch was added.
-- Stopped only own prior isolated launch PIDs19316 and5552, then launched current rebuilt app outside sandbox with TBD Movies_TEST_DATA_ROOT pointing only at synthetic profile. New process12228 reported Exited=False. Process startup is not visual acceptance. User checks window and button behavior.
+- Stopped only own prior isolated launch PIDs19316 and5552, then launched current rebuilt app outside sandbox with TBDMOVIES_TEST_DATA_ROOT pointing only at synthetic profile. New process12228 reported Exited=False. Process startup is not visual acceptance. User checks window and button behavior.
 ## User-requested Home empty-shelf sizing (2026-10-21)
 
 - User supplied screenshot of oversized empty Continue Watching/Recently Watched and requested normal card height. Source root cause: child repeater was collapsed but its fixed196px parent grid retained layout space, followed by a separate200px empty state.

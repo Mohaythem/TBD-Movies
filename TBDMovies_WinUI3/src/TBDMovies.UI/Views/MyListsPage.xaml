@@ -57,6 +57,23 @@
                         Margin="0,0,0,2"
                         VerticalAlignment="Bottom"
                         Style="{StaticResource SecondaryCaptionTextStyle}" />
+                    <TextBlock
+                        x:Name="SyncStatusText"
+                        Margin="12,0,0,2"
+                        VerticalAlignment="Bottom"
+                        Style="{StaticResource SecondaryCaptionTextStyle}"
+                        Visibility="Collapsed" />
+                    <Button
+                        x:Name="SyncNowButton"
+                        Click="SyncNowButton_Click"
+                        Style="{StaticResource SubtleControlButtonStyle}"
+                        Height="28" Width="28" Padding="0"
+                        Margin="4,0,0,0"
+                        VerticalAlignment="Center"
+                        ToolTipService.ToolTip="Sync Trakt Now"
+                        Visibility="Collapsed">
+                        <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="12" Glyph="&#xE895;" />
+                    </Button>
                 </StackPanel>
 
                 <AutoSuggestBox
@@ -86,12 +103,7 @@
                     IsChecked="True"
                     Style="{StaticResource TabPillItemStyle}"
                     Tag="watch-later">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <FontIcon
-                            VerticalAlignment="Center"
-                            FontFamily="{StaticResource SymbolThemeFontFamily}"
-                            FontSize="14"
-                            Glyph="&#xE8FD;" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock x:Name="WatchLaterLabel" VerticalAlignment="Center" />
                         <TextBlock
                             x:Name="WatchLaterCount"
@@ -106,12 +118,7 @@
                     GroupName="MyListsSelector"
                     Style="{StaticResource TabPillItemStyle}"
                     Tag="favorites">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <FontIcon
-                            VerticalAlignment="Center"
-                            FontFamily="{StaticResource SymbolThemeFontFamily}"
-                            FontSize="14"
-                            Glyph="&#xEB51;" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock x:Name="FavoritesLabel" VerticalAlignment="Center" />
                         <TextBlock
                             x:Name="FavoritesCount"
@@ -126,8 +133,7 @@
                     GroupName="MyListsSelector"
                     Style="{StaticResource TabPillItemStyle}"
                     Tag="continue-watching">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="14" Glyph="&#xE768;" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock x:Name="ContinueWatchingLabel" VerticalAlignment="Center" />
                         <TextBlock x:Name="ContinueWatchingCount" VerticalAlignment="Center" Style="{StaticResource SecondaryCaptionTextStyle}" Visibility="Collapsed" />
                     </StackPanel>
@@ -138,30 +144,9 @@
                     GroupName="MyListsSelector"
                     Style="{StaticResource TabPillItemStyle}"
                     Tag="recently-watched">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="14" Glyph="&#xE81C;" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock x:Name="RecentlyWatchedLabel" VerticalAlignment="Center" />
                         <TextBlock x:Name="RecentlyWatchedCount" VerticalAlignment="Center" Style="{StaticResource SecondaryCaptionTextStyle}" Visibility="Collapsed" />
-                    </StackPanel>
-                </RadioButton>
-                <RadioButton
-                    x:Name="TraktTabItem"
-                    Checked="ListTab_Checked"
-                    GroupName="MyListsSelector"
-                    Style="{StaticResource TabPillItemStyle}"
-                    Tag="trakt">
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <FontIcon
-                            VerticalAlignment="Center"
-                            FontFamily="{StaticResource SymbolThemeFontFamily}"
-                            FontSize="14"
-                            Glyph="&#xE8BD;" />
-                        <TextBlock x:Name="TraktTabLabel" VerticalAlignment="Center" />
-                        <TextBlock
-                            x:Name="TraktTabCount"
-                            VerticalAlignment="Center"
-                            Style="{StaticResource SecondaryCaptionTextStyle}"
-                            Visibility="Collapsed" />
                     </StackPanel>
                 </RadioButton>
                 <Button
@@ -181,84 +166,6 @@
                     </StackPanel>
                 </Button>
             </controls:WrapPanel>
-
-            <Border
-                x:Name="TraktRow"
-                Visibility="Collapsed"
-                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                BorderThickness="1"
-                CornerRadius="8"
-                MinHeight="48"
-                Padding="12,8"
-                Margin="0,4,0,4">
-                <Grid ColumnSpacing="12">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
-                    <Border
-                        Grid.Column="0"
-                        Background="#ED2224"
-                        CornerRadius="8"
-                        Padding="10,4"
-                        Margin="0,0,4,0"
-                        VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="12" Glyph="&#xE8BD;" Foreground="White" VerticalAlignment="Center" />
-                            <TextBlock Text="TRAKT HUB" FontSize="11" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" CharacterSpacing="20" />
-                        </StackPanel>
-                    </Border>
-
-                    <ScrollViewer
-                        Grid.Column="1"
-                        x:Name="TraktPlaylistsScroll"
-                        HorizontalScrollMode="Enabled"
-                        HorizontalScrollBarVisibility="Auto"
-                        VerticalScrollMode="Disabled"
-                        VerticalScrollBarVisibility="Disabled">
-                        <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                            <StackPanel
-                                x:Name="TraktPlaylistsSelector"
-                                Style="{StaticResource TabStripStyle}" />
-                            <Button
-                                x:Name="NewTraktListButton"
-                                Click="NewTraktListButton_Click"
-                                Style="{StaticResource AccentControlButtonStyle}"
-                                CornerRadius="8"
-                                Height="28"
-                                Padding="10,0,10,0"
-                                Margin="4,0,0,0"
-                                VerticalAlignment="Center">
-                                <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
-                                    <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="10" Glyph="&#xE710;" />
-                                    <TextBlock x:Name="NewTraktListButtonText" Text="New Trakt List" VerticalAlignment="Center" FontSize="12" />
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
-                    </ScrollViewer>
-
-                    <Button
-                        x:Name="SyncTraktButton"
-                        Grid.Column="2"
-                        VerticalAlignment="Center"
-                        Click="SyncTraktButton_Click"
-                        Style="{StaticResource DefaultButtonStyle}"
-                        Background="{ThemeResource ControlFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
-                        BorderThickness="1"
-                        CornerRadius="8"
-                        MinHeight="32"
-                        Padding="12,4">
-                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                            <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="13" Glyph="&#xE72C;" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" VerticalAlignment="Center" />
-                            <TextBlock x:Name="SyncTraktButtonText" FontWeight="SemiBold" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
-                </Grid>
-            </Border>
 
             <!--  Active list: count on leading edge, Add Media & More Options on trailing edge.  -->
             <Grid ColumnSpacing="12" Margin="0,4,0,0">

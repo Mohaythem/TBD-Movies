@@ -4,6 +4,8 @@ using System.IO;
 using System.Threading.Tasks;
 using TBDMovies.Domain.Library.Movies;
 using TBDMovies.Domain.Library.Personal;
+using TBDMovies.Domain.Playback;
+using TBDMovies.Domain.Media;
 using TBDMovies.UI.Services;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
@@ -330,7 +332,9 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
         string? overview = null,
         string? airDate = null,
         IEnumerable<string?>? fallbackArtReferences = null,
-        string? filePath = null)
+        string? filePath = null,
+        PlaybackProgress? playbackProgress = null,
+        IReadOnlyList<DetectedSubtitle>? subtitles = null)
     {
         ShowId = showId;
         SeasonNumber = seasonNumber;
@@ -348,6 +352,12 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
         Overview = overview ?? string.Empty;
         AirDate = airDate ?? string.Empty;
         FilePath = filePath;
+        _playbackProgress = playbackProgress;
+        if (subtitles != null)
+        {
+            _subtitles = subtitles;
+            _subtitleBadges = subtitles.Select(SubtitleBadgeModel.FromDetectedSubtitle).ToList();
+        }
 
         var artCandidates = new List<string?>();
         if (!string.IsNullOrWhiteSpace(stillReference))
@@ -384,6 +394,39 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
     public Visibility OverviewVisibility => !string.IsNullOrWhiteSpace(Overview) ? Visibility.Visible : Visibility.Collapsed;
     public string AirDate { get; }
     public string? FilePath { get; }
+    private IReadOnlyList<DetectedSubtitle>? _subtitles;
+    public IReadOnlyList<DetectedSubtitle> Subtitles
+    {
+        get => _subtitles ?? [];
+        set
+        {
+            if (!ReferenceEquals(_subtitles, value))
+            {
+                _subtitles = value;
+                SubtitleBadges = value.Select(SubtitleBadgeModel.FromDetectedSubtitle).ToList();
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Subtitles)));
+            }
+        }
+    }
+
+    private IReadOnlyList<SubtitleBadgeModel>? _subtitleBadges;
+    public IReadOnlyList<SubtitleBadgeModel> SubtitleBadges
+    {
+        get => _subtitleBadges ?? [];
+        set
+        {
+            if (!ReferenceEquals(_subtitleBadges, value))
+            {
+                _subtitleBadges = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SubtitleBadges)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasSubtitleBadges)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SubtitleBadgesVisibility)));
+            }
+        }
+    }
+
+    public bool HasSubtitleBadges => (_subtitleBadges?.Count ?? 0) > 0;
+    public Visibility SubtitleBadgesVisibility => HasSubtitleBadges ? Visibility.Visible : Visibility.Collapsed;
 
     public ImageSource? ArtworkSource => _artwork?.Source;
     public Visibility ArtworkVisibility => ArtworkSource is not null ? Visibility.Visible : Visibility.Collapsed;
@@ -493,12 +536,42 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
         ? (!string.IsNullOrWhiteSpace(Labels.UnmarkWatched) ? Labels.UnmarkWatched : Labels.MarkWatched)
         : Labels.MarkWatched;
 
+    private PlaybackProgress? _playbackProgress;
+
+    public PlaybackProgress? PlaybackProgress
+    {
+        get => _playbackProgress;
+        set
+        {
+            if (_playbackProgress != value)
+            {
+                _playbackProgress = value;
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PlaybackProgress)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasResume)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProgressPercentage)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasResumeVisibility)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FormattedResumeTime)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PlayOrRelinkLabel)));
+            }
+        }
+    }
+
+    public bool HasResume => _playbackProgress?.HasResumePosition == true;
+    public double ProgressPercentage => _playbackProgress?.ProgressPercentage ?? 0.0;
+    public Visibility HasResumeVisibility => HasResume ? Visibility.Visible : Visibility.Collapsed;
+    public string FormattedResumeTime => _playbackProgress?.FormattedResumeTime ?? string.Empty;
+
     public bool IsMissing => _isFileMissing;
     public bool CanMarkWatched => _hasLocalFile || _isFileMissing;
     public bool CanOpenFile => _hasLocalFile && !_storageUnavailable && !_isFileMissing;
+    public Visibility CanDownloadSubtitlesVisibility => CanOpenFile ? Visibility.Visible : Visibility.Collapsed;
     public bool CanPlayOrRelink => (CanOpenFile || _isFileMissing) && !_storageUnavailable;
     public string PlayOrRelinkGlyph => _isFileMissing ? "\uE71B" : "\uE768";
-    public string PlayOrRelinkLabel => _isFileMissing ? (!string.IsNullOrWhiteSpace(Labels.Relink) ? Labels.Relink : "Relink") : Labels.Play;
+    public string PlayOrRelinkLabel => _isFileMissing
+        ? (!string.IsNullOrWhiteSpace(Labels.Relink) ? Labels.Relink : "Relink")
+        : (HasResume && !string.IsNullOrWhiteSpace(FormattedResumeTime)
+            ? LocalizationService.Format("ResumeFrom", FormattedResumeTime)
+            : Labels.Play);
     public bool HasActions => _hasLocalFile || _isFileMissing;
     public double RowOpacity => (_hasLocalFile || _isFileMissing) ? 1.0 : 0.8;
 }
