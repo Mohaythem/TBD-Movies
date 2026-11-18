@@ -207,6 +207,10 @@ public interface ISettingsUiActions
     Task<TmdbCredentialResult> SaveTmdbCredentialAsync(string credential, ITmdbCredentialValidator validator, CancellationToken cancellationToken = default);
     Task<bool> RemoveTmdbCredentialAsync(CancellationToken cancellationToken = default);
     Task<ConnectionTestResult> TestTmdbConnectionAsync(IMetadataProvider provider, CancellationToken cancellationToken = default);
+
+    bool IsSubDlConfigured() => false;
+    bool SaveSubDlApiKey(string? apiKey) => false;
+    bool RemoveSubDlApiKey() => false;
     
     ClearLibraryDataResult ClearLibraryData();
     

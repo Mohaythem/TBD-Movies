@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -166,7 +166,7 @@ public class MetadataMatchingServiceTests
     public void SettingsService_RemovesLegacyToken_WithoutRestoringIt()
     {
         var settingsRepo = new MockSettingsRepo();
-        settingsRepo.Set("tmdb_read_access_token", "saved_token_123", DateTimeOffset.UtcNow);
+        settingsRepo.Set("tmdb_read_access_token", "saved_token_valid_20_chars", DateTimeOffset.UtcNow);
 
         var service = new SettingsService(
             new FakeMaintenanceRepo(),
@@ -175,7 +175,7 @@ public class MetadataMatchingServiceTests
 
         Assert.False(service.IsTmdbConfigured());
         Assert.Null(service.GetTmdbToken());
-        Assert.Equal("saved_token_123", settingsRepo.Get("tmdb_read_access_token"));
+        Assert.Equal("saved_token_valid_20_chars", settingsRepo.Get("tmdb_read_access_token"));
     }
 
     [Fact]

@@ -426,6 +426,25 @@
                     <TextBlock x:Name="SubtitlesHeadingText" Style="{StaticResource SubtitleTextBlockStyle}" />
                     <Border Style="{StaticResource CardBorderStyle}">
                         <StackPanel Spacing="16">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border
+                                    x:Name="SubDlStatusPill"
+                                    HorizontalAlignment="Left"
+                                    Style="{StaticResource StatusPillStyle}">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <Grid Width="8" Height="8" VerticalAlignment="Center">
+                                            <Ellipse x:Name="SubDlConnectedDot" Fill="{ThemeResource SystemFillColorSuccessBrush}" Visibility="Collapsed" />
+                                            <Ellipse x:Name="SubDlMissingDot" Fill="{ThemeResource SystemFillColorCautionBrush}" Visibility="Visible" />
+                                        </Grid>
+                                        <TextBlock x:Name="SubDlStatusText" Style="{StaticResource SecondaryCaptionTextStyle}" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+
                             <StackPanel Spacing="4">
                                 <TextBlock x:Name="SubDlApiKeyLabelText" Style="{StaticResource BodyStrongTextBlockStyle}" />
                                 <TextBlock
@@ -444,6 +463,13 @@
                                     Click="SaveSubDlApiKeyButton_Click"
                                     Style="{StaticResource AccentControlButtonStyle}">
                                     <TextBlock x:Name="SaveSubDlApiKeyButtonText" />
+                                </Button>
+                                <Button
+                                    x:Name="RemoveSubDlApiKeyButton"
+                                    Click="RemoveSubDlApiKeyButton_Click"
+                                    Visibility="Collapsed"
+                                    Style="{StaticResource SubtleControlButtonStyle}">
+                                    <TextBlock x:Name="RemoveSubDlApiKeyButtonText" />
                                 </Button>
                                 <Button
                                     x:Name="GetSubDlKeyButton"

@@ -1,245 +1,178 @@
-using System.Runtime.InteropServices;
-using System.Security.Cryptography;
-using System.Text;
+using System;
+using TBDMovies.Application.Diagnostics;
 using TBDMovies.Application.External;
 using TBDMovies.Application.Repositories;
+using TBDMovies.Application.Services;
 
 namespace TBDMovies.Infrastructure.Security;
 
 /// <summary>One generic credential in the current Windows user's native credential set.</summary>
 public sealed class WindowsTmdbCredentialStore : ITmdbCredentialStore
 {
-    private const uint Generic = 1;
-    private const uint PersistLocalMachine = 2;
-    private const int NotFound = 1168;
-    private const int MaxBlob = 2560;
-    private readonly string _target;
-    private readonly string? _legacyTarget;
-    private readonly ISettingsRepository? _settings;
+    public const string LegacyDpapiSettingsKey = "tmdb_credential_dpapi";
+    private const string LegacyLiveTargetBase64 = "RHJvcFNvcnQvVE1EQg==";
+    private const string LegacyQaPrefixBase64 = "RHJvcFNvcnQvVE1EQi9RQS8=";
+    private static readonly byte[] Entropy = "TBDMovies.Tmdb.DPAPI.Entropy.v1"u8.ToArray();
+
+    private readonly WindowsCredentialVault _vault;
 
     public WindowsTmdbCredentialStore(string? isolatedProfileRoot = null, ISettingsRepository? settings = null)
+        : this(isolatedProfileRoot, settings, backend: null)
     {
-        _settings = settings;
-        if (string.IsNullOrWhiteSpace(isolatedProfileRoot))
-        {
-            _target = "TBDMovies/TMDB";
-            _legacyTarget = System.Text.Encoding.UTF8.GetString(System.Convert.FromBase64String("RHJvcFNvcnQvVE1EQg=="));
-        }
-        else
-        {
-            // QA must never read, replace, or delete the live profile's credential.
-            if (!Path.IsPathFullyQualified(isolatedProfileRoot))
-                throw new ArgumentException("The credential profile root must be an absolute path.");
-            var profile = Path.TrimEndingDirectorySeparator(Path.GetFullPath(isolatedProfileRoot.Trim())).ToUpperInvariant();
-            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(profile)));
-            _target = "TBDMovies/TMDB/QA/" + hash;
-            _legacyTarget = System.Text.Encoding.UTF8.GetString(System.Convert.FromBase64String("RHJvcFNvcnQvVE1EQi9RQS8=")) + hash;
-        }
     }
+
+    internal WindowsTmdbCredentialStore(
+        string? isolatedProfileRoot,
+        ISettingsRepository? settings,
+        ICredentialVaultBackend? backend)
+    {
+        _ = settings;
+        _vault = new WindowsCredentialVault(
+            serviceName: "TMDB",
+            userName: "TBD Movies",
+            isolatedProfileRoot: isolatedProfileRoot,
+            legacyLiveTargetBase64: LegacyLiveTargetBase64,
+            legacyQaPrefixBase64: LegacyQaPrefixBase64,
+            backend: backend);
+    }
+
+    internal string Target => _vault.Target;
+    internal string? LegacyTarget => _vault.LegacyTarget;
 
     public string? Read()
     {
-        string? nativeToken = TryReadTarget(_target);
-        if (string.IsNullOrWhiteSpace(nativeToken) && !string.IsNullOrWhiteSpace(_legacyTarget))
-        {
-            nativeToken = TryReadTarget(_legacyTarget);
-            if (!string.IsNullOrWhiteSpace(nativeToken))
-            {
-                try { Write(nativeToken); }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to migrate legacy native token: {ex.Message}"); }
-            }
-        }
-
+        var nativeToken = _vault.ReadRaw(verifyAndCleanLegacyTarget: true);
         return !string.IsNullOrWhiteSpace(nativeToken) ? nativeToken : null;
-    }
-
-    public static bool MigrateLegacyDpapi(ISettingsRepository settings, string? isolatedProfileRoot = null)
-    {
-        var cipher = settings.Get("tmdb_credential_dpapi");
-        if (string.IsNullOrWhiteSpace(cipher)) return false;
-
-        try
-        {
-            var store = new WindowsTmdbCredentialStore(isolatedProfileRoot);
-            if (string.IsNullOrWhiteSpace(store.Read()))
-            {
-                var recovered = DecryptDpapi(cipher, out _);
-                if (!string.IsNullOrWhiteSpace(recovered))
-                {
-                    store.Write(recovered);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Failed to migrate legacy DPAPI TMDB credential: {ex.Message}");
-        }
-
-        try
-        {
-            settings.Delete("tmdb_credential_dpapi");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Failed to delete legacy DPAPI TMDB credential row: {ex.Message}");
-            return false;
-        }
-    }
-
-    private static string? TryReadTarget(string target)
-    {
-        if (CredReadW(target, Generic, 0, out var pointer))
-        {
-            try
-            {
-                var credential = Marshal.PtrToStructure<Credential>(pointer);
-                if (credential.CredentialBlobSize > 0 && credential.CredentialBlobSize <= MaxBlob
-                    && credential.CredentialBlob != IntPtr.Zero)
-                {
-                    var bytes = new byte[(int)credential.CredentialBlobSize];
-                    try
-                    {
-                        Marshal.Copy(credential.CredentialBlob, bytes, 0, bytes.Length);
-                        return new UTF8Encoding(false, true).GetString(bytes);
-                    }
-                    catch (DecoderFallbackException) { throw StorageError(); }
-                    finally
-                    {
-                        CryptographicOperations.ZeroMemory(bytes);
-                        Marshal.Copy(bytes, 0, credential.CredentialBlob, bytes.Length);
-                    }
-                }
-            }
-            finally { CredFree(pointer); }
-        }
-        else
-        {
-            var err = Marshal.GetLastWin32Error();
-            if (err != NotFound) throw StorageError();
-        }
-
-        return null;
     }
 
     public void Write(string credential)
     {
-        if (string.IsNullOrWhiteSpace(credential) || Encoding.UTF8.GetByteCount(credential) > MaxBlob)
-            throw StorageError();
-        var bytes = Encoding.UTF8.GetBytes(credential);
-        var blob = IntPtr.Zero;
-        try
+        _vault.WriteRaw(credential);
+        var roundtrip = _vault.TryReadPrimaryRaw();
+        if (!string.Equals(roundtrip, credential, StringComparison.Ordinal))
         {
-            blob = Marshal.AllocHGlobal(bytes.Length);
-            Marshal.Copy(bytes, 0, blob, bytes.Length);
-            var native = new Credential
-            {
-                Type = Generic,
-                TargetName = _target,
-                CredentialBlobSize = (uint)bytes.Length,
-                CredentialBlob = blob,
-                Persist = PersistLocalMachine,
-                UserName = "TBD Movies",
-            };
-            if (!CredWriteW(ref native, 0)) throw StorageError();
+            throw WindowsCredentialVault.StorageError();
         }
-        finally
-        {
-            CryptographicOperations.ZeroMemory(bytes);
-            if (blob != IntPtr.Zero)
-            {
-                try { Marshal.Copy(bytes, 0, blob, bytes.Length); }
-                finally { Marshal.FreeHGlobal(blob); }
-            }
-        }
+
+        _vault.DeleteLegacyTargetBestEffort();
     }
 
-    public void Delete()
+    public void Delete() => _vault.Delete();
+
+    public static bool MigrateLegacyDpapi(ISettingsRepository settings, string? isolatedProfileRoot = null)
     {
-        if (!CredDeleteW(_target, Generic, 0) && Marshal.GetLastWin32Error() != NotFound)
-            throw StorageError();
-        if (!string.IsNullOrWhiteSpace(_legacyTarget))
-        {
-            CredDeleteW(_legacyTarget, Generic, 0);
-        }
+        var store = new WindowsTmdbCredentialStore(isolatedProfileRoot);
+        var diagnosticFolder = store._vault.DiagnosticDataFolder;
+        return MigrateLegacyDpapiCore(
+            settings,
+            store,
+            (string? cipher, byte[] entropy, out string? plaintext) =>
+                WindowsCredentialVault.TryDecryptDpapi(cipher, entropy, out plaintext, diagnosticFolder),
+            diagnosticFolder);
     }
 
-    private static readonly byte[] Entropy = "TBDMovies.Tmdb.DPAPI.Entropy.v1"u8.ToArray();
-
-    private static string? EncryptDpapi(string plain)
+    internal static bool MigrateLegacyDpapiCore(
+        ISettingsRepository settings,
+        ITmdbCredentialStore store,
+        DpapiUnprotectFunc unprotect,
+        string? diagnosticFolder = null)
     {
-        if (string.IsNullOrEmpty(plain)) return null;
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(unprotect);
+
+        var cipher = settings.Get(LegacyDpapiSettingsKey);
+        if (cipher is null)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(cipher))
+        {
+            return DeleteLegacyRowWithVacuumMarker(settings, diagnosticFolder);
+        }
+
+        string? existing;
         try
         {
-            var raw = Encoding.UTF8.GetBytes(plain);
-            var enc = ProtectedData.Protect(raw, Entropy, DataProtectionScope.CurrentUser);
-            return Convert.ToBase64String(enc);
+            existing = store.Read();
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"DPAPI encryption failed: {ex.Message}");
-            return null;
+            // Transient Credential Manager unavailability: preserve legacy DPAPI row for retry (SEC-21).
+            SecurityDiagnostics.Record(
+                "TmdbCredentialStore",
+                $"Deferred legacy DPAPI TMDB migration due to vault read error: {ex.GetType().Name}: {ex.Message}",
+                diagnosticFolder);
+            return false;
         }
+
+        if (SettingsService.SanitizeAndValidateTmdbToken(existing) is null)
+        {
+            var status = unprotect(cipher, Entropy, out var recovered);
+            if (status == DpapiDecryptStatus.Decrypted)
+            {
+                var sanitized = SettingsService.SanitizeAndValidateTmdbToken(recovered);
+                if (sanitized is not null)
+                {
+                    try
+                    {
+                        store.Write(sanitized);
+                        if (!string.Equals(store.Read(), sanitized, StringComparison.Ordinal))
+                        {
+                            throw WindowsCredentialVault.StorageError();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Decryption succeeded on a valid user credential, so do NOT delete the legacy DPAPI row
+                        // when Credential Manager fails to persist it (SEC-21 / #250).
+                        SecurityDiagnostics.Record(
+                            "TmdbCredentialStore",
+                            $"Preserved legacy DPAPI TMDB row after vault write error: {ex.GetType().Name}: {ex.Message}",
+                            diagnosticFolder);
+                        return false;
+                    }
+                }
+                else
+                {
+                    SecurityDiagnostics.Record(
+                        "TmdbCredentialStore",
+                        "Purging legacy DPAPI TMDB blob because decrypted payload failed token validation.",
+                        diagnosticFolder);
+                }
+            }
+        }
+
+        return DeleteLegacyRowWithVacuumMarker(settings, diagnosticFolder);
     }
 
-    private static string? DecryptDpapi(string? cipher, out bool migratedFromLegacy)
+    private static bool DeleteLegacyRowWithVacuumMarker(ISettingsRepository settings, string? diagnosticFolder)
     {
-        migratedFromLegacy = false;
-        if (string.IsNullOrWhiteSpace(cipher)) return null;
         try
         {
-            var raw = Convert.FromBase64String(cipher);
-            try
-            {
-                var dec = ProtectedData.Unprotect(raw, Entropy, DataProtectionScope.CurrentUser);
-                return Encoding.UTF8.GetString(dec);
-            }
-            catch (CryptographicException)
-            {
-                // Fallback to unprotect without entropy
-                var dec = ProtectedData.Unprotect(raw, null, DataProtectionScope.CurrentUser);
-                migratedFromLegacy = true;
-                return Encoding.UTF8.GetString(dec);
-            }
+            settings.Set(SettingsService.SecurityVacuumPendingKey, "1", DateTimeOffset.UtcNow);
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"DPAPI decryption failed: {ex.Message}");
-            return null;
+            SecurityDiagnostics.Record(
+                "TmdbCredentialStore",
+                $"Failed to set security_vacuum_pending before TMDB DPAPI row deletion: {ex.GetType().Name}: {ex.Message}",
+                diagnosticFolder);
         }
-    }
 
-    private static InvalidOperationException StorageError() => new("Credential storage unavailable.");
-
-    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CredReadW(string target, uint type, uint flags, out IntPtr credential);
-
-    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CredWriteW(ref Credential credential, uint flags);
-
-    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CredDeleteW(string target, uint type, uint flags);
-
-    [DllImport("advapi32.dll", ExactSpelling = true)]
-    private static extern void CredFree(IntPtr credential);
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct Credential
-    {
-        public uint Flags;
-        public uint Type;
-        public string? TargetName;
-        public string? Comment;
-        public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
-        public uint CredentialBlobSize;
-        public IntPtr CredentialBlob;
-        public uint Persist;
-        public uint AttributeCount;
-        public IntPtr Attributes;
-        public string? TargetAlias;
-        public string? UserName;
+        try
+        {
+            settings.Delete(LegacyDpapiSettingsKey);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            SecurityDiagnostics.Record(
+                "TmdbCredentialStore",
+                $"Failed to delete legacy DPAPI TMDB credential row: {ex.GetType().Name}: {ex.Message}",
+                diagnosticFolder);
+            return false;
+        }
     }
 }

@@ -1,20 +1,16 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using TBDMovies.Application.Diagnostics;
 
 namespace TBDMovies.UI.Services;
 
 /// <summary>
-/// The UI's own configuration, stored in the same settings table as the application's keys.
+/// The UI's own non-secret configuration, stored in the same settings table as the application's keys.
 /// <para>
-/// These are values the application contracts do not model but the designed pages need: the media roots
-/// Add Media scans, the destination root that Organize File moves into, and the user's own lists on My
-/// Lists. Reads never throw - an unavailable or unreadable store answers with the default - so a settings
-/// failure degrades to "not configured" instead of taking a page down.
-/// </para>
-/// <para>
-/// Media roots are an ordered, de-duplicated list persisted under one key. The first root is the primary
-/// root: the default Add Media scan target and the Organize destination. Add / Replace / Remove all edit
-/// this list. Changing the configured roots only rewrites settings; it never touches media files. Legacy
-/// single movie/show folder settings are imported once so existing installs keep their roots.
+/// Secrets (such as TMDB tokens, Trakt OAuth tokens, and SubDL API keys) are NEVER stored here;
+/// they live exclusively in OS-protected credential storage via <see cref="AppServices.Settings" />.
 /// </para>
 /// </summary>
 internal static class AppSettingsStore
@@ -24,22 +20,26 @@ internal static class AppSettingsStore
     private const string ShowFolderKey = "ui_show_folder";   // legacy, imported once
     private const string LibraryViewModeKey = "ui_library_view_mode";
     private const string WideNavigationPaneOpenKey = "ui_navigation_wide_pane_open";
-    private const string SubDlApiKeyKey = "subdl_api_key";
 
-    public static string? ReadSubDlApiKey() => Read(SubDlApiKeyKey);
+    public static bool IsSubDlConfigured() =>
+        AppServices.IsAvailable && AppServices.Settings.IsSubDlConfigured();
 
-    public static void WriteSubDlApiKey(string? apiKey) => Write(SubDlApiKeyKey, apiKey);
+    public static bool SaveSubDlApiKey(string? apiKey) =>
+        AppServices.IsAvailable && AppServices.Settings.SaveSubDlApiKey(apiKey);
+
+    public static bool RemoveSubDlApiKey() =>
+        AppServices.IsAvailable && AppServices.Settings.RemoveSubDlApiKey();
 
     public static bool ReadWideNavigationPaneOpen() =>
         NavigationPaneState.ParseWidePreference(Read(WideNavigationPaneOpenKey));
 
-    public static void WriteWideNavigationPaneOpen(bool isOpen) =>
+    public static bool WriteWideNavigationPaneOpen(bool isOpen) =>
         Write(WideNavigationPaneOpenKey, isOpen ? "true" : "false");
 
     public static LibraryViewMode ReadLibraryViewMode() =>
         LibraryViewModePreference.Parse(Read(LibraryViewModeKey));
 
-    public static void WriteLibraryViewMode(LibraryViewMode mode) =>
+    public static bool WriteLibraryViewMode(LibraryViewMode mode) =>
         Write(LibraryViewModeKey, LibraryViewModePreference.Serialize(mode));
 
     /// <summary>The primary media root: the default Add Media scan target and the Organize destination.</summary>
@@ -60,14 +60,14 @@ internal static class AppSettingsStore
             return false;
         }
 
-        var folders = LoadFolders();
+        var folders = LoadFoldersOrThrow();
         if (folders.Contains(normalized, StringComparer.OrdinalIgnoreCase))
         {
             return false;
         }
 
         folders.Add(normalized);
-        SaveFolders(folders);
+        SaveFoldersOrThrow(folders);
         return true;
     }
 
@@ -85,7 +85,7 @@ internal static class AppSettingsStore
             return false;
         }
 
-        var folders = LoadFolders();
+        var folders = LoadFoldersOrThrow();
         var index = folders.FindIndex(f => string.Equals(f, oldNormalized, StringComparison.OrdinalIgnoreCase));
         if (index < 0)
         {
@@ -101,7 +101,7 @@ internal static class AppSettingsStore
         }
 
         folders[index] = newNormalized;
-        SaveFolders(folders);
+        SaveFoldersOrThrow(folders);
         return true;
     }
 
@@ -109,11 +109,11 @@ internal static class AppSettingsStore
     public static bool RemoveMediaFolder(string path)
     {
         var normalized = path?.Trim() ?? string.Empty;
-        var folders = LoadFolders();
+        var folders = LoadFoldersOrThrow();
         var removed = folders.RemoveAll(f => string.Equals(f, normalized, StringComparison.OrdinalIgnoreCase)) > 0;
         if (removed)
         {
-            SaveFolders(folders);
+            SaveFoldersOrThrow(folders);
         }
         return removed;
     }
@@ -130,18 +130,70 @@ internal static class AppSettingsStore
         return Normalize([Read(MovieFolderKey), Read(ShowFolderKey)]);
     }
 
+    private static List<string> LoadFoldersOrThrow()
+    {
+        var raw = ReadOrThrow(MediaFoldersKey);
+        if (raw is not null)
+        {
+            return Normalize(raw.Split('\n'));
+        }
+
+        return Normalize([ReadOrThrow(MovieFolderKey), ReadOrThrow(ShowFolderKey)]);
+    }
+
     private static List<string> Normalize(IEnumerable<string?> paths) =>
         paths.Where(path => !string.IsNullOrWhiteSpace(path))
             .Select(path => path!.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-    private static void SaveFolders(IReadOnlyList<string> folders)
+    private static void SaveFoldersOrThrow(IReadOnlyList<string> folders)
     {
-        // Persist under the list key and retire the legacy keys so they never re-import over the user's edits.
-        Write(MediaFoldersKey, folders.Count == 0 ? string.Empty : string.Join("\n", folders));
-        Write(MovieFolderKey, null);
-        Write(ShowFolderKey, null);
+        if (!AppServices.IsAvailable)
+        {
+            throw new IOException("The local library settings store is unavailable.");
+        }
+
+        try
+        {
+            // Persist string.Empty when folders.Count == 0 so Read(MediaFoldersKey) returns non-null ""
+            // and never resurrects legacy MovieFolderKey / ShowFolderKey, and retire legacy keys strictly.
+            var serialized = folders.Count == 0 ? string.Empty : string.Join("\n", folders);
+            AppServices.SettingsStore.Set(MediaFoldersKey, serialized, DateTimeOffset.UtcNow);
+            AppServices.SettingsStore.Delete(MovieFolderKey);
+            AppServices.SettingsStore.Delete(ShowFolderKey);
+        }
+        catch (Exception ex)
+        {
+            SecurityDiagnostics.Record("AppSettingsStore.SaveFoldersOrThrow", ex, AppServices.DataFolder);
+            if (ex is IOException)
+            {
+                throw;
+            }
+            throw new IOException("Failed to persist media folder configuration.", ex);
+        }
+    }
+
+    private static string? ReadOrThrow(string key)
+    {
+        if (!AppServices.IsAvailable)
+        {
+            throw new IOException("The local library settings store is unavailable.");
+        }
+
+        try
+        {
+            return AppServices.SettingsStore.Get(key);
+        }
+        catch (Exception ex)
+        {
+            SecurityDiagnostics.Record("AppSettingsStore", $"Failed to read setting '{key}' for mutation: {ex.GetType().Name}: {ex.Message}", AppServices.DataFolder);
+            if (ex is IOException)
+            {
+                throw;
+            }
+            throw new IOException($"Failed to read setting '{key}' for mutation.", ex);
+        }
     }
 
     private static string? Read(string key)
@@ -150,17 +202,18 @@ internal static class AppSettingsStore
         {
             return AppServices.IsAvailable ? AppServices.SettingsStore.Get(key) : null;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            SecurityDiagnostics.Record("AppSettingsStore", $"Failed to read setting '{key}': {ex.GetType().Name}: {ex.Message}", AppServices.DataFolder);
             return null;
         }
     }
 
-    private static void Write(string key, string? value)
+    private static bool Write(string key, string? value)
     {
         if (!AppServices.IsAvailable)
         {
-            return;
+            return false;
         }
 
         try
@@ -173,10 +226,12 @@ internal static class AppSettingsStore
             {
                 AppServices.SettingsStore.Set(key, value, DateTimeOffset.UtcNow);
             }
+            return true;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // A settings write failure must not take the page down; the value stays unset.
+            SecurityDiagnostics.Record("AppSettingsStore", $"Failed to write setting '{key}': {ex.GetType().Name}: {ex.Message}", AppServices.DataFolder);
+            return false;
         }
     }
 }

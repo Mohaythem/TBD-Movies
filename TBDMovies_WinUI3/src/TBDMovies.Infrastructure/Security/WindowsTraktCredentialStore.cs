@@ -1,270 +1,295 @@
 using System;
-using System.IO;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
+using TBDMovies.Application.Diagnostics;
 using TBDMovies.Application.Repositories;
+using TBDMovies.Application.Services;
 using TBDMovies.Application.Trakt;
 
 namespace TBDMovies.Infrastructure.Security;
 
 /// <summary>
 /// Secure Windows Credential Manager store for Trakt OAuth credentials.
-/// Implements target isolation for QA profiles, DPAPI fallback in settings, and native roundtrip verification.
+/// Implements target isolation for QA profiles, safe one-way legacy DPAPI migration, and native roundtrip verification.
 /// </summary>
 public sealed class WindowsTraktCredentialStore : ITraktCredentialStore
 {
-    private const uint Generic = 1;
-    private const uint PersistLocalMachine = 2;
-    private const int NotFound = 1168;
-    private const int MaxBlob = 2560;
-    private readonly string _target;
-    private readonly string? _legacyTarget;
-    private readonly ISettingsRepository? _settings;
+    public const string LegacyDpapiSettingsKey = "trakt_credential_dpapi";
+    private const string LegacyLiveTargetBase64 = "RHJvcFNvcnQvVHJha3Q=";
+    private const string LegacyQaPrefixBase64 = "RHJvcFNvcnQvVHJha3QvUUEv";
+    private static readonly byte[] Entropy = "TBDMovies.Trakt.DPAPI.Entropy.v1"u8.ToArray();
+
+    private readonly WindowsCredentialVault _vault;
 
     public WindowsTraktCredentialStore(string? isolatedProfileRoot = null, ISettingsRepository? settings = null)
+        : this(isolatedProfileRoot, settings, backend: null)
     {
-        _settings = settings;
-        if (string.IsNullOrWhiteSpace(isolatedProfileRoot))
-        {
-            _target = "TBDMovies/Trakt";
-            _legacyTarget = System.Text.Encoding.UTF8.GetString(System.Convert.FromBase64String("RHJvcFNvcnQvVHJha3Q="));
-        }
-        else
-        {
-            if (!Path.IsPathFullyQualified(isolatedProfileRoot))
-                throw new ArgumentException("The credential profile root must be an absolute path.");
-            var profile = Path.TrimEndingDirectorySeparator(Path.GetFullPath(isolatedProfileRoot.Trim())).ToUpperInvariant();
-            var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(profile)));
-            _target = "TBDMovies/Trakt/QA/" + hash;
-            _legacyTarget = System.Text.Encoding.UTF8.GetString(System.Convert.FromBase64String("RHJvcFNvcnQvVHJha3QvUUEv")) + hash;
-        }
     }
+
+    internal WindowsTraktCredentialStore(
+        string? isolatedProfileRoot,
+        ISettingsRepository? settings,
+        ICredentialVaultBackend? backend)
+    {
+        _ = settings;
+        _vault = new WindowsCredentialVault(
+            serviceName: "Trakt",
+            userName: "TBDMovies/Trakt",
+            isolatedProfileRoot: isolatedProfileRoot,
+            legacyLiveTargetBase64: LegacyLiveTargetBase64,
+            legacyQaPrefixBase64: LegacyQaPrefixBase64,
+            backend: backend);
+    }
+
+    internal string Target => _vault.Target;
+    internal string? LegacyTarget => _vault.LegacyTarget;
 
     public TraktCredentialPayload? Read()
     {
-        TraktCredentialPayload? nativePayload = TryReadTarget(_target);
-        if (nativePayload is null && !string.IsNullOrWhiteSpace(_legacyTarget))
+        var primaryPayload = DeserializePayload(_vault.TryReadPrimaryRaw());
+        if (primaryPayload is not null)
         {
-            nativePayload = TryReadTarget(_legacyTarget);
-            if (nativePayload is not null)
-            {
-                try { Write(nativePayload); }
-                catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Failed to migrate legacy Trakt native target: {ex.Message}"); }
-            }
+            _vault.DeleteLegacyTargetBestEffort();
+            return primaryPayload;
         }
 
-        return nativePayload;
-    }
-
-    public static bool MigrateLegacyDpapi(ISettingsRepository settings, string? isolatedProfileRoot = null)
-    {
-        var cipher = settings.Get("trakt_credential_dpapi");
-        if (string.IsNullOrWhiteSpace(cipher)) return false;
-
-        try
-        {
-            var store = new WindowsTraktCredentialStore(isolatedProfileRoot);
-            if (store.Read() is null)
-            {
-                var recoveredJson = DecryptDpapi(cipher, out _);
-                if (!string.IsNullOrWhiteSpace(recoveredJson))
-                {
-                    var recovered = JsonSerializer.Deserialize<TraktCredentialPayload>(recoveredJson);
-                    if (recovered is not null)
-                    {
-                        store.Write(recovered);
-                    }
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Failed to migrate legacy DPAPI Trakt credential: {ex.Message}");
-        }
-
-        try
-        {
-            settings.Delete("trakt_credential_dpapi");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Failed to delete legacy DPAPI Trakt credential row: {ex.Message}");
-            return false;
-        }
-    }
-
-    private static TraktCredentialPayload? TryReadTarget(string target)
-    {
-        if (CredReadW(target, Generic, 0, out var pointer))
+        var legacyPayload = DeserializePayload(_vault.TryReadLegacyRaw());
+        if (legacyPayload is not null)
         {
             try
             {
-                var credential = Marshal.PtrToStructure<Credential>(pointer);
-                if (credential.CredentialBlobSize > 0 && credential.CredentialBlobSize <= MaxBlob
-                    && credential.CredentialBlob != IntPtr.Zero)
-                {
-                    var bytes = new byte[(int)credential.CredentialBlobSize];
-                    try
-                    {
-                        Marshal.Copy(credential.CredentialBlob, bytes, 0, bytes.Length);
-                        var json = new UTF8Encoding(false, true).GetString(bytes);
-                        return JsonSerializer.Deserialize<TraktCredentialPayload>(json);
-                    }
-                    catch (DecoderFallbackException) { throw StorageError(); }
-                    catch (JsonException) { throw StorageError(); }
-                    finally
-                    {
-                        CryptographicOperations.ZeroMemory(bytes);
-                        Marshal.Copy(bytes, 0, credential.CredentialBlob, bytes.Length);
-                    }
-                }
+                Write(legacyPayload);
+                _vault.DeleteLegacyTargetBestEffort();
             }
-            finally
+            catch (Exception ex)
             {
-                CredFree(pointer);
+                SecurityDiagnostics.Record(
+                    "TraktCredentialStore",
+                    $"Failed to migrate legacy Trakt native target: {ex.GetType().Name}: {ex.Message}",
+                    _vault.DiagnosticDataFolder);
             }
-        }
-        else
-        {
-            var err = Marshal.GetLastWin32Error();
-            if (err != NotFound) throw StorageError();
         }
 
-        return null;
+        return legacyPayload;
     }
 
     public void Write(TraktCredentialPayload payload)
     {
         ArgumentNullException.ThrowIfNull(payload);
 
-        var json = JsonSerializer.Serialize(payload);
-        if (string.IsNullOrWhiteSpace(json) || Encoding.UTF8.GetByteCount(json) > MaxBlob)
-            throw StorageError();
+        if (string.IsNullOrWhiteSpace(payload.ClientId)
+            || (string.IsNullOrWhiteSpace(payload.AccessToken) && !payload.RequiresReconnect))
+        {
+            throw WindowsCredentialVault.StorageError();
+        }
 
-        var bytes = Encoding.UTF8.GetBytes(json);
-        var blob = IntPtr.Zero;
+        var utf8 = JsonSerializer.SerializeToUtf8Bytes(payload);
         try
         {
-            blob = Marshal.AllocHGlobal(bytes.Length);
-            Marshal.Copy(bytes, 0, blob, bytes.Length);
-            var native = new Credential
-            {
-                Type = Generic,
-                TargetName = _target,
-                CredentialBlobSize = (uint)bytes.Length,
-                CredentialBlob = blob,
-                Persist = PersistLocalMachine,
-                UserName = "TBDMovies/Trakt",
-            };
-            if (!CredWriteW(ref native, 0)) throw StorageError();
-
-            // Native store roundtrip verification
-            var roundtrip = Read();
-            if (roundtrip is null || !string.Equals(roundtrip.ClientId, payload.ClientId, StringComparison.Ordinal))
-            {
-                throw StorageError();
-            }
+            _vault.WriteRawUtf8(utf8);
         }
         finally
         {
-            CryptographicOperations.ZeroMemory(bytes);
-            if (blob != IntPtr.Zero)
-            {
-                try { Marshal.Copy(bytes, 0, blob, bytes.Length); }
-                finally { Marshal.FreeHGlobal(blob); }
-            }
+            CryptographicOperations.ZeroMemory(utf8);
         }
+
+        var roundtrip = DeserializePayload(_vault.TryReadPrimaryRaw());
+        if (roundtrip is null || roundtrip != payload)
+        {
+            throw WindowsCredentialVault.StorageError();
+        }
+
+        _vault.DeleteLegacyTargetBestEffort();
     }
 
-    public void Delete()
+    public void Delete() => _vault.Delete();
+
+    public static bool MigrateLegacyDpapi(ISettingsRepository settings, string? isolatedProfileRoot = null)
     {
-        if (!CredDeleteW(_target, Generic, 0) && Marshal.GetLastWin32Error() != NotFound)
-            throw StorageError();
-        if (!string.IsNullOrWhiteSpace(_legacyTarget))
-        {
-            CredDeleteW(_legacyTarget, Generic, 0);
-        }
+        var store = new WindowsTraktCredentialStore(isolatedProfileRoot);
+        var diagnosticFolder = store._vault.DiagnosticDataFolder;
+        return MigrateLegacyDpapiCore(
+            settings,
+            store,
+            (string? cipher, byte[] entropy, out string? plaintext) =>
+                WindowsCredentialVault.TryDecryptDpapi(cipher, entropy, out plaintext, diagnosticFolder),
+            diagnosticFolder);
     }
 
-    private static readonly byte[] Entropy = "TBDMovies.Trakt.DPAPI.Entropy.v1"u8.ToArray();
-
-    private static string? EncryptDpapi(string plain)
+    internal static bool MigrateLegacyDpapiCore(
+        ISettingsRepository settings,
+        ITraktCredentialStore store,
+        DpapiUnprotectFunc unprotect,
+        string? diagnosticFolder = null)
     {
-        if (string.IsNullOrEmpty(plain)) return null;
-        try
-        {
-            var raw = Encoding.UTF8.GetBytes(plain);
-            var enc = ProtectedData.Protect(raw, Entropy, DataProtectionScope.CurrentUser);
-            return Convert.ToBase64String(enc);
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"DPAPI encryption failed: {ex.Message}");
-            return null;
-        }
-    }
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(store);
+        ArgumentNullException.ThrowIfNull(unprotect);
 
-    private static string? DecryptDpapi(string? cipher, out bool migratedFromLegacy)
-    {
-        migratedFromLegacy = false;
-        if (string.IsNullOrWhiteSpace(cipher)) return null;
-        try
+        var cipher = settings.Get(LegacyDpapiSettingsKey);
+        if (cipher is null)
         {
-            var raw = Convert.FromBase64String(cipher);
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(cipher))
+        {
+            return DeleteLegacyRowWithVacuumMarker(settings, diagnosticFolder);
+        }
+
+        TraktCredentialPayload? existing = null;
+        if (store is WindowsTraktCredentialStore winStore)
+        {
+            string? rawPrimary;
+            string? rawLegacy;
             try
             {
-                var dec = ProtectedData.Unprotect(raw, Entropy, DataProtectionScope.CurrentUser);
-                return Encoding.UTF8.GetString(dec);
+                rawPrimary = winStore._vault.TryReadPrimaryRaw();
+                rawLegacy = string.IsNullOrWhiteSpace(rawPrimary) ? winStore._vault.TryReadLegacyRaw() : null;
             }
-            catch (CryptographicException)
+            catch (Exception ex)
             {
-                // Fallback to unprotect without entropy
-                var dec = ProtectedData.Unprotect(raw, null, DataProtectionScope.CurrentUser);
-                migratedFromLegacy = true;
-                return Encoding.UTF8.GetString(dec);
+                // Transient Credential Manager unavailability: preserve legacy DPAPI row for retry (SEC-21).
+                SecurityDiagnostics.Record(
+                    "TraktCredentialStore",
+                    $"Deferred legacy DPAPI Trakt migration due to vault read error: {ex.GetType().Name}: {ex.Message}",
+                    diagnosticFolder);
+                return false;
             }
+
+            var rawCandidate = !string.IsNullOrWhiteSpace(rawPrimary) ? rawPrimary : rawLegacy;
+            if (!string.IsNullOrWhiteSpace(rawCandidate))
+            {
+                try
+                {
+                    existing = DeserializePayload(rawCandidate);
+                }
+                catch (Exception ex)
+                {
+                    SecurityDiagnostics.Record(
+                        "TraktCredentialStore",
+                        $"Ignoring corrupt Trakt credential in vault during legacy DPAPI migration: {ex.GetType().Name}",
+                        diagnosticFolder);
+                    existing = null;
+                }
+            }
+        }
+        else
+        {
+            try
+            {
+                existing = store.Read();
+            }
+            catch (Exception ex)
+            {
+                SecurityDiagnostics.Record(
+                    "TraktCredentialStore",
+                    $"Deferred legacy DPAPI Trakt migration due to vault read error: {ex.GetType().Name}: {ex.Message}",
+                    diagnosticFolder);
+                return false;
+            }
+        }
+
+        if (existing is null)
+        {
+            var status = unprotect(cipher, Entropy, out var recoveredJson);
+            if (status == DpapiDecryptStatus.Decrypted && !string.IsNullOrWhiteSpace(recoveredJson))
+            {
+                TraktCredentialPayload? recovered = null;
+                try
+                {
+                    recovered = DeserializePayload(recoveredJson);
+                }
+                catch (Exception ex)
+                {
+                    SecurityDiagnostics.Record(
+                        "TraktCredentialStore",
+                        $"Purging corrupt legacy DPAPI Trakt JSON payload: {ex.GetType().Name}",
+                        diagnosticFolder);
+                }
+
+                if (recovered is not null)
+                {
+                    try
+                    {
+                        store.Write(recovered);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Decryption succeeded on a valid user credential, so do NOT delete the legacy DPAPI row
+                        // when Credential Manager fails to persist it (SEC-21 / #257).
+                        SecurityDiagnostics.Record(
+                            "TraktCredentialStore",
+                            $"Preserved legacy DPAPI Trakt row after vault write error: {ex.GetType().Name}: {ex.Message}",
+                            diagnosticFolder);
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return DeleteLegacyRowWithVacuumMarker(settings, diagnosticFolder);
+    }
+
+    private static bool DeleteLegacyRowWithVacuumMarker(ISettingsRepository settings, string? diagnosticFolder)
+    {
+        try
+        {
+            settings.Set(SettingsService.SecurityVacuumPendingKey, "1", DateTimeOffset.UtcNow);
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"DPAPI decryption failed: {ex.Message}");
-            return null;
+            SecurityDiagnostics.Record(
+                "TraktCredentialStore",
+                $"Failed to set security_vacuum_pending before Trakt DPAPI row deletion: {ex.GetType().Name}: {ex.Message}",
+                diagnosticFolder);
+        }
+
+        try
+        {
+            settings.Delete(LegacyDpapiSettingsKey);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            SecurityDiagnostics.Record(
+                "TraktCredentialStore",
+                $"Failed to delete legacy DPAPI Trakt credential row: {ex.GetType().Name}: {ex.Message}",
+                diagnosticFolder);
+            return false;
         }
     }
 
-    private static InvalidOperationException StorageError() => new("Credential storage unavailable.");
-
-    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CredReadW(string target, uint type, uint flags, out IntPtr credential);
-
-    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CredWriteW(ref Credential credential, uint flags);
-
-    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CredDeleteW(string target, uint type, uint flags);
-
-    [DllImport("advapi32.dll", ExactSpelling = true)]
-    private static extern void CredFree(IntPtr credential);
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    private struct Credential
+    private static TraktCredentialPayload? DeserializePayload(string? json)
     {
-        public uint Flags;
-        public uint Type;
-        public string? TargetName;
-        public string? Comment;
-        public System.Runtime.InteropServices.ComTypes.FILETIME LastWritten;
-        public uint CredentialBlobSize;
-        public IntPtr CredentialBlob;
-        public uint Persist;
-        public uint AttributeCount;
-        public IntPtr Attributes;
-        public string? TargetAlias;
-        public string? UserName;
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<TraktCredentialPayload>(json);
+            if (parsed is null)
+            {
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(parsed.ClientId))
+            {
+                throw new JsonException("Trakt credential payload is missing ClientId.");
+            }
+
+            if (string.IsNullOrWhiteSpace(parsed.AccessToken) && !parsed.RequiresReconnect)
+            {
+                throw new JsonException("Trakt credential payload is missing AccessToken.");
+            }
+
+            return parsed;
+        }
+        catch (JsonException)
+        {
+            throw WindowsCredentialVault.StorageError();
+        }
     }
 }

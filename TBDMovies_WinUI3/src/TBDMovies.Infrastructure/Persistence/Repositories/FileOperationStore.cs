@@ -32,7 +32,7 @@ public sealed class FileOperationStore : IFileOperationStore, IDisposable
             if (_injectedConnection.State != System.Data.ConnectionState.Open) _injectedConnection.Open();
             _connectionString = _injectedConnection.ConnectionString;
             using var command = _injectedConnection.CreateCommand();
-            command.CommandText = "PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 10000;";
+            command.CommandText = "PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL; PRAGMA secure_delete = ON; PRAGMA busy_timeout = 10000;";
             command.ExecuteNonQuery();
         }
         _clock = clock ?? (() => DateTimeOffset.UtcNow);

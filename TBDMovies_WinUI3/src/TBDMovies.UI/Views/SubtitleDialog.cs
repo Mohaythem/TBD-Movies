@@ -240,8 +240,7 @@ public sealed class SubtitleDialog : ContentDialog
 
     private async Task StartSearchAsync()
     {
-        var apiKey = AppSettingsStore.ReadSubDlApiKey();
-        if (string.IsNullOrWhiteSpace(apiKey))
+        if (!AppSettingsStore.IsSubDlConfigured())
         {
             _loadingPanel.Visibility = Visibility.Collapsed;
             _emptyPanel.Visibility = Visibility.Collapsed;

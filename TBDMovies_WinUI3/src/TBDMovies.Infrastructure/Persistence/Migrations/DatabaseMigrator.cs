@@ -754,6 +754,8 @@ public class DatabaseMigrator
         if (currentVersion == 0 && HasUserSchemaObjects(connection))
             throw new InvalidOperationException("A non-empty database with schema version 0 is not a supported TBDMovies schema.");
 
+        ExecutePragma(connection, "secure_delete", "ON");
+
         // Fast path: when the database is already at the target latest version, skip redundant
         // PRAGMA foreign_key_check and exhaustive schema validation (column introspection),
         // verifying table and index existence before returning.
@@ -767,6 +769,7 @@ public class DatabaseMigrator
         ExecutePragma(connection, "foreign_keys", "ON");
         ExecutePragma(connection, "journal_mode", "WAL");
         ExecutePragma(connection, "synchronous", "NORMAL");
+        ExecutePragma(connection, "secure_delete", "ON");
         ExecutePragma(connection, "busy_timeout", "10000");
 
         // Protect an existing database before a forward migration. A brand-new database (version 0) has

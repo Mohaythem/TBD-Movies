@@ -1,4 +1,4 @@
-﻿using TBDMovies.Application.Repositories;
+using TBDMovies.Application.Repositories;
 
 namespace TBDMovies.Infrastructure.Persistence.Repositories;
 
@@ -20,7 +20,7 @@ public sealed class SettingsRepository : ISettingsRepository
     public void Set(string key, string value, DateTimeOffset updatedAt)
     {
         Validate(key, nameof(key));
-        Validate(value, nameof(value));
+        ArgumentNullException.ThrowIfNull(value);
         using var gate = DatabaseWriteGate.Enter(_connectionString);
         using var connection = SqliteConnections.Open(_connectionString);
         using var command = connection.CreateCommand();

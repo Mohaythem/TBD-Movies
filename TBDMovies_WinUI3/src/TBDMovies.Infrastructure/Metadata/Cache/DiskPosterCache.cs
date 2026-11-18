@@ -315,33 +315,111 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
         // Drop the in-memory in-flight map so a poster requested again after a library reset re-downloads
         // fresh, instead of resolving to a completed task that points at a now-deleted cache file.
         _inFlight.Clear();
+
+        var dataFolder = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(_cacheDirectory)));
+        var dir = new DirectoryInfo(_cacheDirectory);
+        if (IsReparsePoint(dir))
+        {
+            TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record(
+                "DiskPosterCache",
+                "Refusing to clear poster cache because cache directory is a reparse point.",
+                dataFolder);
+            throw new IOException("Poster cache directory is a reparse point.");
+        }
+
+        if (!dir.Exists)
+        {
+            return 0;
+        }
+
+        int deleted = 0;
+        int failed = 0;
+        Exception? firstFailure = null;
+
         try
         {
-            if (!Directory.Exists(_cacheDirectory))
+            foreach (var subDir in dir.EnumerateDirectories("*", SearchOption.TopDirectoryOnly))
             {
-                return 0;
+                if (IsReparsePoint(subDir))
+                {
+                    failed++;
+                    var reparseErr = new IOException($"Refusing to traverse or delete reparse-point subdirectory '{subDir.Name}' in poster cache.");
+                    firstFailure ??= reparseErr;
+                    TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record(
+                        "DiskPosterCache",
+                        reparseErr.Message,
+                        dataFolder);
+                }
             }
 
-            var dir = new DirectoryInfo(_cacheDirectory);
-            int deleted = 0;
             foreach (var file in dir.EnumerateFiles("*", SearchOption.TopDirectoryOnly))
             {
+                if (IsReparsePoint(file))
+                {
+                    failed++;
+                    var reparseErr = new IOException($"Refusing to delete reparse-point file '{file.Name}' in poster cache.");
+                    firstFailure ??= reparseErr;
+                    TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record(
+                        "DiskPosterCache",
+                        reparseErr.Message,
+                        dataFolder);
+                    continue;
+                }
+
                 try
                 {
+                    var attrs = file.Attributes;
+                    if (attrs != (FileAttributes)(-1) && (attrs & FileAttributes.ReadOnly) != 0)
+                    {
+                        try { file.Attributes = attrs & ~FileAttributes.ReadOnly; } catch { }
+                    }
+
                     file.Delete();
                     deleted++;
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Continue clearing remaining files
+                    failed++;
+                    firstFailure ??= ex;
+                    TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record(
+                        "DiskPosterCache",
+                        $"Failed to delete cached poster '{file.Name}': {ex.GetType().Name}: {ex.Message}",
+                        dataFolder);
                 }
             }
+        }
+        catch (Exception enumEx) when (enumEx is IOException or UnauthorizedAccessException)
+        {
+            TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record(
+                "DiskPosterCache",
+                $"Failed to enumerate poster cache directory: {enumEx.GetType().Name}: {enumEx.Message}",
+                dataFolder);
+            throw;
+        }
 
-            return deleted;
+        if (failed > 0)
+        {
+            throw new IOException($"Failed to delete {failed} cached poster entry(ies).", firstFailure);
+        }
+
+        return deleted;
+    }
+
+    private static bool IsReparsePoint(FileSystemInfo info)
+    {
+        try
+        {
+            if (info.LinkTarget is not null)
+            {
+                return true;
+            }
+
+            var attrs = info.Attributes;
+            return attrs != (FileAttributes)(-1) && (attrs & FileAttributes.ReparsePoint) != 0;
         }
         catch
         {
-            return 0;
+            return false;
         }
     }
 

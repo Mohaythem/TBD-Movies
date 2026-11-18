@@ -1,4 +1,4 @@
-﻿using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;
 using TBDMovies.Application.External;
 using TBDMovies.UI.Services;
 using Xunit;
@@ -64,5 +64,65 @@ public sealed class PostHandoffPresentationTests
         Assert.Contains("_staleTemps.Select(file => file.FilePath)", check);
         Assert.DoesNotContain("File.Delete", check);
         Assert.DoesNotContain("Directory.Delete", check);
+    }
+
+    [Fact]
+    public void Batch1_3_WinUiSecretHygiene_SubDlDialog_AppSettingsStore_And_AppServices_ContractsHold()
+    {
+        // 1. SubtitleDialog.cs uses AppSettingsStore.IsSubDlConfigured() and never calls removed ReadSubDlApiKey()
+        var subtitleDialog = File.ReadAllText(Path.Combine(UiRoot, "Views", "SubtitleDialog.cs"));
+        Assert.Contains("if (!AppSettingsStore.IsSubDlConfigured())", subtitleDialog, StringComparison.Ordinal);
+        Assert.DoesNotContain("ReadSubDlApiKey", subtitleDialog, StringComparison.Ordinal);
+
+        // 2. AppSettingsStore.cs never exposes raw SubDL key, uses LoadFoldersOrThrow on mutations, retires legacy keys strictly with empty sentinel, and propagates IOException
+        var appSettingsStore = File.ReadAllText(Path.Combine(UiRoot, "Services", "AppSettingsStore.cs"));
+        Assert.DoesNotContain("ReadSubDlApiKey", appSettingsStore, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetSubDlApiKey", appSettingsStore, StringComparison.Ordinal);
+        Assert.Contains("LibraryViewModePreference.Parse(Read(LibraryViewModeKey))", appSettingsStore, StringComparison.Ordinal);
+        Assert.Equal(4, Regex.Matches(appSettingsStore, @"\bLoadFoldersOrThrow\(\)").Count); // 3 mutations + 1 definition
+        Assert.Contains("var serialized = folders.Count == 0 ? string.Empty : string.Join(\"\\n\", folders);", appSettingsStore, StringComparison.Ordinal);
+        Assert.Contains("AppServices.SettingsStore.Set(MediaFoldersKey, serialized,", appSettingsStore, StringComparison.Ordinal);
+        Assert.Contains("AppServices.SettingsStore.Delete(MovieFolderKey);", appSettingsStore, StringComparison.Ordinal);
+        Assert.Contains("AppServices.SettingsStore.Delete(ShowFolderKey);", appSettingsStore, StringComparison.Ordinal);
+        Assert.DoesNotContain("Write(MovieFolderKey", appSettingsStore, StringComparison.Ordinal);
+        Assert.DoesNotContain("Write(ShowFolderKey", appSettingsStore, StringComparison.Ordinal);
+        Assert.Contains("throw new IOException(", appSettingsStore, StringComparison.Ordinal);
+
+        // 3. SettingsPage.xaml.cs clears secret controls/placeholders on Deactivate, gates SubDL InfoBar, masks <12-char ClientIds, and sets TraktConfigInputPanel visible synchronously before Focus
+        var settingsPage = File.ReadAllText(Path.Combine(UiRoot, "Views", "SettingsPage.xaml.cs"));
+        var deactivateSection = settingsPage[settingsPage.IndexOf("public void Deactivate()", StringComparison.Ordinal)..];
+        deactivateSection = deactivateSection[..deactivateSection.IndexOf("private bool _isSyncing", StringComparison.Ordinal)];
+        Assert.Contains("TokenBox.Password = string.Empty;", deactivateSection, StringComparison.Ordinal);
+        Assert.Contains("TraktClientIdBox.Password = string.Empty;", deactivateSection, StringComparison.Ordinal);
+        Assert.Contains("TraktClientIdBox.PlaceholderText = string.Empty;", deactivateSection, StringComparison.Ordinal);
+        Assert.Contains("SubDlApiKeyBox.Password = string.Empty;", deactivateSection, StringComparison.Ordinal);
+
+        Assert.Contains("private void ShowSubDlFeedback(string message, InfoBarSeverity severity)", settingsPage, StringComparison.Ordinal);
+        Assert.Contains("SubDlFeedback.IsOpen = _hasBeenShown && Visibility == Visibility.Visible;", settingsPage, StringComparison.Ordinal);
+        Assert.DoesNotContain("SubDlFeedback.IsOpen = true;", settingsPage, StringComparison.Ordinal);
+        Assert.Contains("if (value.Length < 12)", settingsPage, StringComparison.Ordinal);
+
+        var traktSaveSection = settingsPage[settingsPage.IndexOf("private async void TraktSaveConfigButton_Click", StringComparison.Ordinal)..];
+        traktSaveSection = traktSaveSection[..traktSaveSection.IndexOf("private async void TraktEditConfigButton_Click", StringComparison.Ordinal)];
+        Assert.DoesNotContain("var existingConfig = AppServices.TraktConfig;", traktSaveSection, StringComparison.Ordinal);
+        Assert.Contains("AppServices.TraktConfig.ClientId", traktSaveSection, StringComparison.Ordinal);
+
+        var traktEditSection = settingsPage[settingsPage.IndexOf("private async void TraktEditConfigButton_Click", StringComparison.Ordinal)..];
+        traktEditSection = traktEditSection[..traktEditSection.IndexOf("private void TraktCancelConfigButton_Click", StringComparison.Ordinal)];
+        Assert.Contains("await Task.Run(() => AppServices.TraktConfig)", traktEditSection, StringComparison.Ordinal);
+        var visibleIdx = traktEditSection.IndexOf("TraktConfigInputPanel.Visibility = Visibility.Visible;", StringComparison.Ordinal);
+        var focusIdx = traktEditSection.IndexOf("TraktClientIdBox.Focus(FocusState.Programmatic);", StringComparison.Ordinal);
+        var refreshIdx = traktEditSection.IndexOf("RefreshTraktStatus();", StringComparison.Ordinal);
+        Assert.True(visibleIdx >= 0 && focusIdx > visibleIdx && refreshIdx > focusIdx);
+
+        // 4. AppServices.cs uses SqliteConnectionStringBuilder, unified SubDL plaintext migration, SettingsService.CompleteStartupSecretReclaim, and zero forbidden identifiers
+        var appServices = File.ReadAllText(Path.Combine(UiRoot, "Services", "AppServices.cs"));
+        Assert.Contains("SqliteConnectionStringBuilder", appServices, StringComparison.Ordinal);
+        Assert.Contains("deferStartupSecretReclaim: true", appServices, StringComparison.Ordinal);
+        Assert.Contains("WindowsSubDlCredentialStore.MigrateLegacyPlaintext(", appServices, StringComparison.Ordinal);
+        Assert.Contains("SettingsService.CompleteStartupSecretReclaim(", appServices, StringComparison.Ordinal);
+        Assert.Contains("security_l6_baseline_vacuumed", appServices, StringComparison.Ordinal);
+        Assert.DoesNotContain("FolderWatcher", appServices, StringComparison.Ordinal);
+        Assert.DoesNotContain("SmartRelink", appServices, StringComparison.Ordinal);
     }
 }

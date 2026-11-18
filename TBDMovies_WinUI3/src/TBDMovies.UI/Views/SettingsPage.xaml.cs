@@ -22,6 +22,7 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
     private int _traktGeneration;
     private bool _traktBusy;
     private bool _editingTraktConfig;
+    private (string ClientId, string RedirectUri)? _lastLoadedTraktConfig;
     private string? _lastExportedFilePath;
 
     public void Deactivate()
@@ -30,7 +31,9 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         _editingCredential = false;
         TokenBox.Password = string.Empty;
         _editingTraktConfig = false;
+        _lastLoadedTraktConfig = null;
         TraktClientIdBox.Password = string.Empty;
+        TraktClientIdBox.PlaceholderText = string.Empty;
         TraktRedirectUriBox.Text = string.Empty;
         TmdbFeedback.IsOpen = false;
         Interlocked.Increment(ref _traktGeneration);
@@ -41,6 +44,8 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         _traktBusy = false;
         TraktDeviceAuthPanel.Visibility = Visibility.Collapsed;
         TraktFeedback.IsOpen = false;
+        SubDlApiKeyBox.Password = string.Empty;
+        SubDlFeedback.IsOpen = false;
         ExportFeedbackInfoBar.IsOpen = false;
     }
 
@@ -167,6 +172,7 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         SubDlApiKeyLabelText.Text = LocalizationService.Text("SubDlApiKey");
         SubDlApiKeyHelpText.Text = LocalizationService.Text("SubDlApiKeyHelp");
         SaveSubDlApiKeyButtonText.Text = LocalizationService.Text("Save");
+        RemoveSubDlApiKeyButtonText.Text = LocalizationService.Text("Remove");
         GetSubDlKeyButtonText.Text = LocalizationService.Text("GetSubDlApiKey");
 
         SyncSelectors();
@@ -394,8 +400,15 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
             return;
         }
 
-        AppSettingsStore.RemoveMediaFolder(path);
-        RefreshFolders();
+        try
+        {
+            AppSettingsStore.RemoveMediaFolder(path);
+            RefreshFolders();
+        }
+        catch (Exception error)
+        {
+            await ShowMessageAsync(LocalizationService.Text("Failed"), MetadataErrorText.For(error));
+        }
     }
 
     private static async Task<string?> PickFolderAsync()
@@ -720,9 +733,12 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         {
             var result = AppServices.Settings.ClearLibraryData();
             LibraryDataChanged?.Invoke(this, EventArgs.Empty);
-            await ShowMessageAsync(
-                LocalizationService.Text("ClearLibraryData"),
-                LocalizationService.Format("LibraryClearedFormat", result.MoviesRemoved, result.MediaFilesRemoved));
+            var message = LocalizationService.Format("LibraryClearedFormat", result.MoviesRemoved, result.MediaFilesRemoved);
+            if (string.Equals(result.Warning, "POSTER_CACHE_CLEANUP_FAILED", StringComparison.Ordinal))
+            {
+                message += Environment.NewLine + Environment.NewLine + LocalizationService.Text("PosterCacheCleanupFailed");
+            }
+            await ShowMessageAsync(LocalizationService.Text("ClearLibraryData"), message);
         }
         catch (Exception error)
         {
@@ -780,6 +796,7 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
             });
 
             if (generation != _traktGeneration) return;
+            _lastLoadedTraktConfig = config;
 
             var isOfficial = string.Equals(config.ClientId, TraktDefaults.OfficialClientId, StringComparison.Ordinal);
             var hasSavedConfig = !string.IsNullOrWhiteSpace(config.ClientId) && !string.IsNullOrWhiteSpace(config.RedirectUri);
@@ -797,6 +814,7 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
             {
                 // Do not retain saved values in input controls after returning to the ordinary view.
                 TraktClientIdBox.Password = string.Empty;
+                TraktClientIdBox.PlaceholderText = string.Empty;
                 TraktRedirectUriBox.Text = string.Empty;
             }
 
@@ -902,10 +920,12 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
     {
         if (_traktBusy) return;
 
-        var clientId = TraktClientIdBox.Password?.Trim() ?? string.Empty;
+        var typedClientId = TraktClientIdBox.Password?.Trim() ?? string.Empty;
+        TraktClientIdBox.Password = string.Empty;
+        var isEditingExisting = _editingTraktConfig;
         var redirectUri = TraktRedirectUriBox.Text?.Trim() ?? string.Empty;
 
-        if (string.IsNullOrWhiteSpace(clientId))
+        if (string.IsNullOrWhiteSpace(typedClientId) && !isEditingExisting)
         {
             var text = LocalizationService.Text("TraktClientIdRequired");
             ShowTraktFeedback(text == "TraktClientIdRequired" ? "Client ID cannot be empty." : text, InfoBarSeverity.Error);
@@ -927,15 +947,33 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
 
         try
         {
-            await Task.Run(async () =>
+            var missingClientId = await Task.Run(async () =>
             {
-                await AppServices.ConfigureTraktAsync(clientId, redirectUri, cts.Token).ConfigureAwait(false);
+                var effectiveClientId = string.IsNullOrWhiteSpace(typedClientId) && isEditingExisting
+                    ? AppServices.TraktConfig.ClientId
+                    : typedClientId;
+                if (string.IsNullOrWhiteSpace(effectiveClientId))
+                {
+                    return true;
+                }
+
+                await AppServices.ConfigureTraktAsync(effectiveClientId, redirectUri, cts.Token).ConfigureAwait(false);
+                return false;
             }, cts.Token);
 
             if (generation == _traktGeneration)
             {
-                _editingTraktConfig = false;
-                ShowTraktFeedback(LocalizationService.Text("TraktConfigSaved"), InfoBarSeverity.Success);
+                if (missingClientId)
+                {
+                    var text = LocalizationService.Text("TraktClientIdRequired");
+                    ShowTraktFeedback(text == "TraktClientIdRequired" ? "Client ID cannot be empty." : text, InfoBarSeverity.Error);
+                }
+                else
+                {
+                    _editingTraktConfig = false;
+                    TraktClientIdBox.PlaceholderText = string.Empty;
+                    ShowTraktFeedback(LocalizationService.Text("TraktConfigSaved"), InfoBarSeverity.Success);
+                }
             }
         }
         catch (OperationCanceledException)
@@ -945,7 +983,7 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         {
             if (generation == _traktGeneration)
             {
-                ShowTraktFeedback(ex.Message, InfoBarSeverity.Error);
+                ShowTraktFeedback(MetadataErrorText.For(ex), InfoBarSeverity.Error);
             }
         }
         finally
@@ -964,25 +1002,40 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         }
     }
 
-    private void TraktEditConfigButton_Click(object sender, RoutedEventArgs e)
+    private async void TraktEditConfigButton_Click(object sender, RoutedEventArgs e)
     {
-        var config = AppServices.TraktConfig;
+        if (_traktBusy) return;
+
+        var generation = _traktGeneration;
+        var config = _lastLoadedTraktConfig ?? await Task.Run(() => AppServices.TraktConfig);
+        if (generation != _traktGeneration)
+        {
+            return;
+        }
+
+        _lastLoadedTraktConfig = config;
         if (string.IsNullOrWhiteSpace(config.ClientId) || string.IsNullOrWhiteSpace(config.RedirectUri))
         {
             return;
         }
 
         _editingTraktConfig = true;
-        TraktClientIdBox.Password = config.ClientId;
+        TraktClientIdBox.Password = string.Empty;
+        TraktClientIdBox.PlaceholderText = MaskTraktClientId(config.ClientId);
         TraktRedirectUriBox.Text = config.RedirectUri;
-        RefreshTraktStatus();
+        TraktConfigSummaryPanel.Visibility = Visibility.Collapsed;
+        TraktEditConfigButton.Visibility = Visibility.Collapsed;
+        TraktConfigInputPanel.Visibility = Visibility.Visible;
+        TraktCancelConfigButton.Visibility = Visibility.Visible;
         TraktClientIdBox.Focus(FocusState.Programmatic);
+        RefreshTraktStatus();
     }
 
     private void TraktCancelConfigButton_Click(object sender, RoutedEventArgs e)
     {
         _editingTraktConfig = false;
         TraktClientIdBox.Password = string.Empty;
+        TraktClientIdBox.PlaceholderText = string.Empty;
         TraktRedirectUriBox.Text = string.Empty;
         RefreshTraktStatus();
     }
@@ -990,9 +1043,9 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
     private static string MaskTraktClientId(string clientId)
     {
         var value = clientId.Trim();
-        if (value.Length <= 4)
+        if (value.Length < 12)
         {
-            return new string('•', Math.Max(4, value.Length));
+            return new string('•', Math.Max(8, value.Length));
         }
 
         return new string('•', value.Length - 4) + value[^4..];
@@ -1247,17 +1300,59 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
 
     private void RefreshSubDlStatus()
     {
-        var key = AppSettingsStore.ReadSubDlApiKey();
-        SubDlApiKeyBox.Password = key ?? string.Empty;
+        var configured = AppSettingsStore.IsSubDlConfigured();
+        SubDlConnectedDot.Visibility = configured ? Visibility.Visible : Visibility.Collapsed;
+        SubDlMissingDot.Visibility = configured ? Visibility.Collapsed : Visibility.Visible;
+        SubDlStatusText.Text = LocalizationService.Text(configured ? "TmdbConnected" : "NotConfigured");
+        SubDlApiKeyBox.PlaceholderText = configured ? "••••••••••••" : string.Empty;
+        RemoveSubDlApiKeyButton.Visibility = configured ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void ShowSubDlFeedback(string message, InfoBarSeverity severity)
+    {
+        SubDlFeedback.Message = message;
+        SubDlFeedback.Severity = severity;
+        SubDlFeedback.IsOpen = _hasBeenShown && Visibility == Visibility.Visible;
     }
 
     private void SaveSubDlApiKeyButton_Click(object sender, RoutedEventArgs e)
     {
-        var key = SubDlApiKeyBox.Password?.Trim();
-        AppSettingsStore.WriteSubDlApiKey(key);
-        SubDlFeedback.Severity = InfoBarSeverity.Success;
-        SubDlFeedback.Message = LocalizationService.Text("SubDlKeySaved");
-        SubDlFeedback.IsOpen = true;
+        var candidate = SubDlApiKeyBox.Password;
+        SubDlApiKeyBox.Password = string.Empty;
+
+        var sanitized = TBDMovies.Application.Services.SettingsService.SanitizeAndValidateSubDlApiKey(candidate);
+        if (sanitized is null)
+        {
+            ShowSubDlFeedback(LocalizationService.Text("SubDlInvalidKey"), InfoBarSeverity.Warning);
+            RefreshSubDlStatus();
+            return;
+        }
+
+        if (AppSettingsStore.SaveSubDlApiKey(sanitized))
+        {
+            ShowSubDlFeedback(LocalizationService.Text("SubDlKeySaved"), InfoBarSeverity.Success);
+        }
+        else
+        {
+            ShowSubDlFeedback(LocalizationService.Text("TmdbCredentialStorageError"), InfoBarSeverity.Error);
+        }
+
+        RefreshSubDlStatus();
+    }
+
+    private void RemoveSubDlApiKeyButton_Click(object sender, RoutedEventArgs e)
+    {
+        SubDlApiKeyBox.Password = string.Empty;
+        if (AppSettingsStore.RemoveSubDlApiKey())
+        {
+            SubDlFeedback.IsOpen = false;
+        }
+        else
+        {
+            ShowSubDlFeedback(LocalizationService.Text("TmdbCredentialStorageError"), InfoBarSeverity.Error);
+        }
+
+        RefreshSubDlStatus();
     }
 
     private void GetSubDlKeyButton_Click(object sender, RoutedEventArgs e)

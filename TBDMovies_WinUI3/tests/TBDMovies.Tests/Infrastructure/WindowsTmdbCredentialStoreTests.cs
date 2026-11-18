@@ -12,6 +12,7 @@ public sealed class WindowsTmdbCredentialStoreTests
     [Fact]
     public void Isolated_profile_round_trip_uses_only_the_scoped_credential_target()
     {
+        if (!OperatingSystem.IsWindows()) return;
         var profile = Path.Combine(Path.GetTempPath(), "TBDMovies-TmdbCredentialTest-" + Guid.NewGuid().ToString("N"));
         var store = new WindowsTmdbCredentialStore(profile);
         try
@@ -31,6 +32,7 @@ public sealed class WindowsTmdbCredentialStoreTests
     [Fact]
     public void Write_DoesNotPersistDpapiToSettings_ReliesExclusivelyOnNativeStore()
     {
+        if (!OperatingSystem.IsWindows()) return;
         var profile = Path.Combine(Path.GetTempPath(), "TBDMovies-TmdbCredentialTest-" + Guid.NewGuid().ToString("N"));
         var settings = new TestSettingsRepo();
         var storeWithSettings = new WindowsTmdbCredentialStore(profile, settings);
@@ -64,6 +66,7 @@ public sealed class WindowsTmdbCredentialStoreTests
     [Fact]
     public void MigrateLegacyDpapi_RestoresNativeCredentialAndDeletesSettingsRow()
     {
+        if (!OperatingSystem.IsWindows()) return;
         var profile = Path.Combine(Path.GetTempPath(), "TBDMovies-TmdbCredentialTest-" + Guid.NewGuid().ToString("N"));
         var settings = new TestSettingsRepo();
         var store = new WindowsTmdbCredentialStore(profile);
@@ -99,6 +102,7 @@ public sealed class WindowsTmdbCredentialStoreTests
     [Fact]
     public void When_legacy_target_exists_reads_and_migrates_to_primary_target()
     {
+        if (!OperatingSystem.IsWindows()) return;
         var profile = Path.Combine(Path.GetTempPath(), "TBDMovies-TmdbMigrateTest-" + Guid.NewGuid().ToString("N"));
         var store = new WindowsTmdbCredentialStore(profile);
         store.Delete();

@@ -195,6 +195,12 @@ public interface ILibraryMaintenanceRepository
     /// file on disk is touched.
     /// </summary>
     (int Movies, int MediaFiles, int MetadataEntries, int Shows, int Seasons, int Episodes) ClearCatalog();
+
+    /// <summary>
+    /// Reclaims SQLite freelist and WAL frames after legacy credential deletion and scrubs any
+    /// pre-purge safety backup copies under <c>backups/</c>. Returns true when completed cleanly.
+    /// </summary>
+    bool ReclaimSecretPages() => true;
 }
 
 public interface ISettingsRepository

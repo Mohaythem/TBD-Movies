@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
@@ -608,6 +608,86 @@ public class TmdbClientAndPosterCacheTests : IDisposable
     }
 
     [Fact]
+    public async Task DiskPosterCache_Clear_ThrowsIOException_WhenCachedFileCannotBeDeleted()
+    {
+        var cache = new DiskPosterCache(_testCacheDir);
+        var lockedPoster = Path.Combine(_testCacheDir, "tmdb_locked.jpg");
+        await File.WriteAllBytesAsync(lockedPoster, CreateValidJpegBytes());
+
+        if (OperatingSystem.IsWindows())
+        {
+            using var exclusiveLock = new FileStream(lockedPoster, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            Assert.Throws<IOException>(() => cache.Clear());
+        }
+        else
+        {
+            var originalMode = File.GetUnixFileMode(_testCacheDir);
+            try
+            {
+                File.SetUnixFileMode(_testCacheDir, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+                Assert.Throws<IOException>(() => cache.Clear());
+            }
+            finally
+            {
+                File.SetUnixFileMode(_testCacheDir, originalMode);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DiskPosterCache_Clear_RemovesReadOnlyCachedPoster_AndRefusesSymlinkEntries()
+    {
+        var cache = new DiskPosterCache(_testCacheDir);
+        var readOnlyPoster = Path.Combine(_testCacheDir, "tmdb_readonly.jpg");
+        await File.WriteAllBytesAsync(readOnlyPoster, CreateValidJpegBytes());
+        File.SetAttributes(readOnlyPoster, File.GetAttributes(readOnlyPoster) | FileAttributes.ReadOnly);
+
+        var deleted = cache.Clear();
+        Assert.Equal(1, deleted);
+        Assert.False(File.Exists(readOnlyPoster));
+
+        // Symlinked file inside poster cache must NOT delete target and must throw IOException
+        var externalFile = Path.Combine(Path.GetTempPath(), $"tbd_external_poster_{Guid.NewGuid():N}.jpg");
+        var symlinkDirTarget = Path.Combine(Path.GetTempPath(), $"tbd_external_dir_{Guid.NewGuid():N}");
+        try
+        {
+            await File.WriteAllBytesAsync(externalFile, CreateValidJpegBytes());
+            var symlinkPoster = Path.Combine(_testCacheDir, "tmdb_symlink.jpg");
+            if (TryCreateFileSymbolicLink(symlinkPoster, externalFile))
+            {
+                Assert.Throws<IOException>(() => cache.Clear());
+                Assert.True(File.Exists(externalFile));
+                File.Delete(symlinkPoster);
+            }
+
+            // Symlinked cache directory itself must throw IOException without touching external directory
+            Directory.CreateDirectory(symlinkDirTarget);
+            var externalNested = Path.Combine(symlinkDirTarget, "keep.jpg");
+            await File.WriteAllBytesAsync(externalNested, CreateValidJpegBytes());
+
+            var symlinkCacheRoot = Path.Combine(Path.GetTempPath(), $"tbd_symlink_cache_root_{Guid.NewGuid():N}");
+            if (TryCreateDirectorySymbolicLink(symlinkCacheRoot, symlinkDirTarget))
+            {
+                try
+                {
+                    var symlinkCache = new DiskPosterCache(symlinkCacheRoot);
+                    Assert.Throws<IOException>(() => symlinkCache.Clear());
+                    Assert.True(File.Exists(externalNested));
+                }
+                finally
+                {
+                    try { if (Directory.Exists(symlinkCacheRoot)) Directory.Delete(symlinkCacheRoot); } catch { }
+                }
+            }
+        }
+        finally
+        {
+            try { if (File.Exists(externalFile)) File.Delete(externalFile); } catch { }
+            try { if (Directory.Exists(symlinkDirTarget)) Directory.Delete(symlinkDirTarget, recursive: true); } catch { }
+        }
+    }
+
+    [Fact]
     public void TmdbClient_Constructor_DoesNotMutate_DefaultRequestHeaders()
     {
         var httpClient = new HttpClient();
@@ -751,6 +831,32 @@ public class TmdbClientAndPosterCacheTests : IDisposable
         bytes[2] = 0xFF;
         bytes[3] = 0xE0;
         return bytes;
+    }
+
+    private static bool TryCreateFileSymbolicLink(string path, string pathToTarget)
+    {
+        try
+        {
+            File.CreateSymbolicLink(path, pathToTarget);
+            return true;
+        }
+        catch (Exception ex) when (OperatingSystem.IsWindows() && ex is UnauthorizedAccessException or IOException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryCreateDirectorySymbolicLink(string path, string pathToTarget)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(path, pathToTarget);
+            return true;
+        }
+        catch (Exception ex) when (OperatingSystem.IsWindows() && ex is UnauthorizedAccessException or IOException)
+        {
+            return false;
+        }
     }
 
     private sealed class ThrowingHandler(Exception exception) : HttpMessageHandler

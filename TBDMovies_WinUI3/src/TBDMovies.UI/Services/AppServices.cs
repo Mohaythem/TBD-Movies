@@ -518,6 +518,8 @@ internal static class AppServices
     private static DateTimeOffset _lastFailure = DateTimeOffset.MinValue;
 
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(2);
+    // [L6] Baseline key ("security_l6_baseline_vacuumed") hosted on SettingsService.SecurityL6BaselineVacuumedKey.
+    internal const string SecurityL6BaselineVacuumedKey = "security_l6_baseline_vacuumed";
 
     /// <summary>
     /// Opens and migrates the database, then builds the services. Safe to call repeatedly.
@@ -529,7 +531,11 @@ internal static class AppServices
     /// a failed attempt can never leave a partial stack behind.
     /// </para>
     /// </summary>
-    private static string LibraryConnectionString() => "Data Source=" + Path.Combine(DataFolder, "library.db");
+    private static string LibraryConnectionString() =>
+        new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+        {
+            DataSource = Path.Combine(DataFolder, "library.db")
+        }.ToString();
 
     /// <summary>
     /// Claims process-wide ownership of the library before any window is shown. Returns false when
@@ -580,6 +586,8 @@ internal static class AppServices
                     return;
                 }
 
+                var dbPath = Path.Combine(DataFolder, "library.db");
+                var dbExistedBeforeMigrate = File.Exists(dbPath) && new FileInfo(dbPath).Length > 0;
                 new DatabaseMigrator(connectionString).Migrate();
 
                 var catalogFactory = new CatalogUnitOfWorkFactory(connectionString);
@@ -587,8 +595,12 @@ internal static class AppServices
                 IMediaFileRepository mediaFiles = new UnitOfWorkMediaFileRepository(catalogFactory);
                 var personal = new PersonalLibraryRepository(connectionString);
                 var settingsRepository = new SettingsRepository(connectionString);
-                PurgeLegacyDpapiCredentials(settingsRepository, connectionString);
                 var maintenance = new LibraryMaintenanceRepository(connectionString);
+                var testRoot = GetTestDataRoot();
+                var subDlCredentialStore = new WindowsSubDlCredentialStore(
+                    isolatedProfileRoot: testRoot,
+                    settings: settingsRepository);
+                var dpapiPurged = MigrateLegacyDpapiCredentials(settingsRepository, subDlCredentialStore, testRoot);
                 operations = new FileOperationStore(connectionString);
                 coordinator = new FileOperationCoordinator(operations);
                 RecoverInterruptedOperations(operations, coordinator, settingsRepository);
@@ -596,11 +608,21 @@ internal static class AppServices
                 var posterFolder = Path.Combine(DataFolder, "Posters");
                 var posterCache = new DiskPosterCache(posterFolder);
                 var credentialStore = new WindowsTmdbCredentialStore(
-                    isolatedProfileRoot: GetTestDataRoot(),
+                    isolatedProfileRoot: testRoot,
                     settings: settingsRepository);
-                var settings = new SettingsService(maintenance, posterCache: posterCache,
-                    settings: settingsRepository, credentialStore: credentialStore,
-                    environmentTokenProvider: ResolveEnvTmdbToken);
+                var settings = new SettingsService(
+                    maintenance,
+                    posterCache: posterCache,
+                    settings: settingsRepository,
+                    credentialStore: credentialStore,
+                    environmentTokenProvider: ResolveEnvTmdbToken,
+                    subDlCredentialStore: subDlCredentialStore,
+                    deferStartupSecretReclaim: true);
+                CompleteStartupSecretReclaim(
+                    settingsRepository,
+                    maintenance,
+                    dbExistedBeforeMigrate,
+                    dpapiPurged || settings.DeletedLegacySecretRowDuringStartup);
                 var tmdbClient = new TmdbClient(() => settings.GetTmdbToken(),
                     authenticationResult: settings.RecordTmdbAuthenticationResult);
                 var matching = new MetadataMatchingService(catalogFactory, tmdbClient, posterCache);
@@ -667,7 +689,7 @@ internal static class AppServices
                 _personalRepo = personal;
                 _watchHistoryRepo = personal;
                 _subtitles = new SubtitleDiscoveryService();
-                _subDlClient = new SubDlClient(() => settingsRepository.Get("subdl_api_key"));
+                _subDlClient = new SubDlClient(() => settings.GetSubDlApiKey());
                 _subtitleDownloader = new SubtitleDownloadService();
 
                 TryRestoreTraktOnStartup(settingsRepository, connectionString, movies, mediaFiles, tvShows, tvSeasons, tvEpisodes, availabilityInspector, personal, personal);
@@ -1064,35 +1086,71 @@ internal static class AppServices
         return SettingsService.SanitizeAndValidateTmdbToken(token);
     }
 
-    private static void PurgeLegacyDpapiCredentials(ISettingsRepository settingsRepository, string connectionString)
+    private static bool MigrateLegacyDpapiCredentials(
+        ISettingsRepository settingsRepository,
+        ISubDlCredentialStore subDlCredentialStore,
+        string? testRoot)
     {
+        var purgedAny = false;
         try
         {
-            var testRoot = GetTestDataRoot();
-            bool tmdbPurged = WindowsTmdbCredentialStore.MigrateLegacyDpapi(settingsRepository, testRoot);
-            bool traktPurged = WindowsTraktCredentialStore.MigrateLegacyDpapi(settingsRepository, testRoot);
-
-            if (tmdbPurged || traktPurged)
+            if (WindowsTmdbCredentialStore.MigrateLegacyDpapi(settingsRepository, testRoot))
             {
-                try
-                {
-                    using var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
-                    connection.Open();
-                    using var command = connection.CreateCommand();
-                    command.CommandText = "VACUUM;";
-                    command.ExecuteNonQuery();
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"VACUUM failed after DPAPI purge: {ex.Message}");
-                }
+                purgedAny = true;
             }
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"PurgeLegacyDpapiCredentials failed: {ex.Message}");
+            TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record(
+                "AppServices",
+                $"TMDB legacy DPAPI migration failed: {ex.GetType().Name}: {ex.Message}",
+                DataFolder);
         }
+
+        try
+        {
+            if (WindowsTraktCredentialStore.MigrateLegacyDpapi(settingsRepository, testRoot))
+            {
+                purgedAny = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record(
+                "AppServices",
+                $"Trakt legacy DPAPI migration failed: {ex.GetType().Name}: {ex.Message}",
+                DataFolder);
+        }
+
+        try
+        {
+            if (WindowsSubDlCredentialStore.MigrateLegacyPlaintext(settingsRepository, subDlCredentialStore))
+            {
+                purgedAny = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record(
+                "AppServices",
+                $"SubDL legacy plaintext migration failed: {ex.GetType().Name}: {ex.Message}",
+                DataFolder);
+        }
+
+        return purgedAny;
     }
+
+    private static void CompleteStartupSecretReclaim(
+        ISettingsRepository settingsRepository,
+        ILibraryMaintenanceRepository maintenance,
+        bool dbExistedBeforeMigrate,
+        bool purgedLegacySecretRows) =>
+        SettingsService.CompleteStartupSecretReclaim(
+            settingsRepository,
+            maintenance,
+            dbExistedBeforeMigrate,
+            purgedLegacySecretRows,
+            DataFolder);
 
     private static T Require<T>(T? service)
         where T : class
