@@ -516,6 +516,9 @@
      - منطق دمج الطابور `if (hasAdd && hasRemove)` في `TraktSyncService.cs:1564` يلغي العملية بالكامل حتى عند عدد فردي من التبديلات (`ADD -> REMOVE -> ADD` أو `REMOVE -> ADD -> REMOVE`).
      - غياب تصفية القوائم الموسومة بالحذف (`custom_lists.is_deleted = 0`) في 3 استعلامات داخل `PersonalLibraryRepository.cs`: `GetCustomListIdsForMovie` (`L415-426` تحتاج `JOIN custom_lists cl ... AND cl.is_deleted = 0`)، و`GetCustomListIdsForShow` (`L484-495` تحتاج `JOIN custom_lists cl ... AND cl.is_deleted = 0`)، و`RequireCustomList` (`L983-988` تحتاج `AND is_deleted = 0`).
      - صفحة `TraktPage` المنفصلة ما زالت مركّبة في شجرة التنقل بجانب `MyListsPage` (مع بقاء ~750 سطراً ميتاً في `MyListsPage.Trakt.cs` وقائمة فرعية مزدوجة لـ Trakt في `MediaCardContextMenu.cs` و `MovieDetailsPage.xaml.cs`).
+     - **نواقص رُصدت في الفحص اليدوي لـ Batch 2.2 ومؤجلة للموجة 5 (`Wave 5 / [U9]`)**:
+       • **انقسام القوائم (`Custom Lists Still Split`)**: القوائم المخصصة ما زالت منقسمة بين قوائم Trakt وقوائم محلية (مثل ظهور `"test"` و `"trakt_test"` كقائمتين منفصلتين بدلاً من توحيد العرض).
+       • **شارة "سحابي" الزائفة (`False Cloud Badge`)**: بعد مزامنة Trakt، تظهر شارة "سحابي" على بطاقات الأفلام التي تمتلك ملفات محلية بالفعل على القرص؛ ويجب قصر ظهور الشارة حصراً على المواد السحابية التي لا تملك ملفات محلية.
 
 ### [U10] [مفتوحة ومؤجلة لما بعد الامتحانات 🔴] تجمد قياس موضع التشغيل عند 30 ثانية وتجاهل التقديم (Seek) وسرعة التشغيل (Playback Speed)
 - **الشاشة / النظام المتأثر**: محرك تتبع وقياس التشغيل (`WindowsMediaTimelineTracker.cs`, `MpcWebTimelineTracker.cs`, `PlayerProcessLauncher.cs`, `PlaybackTrackingService.cs`).
