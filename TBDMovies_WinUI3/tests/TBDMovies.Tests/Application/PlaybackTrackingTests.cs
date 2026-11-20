@@ -219,6 +219,81 @@ public sealed class PlaybackTrackingTests
         }
     }
 
+    [Fact]
+    public async Task PlaybackTrackingService_PlaybackEnded_SupportsMultipleSubscribersAndReactivationCycles()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"playback_sub_test_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            DatabaseMigrator.MigrateToLatest(connStr);
+            using (var conn = new SqliteConnection(connStr))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (30, 'Test Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (300, 30, 'C:\sub_test.mkv', 'c:\sub_test.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
+                ";
+                cmd.ExecuteNonQuery();
+            }
+
+            var progressRepo = new PlaybackProgressRepository(connStr);
+            var mockLauncher = new FakePlayerLauncher { SimulatedExitPosition = 120 };
+            var service = new PlaybackTrackingService(progressRepo, mockLauncher);
+
+            var target = new PlaybackMediaTarget(
+                MediaFileId: 300,
+                FilePath: "C:\\sub_test.mkv",
+                TotalDurationSeconds: 1000,
+                IsMovie: true,
+                MovieId: 30,
+                MovieTitle: "Test Movie");
+
+            var globalSubscriberCalls = new List<int>();
+            var detailsPageSubscriberCalls = new List<int>();
+
+            EventHandler<int> globalHandler = (_, fileId) => globalSubscriberCalls.Add(fileId);
+            EventHandler<int> detailsHandler = (_, fileId) => detailsPageSubscriberCalls.Add(fileId);
+
+            // Phase 1: Both subscribed (e.g. HomePage + MovieDetailsPage active)
+            service.PlaybackEnded += globalHandler;
+            service.PlaybackEnded += detailsHandler;
+
+            await service.StartPlaybackAsync(target, resume: false);
+
+            Assert.Single(globalSubscriberCalls);
+            Assert.Equal(300, globalSubscriberCalls[0]);
+            Assert.Single(detailsPageSubscriberCalls);
+            Assert.Equal(300, detailsPageSubscriberCalls[0]);
+
+            // Phase 2: User navigates away -> Deactivate unsubscribes details page
+            service.PlaybackEnded -= detailsHandler;
+
+            await service.StartPlaybackAsync(target, resume: false);
+
+            Assert.Equal(2, globalSubscriberCalls.Count);
+            // Details page must NOT have received event while deactivated (no leak)
+            Assert.Single(detailsPageSubscriberCalls);
+
+            // Phase 3: User returns to details page -> Activate re-subscribes
+            service.PlaybackEnded += detailsHandler;
+
+            await service.StartPlaybackAsync(target, resume: false);
+
+            Assert.Equal(3, globalSubscriberCalls.Count);
+            Assert.Equal(2, detailsPageSubscriberCalls.Count);
+            Assert.Equal(300, detailsPageSubscriberCalls[1]);
+        }
+        finally
+        {
+            if (File.Exists(dbPath))
+            {
+                try { File.Delete(dbPath); } catch { }
+            }
+        }
+    }
+
     private sealed class FakePlayerLauncher : IPlayerProcessLauncher
     {
         public double SimulatedExitPosition { get; set; } = 300;

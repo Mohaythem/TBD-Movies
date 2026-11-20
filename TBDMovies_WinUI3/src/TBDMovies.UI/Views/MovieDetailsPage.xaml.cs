@@ -25,7 +25,7 @@ namespace TBDMovies.UI.Views;
 /// watch history go through <see cref="IPersonalLibraryUiActions" />, so the buttons persist and the
 /// page always redraws from what was actually stored.
 /// </summary>
-public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactivatableView
+public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivatableView, IDeactivatableView
 {
     /// <summary>Shown before the first real load: the page is parented at startup, before any click.</summary>
     private static readonly MovieRecord Placeholder = new(0, string.Empty, 0, string.Empty, 0, [], string.Empty);
@@ -35,6 +35,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
     private string? _preference;
     private bool _inWatchlist;
     private string _returnDestination = "library";
+    private bool _playbackTrackingSubscribed;
 
     /// <summary>True while a journalled move is running; the file actions stay locked until it ends.</summary>
     private bool _isOrganizing;
@@ -95,7 +96,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
             UpdateDetailsLayout();
             UpdateDetailsIcons();
             if (_scrollToTopOnLoad) { Root.ChangeView(null, 0, null, true); _scrollToTopOnLoad = false; }
-            AppServices.PlaybackTracking.PlaybackEnded += OnPlaybackEnded;
+            EnsurePlaybackTrackingSubscribed();
         };
         PosterImage.ImageFailed += (_, _) =>
         {
@@ -111,7 +112,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         };
         Unloaded += (_, _) =>
         {
-            AppServices.PlaybackTracking.PlaybackEnded -= OnPlaybackEnded;
+            UnsubscribePlaybackTracking();
             if (_watchingContrast) _uiSettings.ColorValuesChanged -= DetailsHighContrastChanged;
             _watchingContrast = false;
             Deactivate();
@@ -163,6 +164,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
 
     public void Deactivate()
     {
+        UnsubscribePlaybackTracking();
         _metadataRequests.Cancel();
         _posterRequests.Cancel();
         _availabilityRequests.Cancel();
@@ -170,6 +172,33 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
         _organizationRequests.Cancel();
         _subtitleRequests.Cancel();
         _titleController.Dispose();
+    }
+
+    private void EnsurePlaybackTrackingSubscribed()
+    {
+        if (_playbackTrackingSubscribed || !AppServices.IsAvailable) return;
+        _playbackTrackingSubscribed = true;
+        AppServices.PlaybackTracking.PlaybackEnded += OnPlaybackEnded;
+    }
+
+    private void UnsubscribePlaybackTracking()
+    {
+        if (!_playbackTrackingSubscribed) return;
+        _playbackTrackingSubscribed = false;
+        if (AppServices.IsAvailable)
+        {
+            AppServices.PlaybackTracking.PlaybackEnded -= OnPlaybackEnded;
+        }
+    }
+
+    public void Activate()
+    {
+        EnsurePlaybackTrackingSubscribed();
+        if (_movie.Id > 0 && AppServices.IsAvailable)
+        {
+            UpdatePlayButtonVisuals(PlayButton.IsEnabled, _isRelinkMode);
+            ReloadPersonalState();
+        }
     }
 
     /// <summary>Raised after a manual "Move to series" so the shell can open the target show.</summary>
@@ -505,12 +534,18 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IDeactiva
 
     private void OnPlaybackEnded(object? sender, int mediaFileId)
     {
-        var isOurFile = _movie.MediaFileId == mediaFileId || _movie.Files.Any(f => f.MediaFileId == mediaFileId);
+        var currentMovie = _movie;
+        if (currentMovie.Id <= 0) return;
+        var isOurFile = currentMovie.MediaFileId == mediaFileId || currentMovie.Files.Any(f => f.MediaFileId == mediaFileId);
         if (isOurFile)
         {
             DispatcherQueue.TryEnqueue(() =>
             {
-                UpdatePlayButtonVisuals(PlayButton.IsEnabled, _isRelinkMode);
+                if (_movie.Id == currentMovie.Id)
+                {
+                    UpdatePlayButtonVisuals(PlayButton.IsEnabled, _isRelinkMode);
+                    ReloadPersonalState();
+                }
             });
         }
     }

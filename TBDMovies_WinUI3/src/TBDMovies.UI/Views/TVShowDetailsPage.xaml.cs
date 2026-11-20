@@ -32,7 +32,7 @@ namespace TBDMovies.UI.Views;
 /// continue to report local availability, while Play remains separate from the explicit watch action.
 /// </para>
 /// </summary>
-public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactivatableView
+public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivatableView, IDeactivatableView
 {
     private TVShowRecord _show = new(0, string.Empty, 0, [], string.Empty, []);
     private string _returnDestination = "library";
@@ -40,6 +40,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
     private bool _showFavorite;
     private bool _showWatchLater;
     private bool _showPersonalAvailable;
+    private bool _playbackTrackingSubscribed;
     private readonly PostHandoffRequestLifetime _metadataRequests = new();
     private readonly PostHandoffRequestLifetime _posterRequests = new();
     private readonly PostHandoffRequestLifetime _enrichmentRequests = new();
@@ -83,8 +84,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         Root.SizeChanged += (_, _) => UpdateDetailsLayout();
         Loaded += (_, _) =>
         {
-            AppServices.PlaybackTracking.PlaybackEnded -= OnPlaybackEnded;
-            AppServices.PlaybackTracking.PlaybackEnded += OnPlaybackEnded;
+            EnsurePlaybackTrackingSubscribed();
             UpdateDetailsLayout();
         };
         Unloaded += (_, _) => Deactivate();
@@ -133,10 +133,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
 
     public void Deactivate()
     {
-        if (AppServices.IsAvailable)
-        {
-            AppServices.PlaybackTracking.PlaybackEnded -= OnPlaybackEnded;
-        }
+        UnsubscribePlaybackTracking();
         _metadataRequests.Cancel();
         _posterRequests.Cancel();
         _enrichmentRequests.Cancel();
@@ -154,22 +151,65 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IDeactiv
         _titleController.Dispose();
     }
 
-    private void OnPlaybackEnded(object? sender, int mediaFileId)
+    private void EnsurePlaybackTrackingSubscribed()
     {
-        DispatcherQueue.TryEnqueue(() =>
+        if (_playbackTrackingSubscribed || !AppServices.IsAvailable) return;
+        _playbackTrackingSubscribed = true;
+        AppServices.PlaybackTracking.PlaybackEnded += OnPlaybackEnded;
+    }
+
+    private void UnsubscribePlaybackTracking()
+    {
+        if (!_playbackTrackingSubscribed) return;
+        _playbackTrackingSubscribed = false;
+        if (AppServices.IsAvailable)
         {
-            if (_seasons.Count > 0)
+            AppServices.PlaybackTracking.PlaybackEnded -= OnPlaybackEnded;
+        }
+    }
+
+    public void Activate()
+    {
+        EnsurePlaybackTrackingSubscribed();
+        RefreshEpisodeProgress();
+        if (_show.Id > 0 && AppServices.IsAvailable)
+        {
+            ReloadShowPersonalState();
+            UpdateShowPersonalVisuals();
+        }
+    }
+
+    private void RefreshEpisodeProgress()
+    {
+        if (_show.Id <= 0 || !AppServices.IsAvailable) return;
+
+        try
+        {
+            _show = TvProjection.ToDetails(AppServices.Tv.GetShowDetails(_show.Id));
+        }
+        catch (Exception error)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TVShowDetails] RefreshEpisodeProgress failed: {error.Message}");
+        }
+
+        if (_seasons.Count > 0)
+        {
+            var allEpisodes = _seasons.SelectMany(s => s.Episodes).ToList();
+            var episodeIds = allEpisodes.Select(e => e.EpisodeId).ToList();
+            var progressMap = AppServices.PlaybackProgress.GetForEpisodes(episodeIds);
+            var watchedEpisodeIds = _show.Seasons.SelectMany(s => s.Episodes).Where(e => e.Watched).Select(e => e.Id).ToHashSet();
+            foreach (var ep in allEpisodes)
             {
-                var allEpisodes = _seasons.SelectMany(s => s.Episodes).ToList();
-                var episodeIds = allEpisodes.Select(e => e.EpisodeId).ToList();
-                var progressMap = AppServices.PlaybackProgress.GetForEpisodes(episodeIds);
-                foreach (var ep in allEpisodes)
-                {
-                    ep.PlaybackProgress = progressMap.GetValueOrDefault(ep.EpisodeId);
-                }
+                ep.PlaybackProgress = progressMap.GetValueOrDefault(ep.EpisodeId);
+                ep.Watched = watchedEpisodeIds.Contains(ep.EpisodeId);
             }
             UpdateShowSummary();
-        });
+        }
+    }
+
+    private void OnPlaybackEnded(object? sender, int mediaFileId)
+    {
+        DispatcherQueue.TryEnqueue(RefreshEpisodeProgress);
     }
 
     public void SetReturnDestination(string destination)

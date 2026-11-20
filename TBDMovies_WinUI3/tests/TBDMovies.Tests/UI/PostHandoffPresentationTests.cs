@@ -125,4 +125,49 @@ public sealed class PostHandoffPresentationTests
         Assert.DoesNotContain("FolderWatcher", appServices, StringComparison.Ordinal);
         Assert.DoesNotContain("SmartRelink", appServices, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Batch2_3_DetailsPages_PlaybackEndedLifecycle_ContractsHold()
+    {
+        // 1. TVShowDetailsPage implements IActivatableView and IDeactivatableView with symmetric lifecycle
+        var showPage = File.ReadAllText(Path.Combine(UiRoot, "Views", "TVShowDetailsPage.xaml.cs"));
+        Assert.Contains("public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivatableView, IDeactivatableView", showPage, StringComparison.Ordinal);
+        Assert.Contains("private bool _playbackTrackingSubscribed;", showPage, StringComparison.Ordinal);
+        Assert.Contains("private void EnsurePlaybackTrackingSubscribed()", showPage, StringComparison.Ordinal);
+        Assert.Contains("private void UnsubscribePlaybackTracking()", showPage, StringComparison.Ordinal);
+        Assert.Contains("public void Activate()", showPage, StringComparison.Ordinal);
+        Assert.Contains("EnsurePlaybackTrackingSubscribed();", showPage, StringComparison.Ordinal);
+        Assert.Contains("RefreshEpisodeProgress();", showPage, StringComparison.Ordinal);
+        Assert.Contains("UpdateShowPersonalVisuals();", showPage, StringComparison.Ordinal);
+
+        var showDeactivate = showPage[showPage.IndexOf("public void Deactivate()", StringComparison.Ordinal)..];
+        showDeactivate = showDeactivate[..showDeactivate.IndexOf("private void EnsurePlaybackTrackingSubscribed()", StringComparison.Ordinal)];
+        Assert.Contains("UnsubscribePlaybackTracking();", showDeactivate, StringComparison.Ordinal);
+
+        // 2. MovieDetailsPage implements IActivatableView and IDeactivatableView with symmetric lifecycle
+        var moviePage = File.ReadAllText(Path.Combine(UiRoot, "Views", "MovieDetailsPage.xaml.cs"));
+        Assert.Contains("public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivatableView, IDeactivatableView", moviePage, StringComparison.Ordinal);
+        Assert.Contains("private bool _playbackTrackingSubscribed;", moviePage, StringComparison.Ordinal);
+        Assert.Contains("private void EnsurePlaybackTrackingSubscribed()", moviePage, StringComparison.Ordinal);
+        Assert.Contains("private void UnsubscribePlaybackTracking()", moviePage, StringComparison.Ordinal);
+        Assert.Contains("public void Activate()", moviePage, StringComparison.Ordinal);
+        Assert.Contains("ReloadPersonalState();", moviePage, StringComparison.Ordinal);
+
+        var movieDeactivate = moviePage[moviePage.IndexOf("public void Deactivate()", StringComparison.Ordinal)..];
+        movieDeactivate = movieDeactivate[..movieDeactivate.IndexOf("private void EnsurePlaybackTrackingSubscribed()", StringComparison.Ordinal)];
+        Assert.Contains("UnsubscribePlaybackTracking();", movieDeactivate, StringComparison.Ordinal);
+
+        // 3. Raw unguarded PlaybackEnded += is eliminated from Loaded in both pages
+        var showLoadedIdx = showPage.IndexOf("Loaded +=", StringComparison.Ordinal);
+        var showLoadedEndIdx = showPage.IndexOf("};", showLoadedIdx, StringComparison.Ordinal);
+        var showLoadedBlock = showPage[showLoadedIdx..showLoadedEndIdx];
+        Assert.Contains("EnsurePlaybackTrackingSubscribed();", showLoadedBlock, StringComparison.Ordinal);
+        Assert.DoesNotContain("PlaybackTracking.PlaybackEnded +=", showLoadedBlock, StringComparison.Ordinal);
+
+        var movieLoadedIdx = moviePage.IndexOf("Loaded +=", StringComparison.Ordinal);
+        var movieLoadedEndIdx = moviePage.IndexOf("};", movieLoadedIdx, StringComparison.Ordinal);
+        var movieLoadedBlock = moviePage[movieLoadedIdx..movieLoadedEndIdx];
+        Assert.Contains("EnsurePlaybackTrackingSubscribed();", movieLoadedBlock, StringComparison.Ordinal);
+        Assert.DoesNotContain("PlaybackTracking.PlaybackEnded +=", movieLoadedBlock, StringComparison.Ordinal);
+    }
 }
