@@ -119,7 +119,7 @@ public sealed class InterruptedOperationsRecoveryTests : IDisposable
         Assert.Equal(RecoverySituation.DestinationUnsafeOrChanged, assessment.Situation);
 
         var result = history.AttemptRecovery(plan.OperationId);
-        Assert.Equal(OperationState.RecoveryRequired, result.ResultState);
+        Assert.Equal(OperationState.RecoveryRequired, result.NewState);
     }
 
     [Fact]
