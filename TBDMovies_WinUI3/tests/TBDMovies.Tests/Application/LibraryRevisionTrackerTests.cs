@@ -169,6 +169,11 @@ public sealed class LibraryRevisionTrackerTests : IDisposable
     [Fact]
     public void PlaybackProgressRepository_SaveProgress_IncrementsPlaybackRevision()
     {
+        var filePath = Path.Combine(_dir, "progress.mkv");
+        File.WriteAllText(filePath, "dummy");
+        SeedMovie(1, "Progress Movie");
+        SeedMediaFile(1, 1, filePath);
+
         var tracker = new LibraryRevisionTracker();
         var repo = new PlaybackProgressRepository(_cs, tracker: tracker);
 
