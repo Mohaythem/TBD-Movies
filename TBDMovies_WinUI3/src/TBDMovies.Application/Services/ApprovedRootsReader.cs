@@ -77,26 +77,37 @@ public static class ApprovedRootsReader
         }
     }
 
-    private static IEnumerable<string> ParseFolderEntries(string raw)
+    private static List<string> ParseFolderEntries(string raw)
     {
+        var result = new List<string>();
         var trimmed = raw.Trim();
         if (trimmed.StartsWith('[') && trimmed.EndsWith(']'))
         {
+            string[]? parsed = null;
             try
             {
-                var parsed = JsonSerializer.Deserialize<string[]>(trimmed);
-                if (parsed is not null)
-                {
-                    foreach (var item in parsed)
-                        if (!string.IsNullOrWhiteSpace(item)) yield return item.Trim();
-                    yield break;
-                }
+                parsed = JsonSerializer.Deserialize<string[]>(trimmed);
             }
             catch { }
+
+            if (parsed is not null)
+            {
+                foreach (var item in parsed)
+                {
+                    if (!string.IsNullOrWhiteSpace(item))
+                        result.Add(item.Trim());
+                }
+                return result;
+            }
         }
 
         foreach (var line in raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            if (!string.IsNullOrWhiteSpace(line)) yield return line;
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+                result.Add(line);
+        }
+
+        return result;
     }
 
     public static bool IsNetworkPath(string path)

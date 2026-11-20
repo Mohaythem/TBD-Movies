@@ -85,6 +85,8 @@
    التأكد من استدعاء `new DatabaseMigrator(connectionString).Migrate()` ككائن (`Instance Method`) وليس كدالة استاتيكية غير موجودة، لمنع خطأ المترجم `CS0117`.
 6. **فحص تسلسل سلامة التخطيط في اختبارات محاكاة الاسترداد (`Simulation Plan Sequence`)**:
    عند كتابة اختبارات لمحاكاة تعافي العمليات (`coordinator.Plan` ثم `coordinator.Recover`)، يجب إلزامياً كتابة ملف المصدر (`source`) أولاً وعدم لمس الهدف قبل التخطيط، ثم الانتقال لحالة `Executing` ونقل الملف فيزيائياً `File.Move(source, destination)` لمحاكاة الانقطاع، منعاً لانهيار الاختبار بـ `SourceMissingException` أو `DestinationExistsException` المفروضة من `PathPolicy`.
+7. **فحص حظر الـ yield return داخل كتل try-catch في دوال الإرجاع التكراري (`CS1626 Iterator Invariant`)**:
+   يُحظر تماماً كتابة `yield return` داخل كتلة `try` مصحوبة بـ `catch` clause (خطأ C# القياسي `CS1626`). بدلاً من ذلك، تُجمع العناصر داخل `List<T>` وتُعاد مباشرة، أو تُفصل محاولة فك التشفير داخل الـ `try` عن عملية الإرجاع خارجها.
 
 ### 5. التحقق الآلي الفعلي والنزاهة الإحصائية لخط الأساس (Proof by Logs & Strict Test Baseline)
 - **بناء الحل كاملاً (`dotnet build`)**: التأكد من خروج البناء بكود `0` وخلوه التام من أي أخطاء أو تحذيرات (`0 Warning(s), 0 Error(s)`).
