@@ -16,6 +16,7 @@ public sealed class OperationHistoryService : IOperationHistoryUiActions
     private readonly IMediaFileRepository? _mediaFiles;
     private readonly IMovieRepository? _movies;
     private readonly ILibraryRevisionTracker? _tracker;
+    private readonly Func<IReadOnlyList<string>>? _approvedRootsProvider;
     private readonly ConcurrentDictionary<string, PreparedUndo> _undoPreviews = new(StringComparer.Ordinal);
 
     public OperationHistoryService(
@@ -23,13 +24,15 @@ public sealed class OperationHistoryService : IOperationHistoryUiActions
         IFileOperationCoordinator? coordinator = null,
         IMediaFileRepository? mediaFiles = null,
         IMovieRepository? movies = null,
-        ILibraryRevisionTracker? tracker = null)
+        ILibraryRevisionTracker? tracker = null,
+        Func<IReadOnlyList<string>>? approvedRootsProvider = null)
     {
         _store = store;
         _coordinator = coordinator;
         _mediaFiles = mediaFiles;
         _movies = movies;
         _tracker = tracker;
+        _approvedRootsProvider = approvedRootsProvider;
     }
 
     public IReadOnlyList<OperationHistoryItem> ListOperationHistory(OperationHistoryQuery? query = null)
@@ -76,7 +79,7 @@ public sealed class OperationHistoryService : IOperationHistoryUiActions
             ?? throw new InvalidOperationException("Current media-file state is unavailable.");
         if (!StringComparer.OrdinalIgnoreCase.Equals(Path.GetFullPath(media.CurrentPath), Path.GetFullPath(record.Destination)))
             throw new InvalidOperationException("Catalog path no longer matches the committed destination.");
-        var roots = HistoricalRoots(record);
+        var roots = GetApprovedRoots();
         var identity = new SourceIdentity(
             record.DestinationSize ?? throw new InvalidOperationException("Destination verification is incomplete."),
             record.DestinationMTimeNs ?? throw new InvalidOperationException("Destination verification is incomplete."),
@@ -118,7 +121,7 @@ public sealed class OperationHistoryService : IOperationHistoryUiActions
     {
         var coordinator = RequireCoordinator();
         var record = Require(operationId);
-        var inspection = coordinator.InspectRecovery(operationId, HistoricalRoots(record));
+        var inspection = coordinator.InspectRecovery(operationId, GetApprovedRoots());
         return new RecoveryAssessment(record, inspection.Situation, inspection.Message);
     }
 
@@ -126,7 +129,7 @@ public sealed class OperationHistoryService : IOperationHistoryUiActions
     {
         var coordinator = RequireCoordinator();
         var record = Require(operationId);
-        var recovered = coordinator.Recover(operationId, HistoricalRoots(record));
+        var recovered = coordinator.Recover(operationId, GetApprovedRoots());
         _tracker?.IncrementAll();
         return new RecoveryResult(recovered, recovered.State);
     }
@@ -158,9 +161,8 @@ public sealed class OperationHistoryService : IOperationHistoryUiActions
     private IFileOperationCoordinator RequireCoordinator() =>
         _coordinator ?? throw new InvalidOperationException("File-operation coordination is not configured.");
 
-    private static IReadOnlyList<string> HistoricalRoots(FileOperationRecord record) =>
-        new[] { Path.GetDirectoryName(record.Source)!, Path.GetDirectoryName(record.Destination)! }
-            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    private IReadOnlyList<string> GetApprovedRoots() =>
+        _approvedRootsProvider?.Invoke() ?? Array.Empty<string>();
 
     private sealed record PreparedUndo(
         string OriginalOperationId,

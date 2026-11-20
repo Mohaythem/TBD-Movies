@@ -158,6 +158,9 @@ public sealed class FileOperationCoordinator : IFileOperationCoordinator, IDispo
                     : "Source-only state conflicts with the durable journal.");
         }
 
+        if (approvedRoots is null || approvedRoots.Count == 0)
+            return UnsafeDestination(record);
+
         try
         {
             var policy = new PathPolicy(approvedRoots);
