@@ -71,6 +71,17 @@
 - **انطلاق التنفيذ المتتابع بعد الاعتماد**: بمجرد اعتماد المستخدم الصريح للخطة، ينطلق التنفيذ الجراحي بالترتيب الهندسي الصحيح (النماذج ⬅ خدمات البيانات ⬅ منطق الصفحات ⬅ واجهة المستخدم).
 - **أصغر تعديل دفاعي وانضباط النطاق (Minimal Defensible Edits & Scope Freeze)**: كتابة التعديل الجراحي المباشر فقط مع الالتزام بـ `Database-First` وحراس دورة الحياة (`_isActivated`, `IsLoaded`). وعند إعلان حالة الطوارئ أو تجميد النطاق (`Scope Freeze`)، يُحظر قطعياً لمس أي ملف خارج الهدف المحدد حرفياً.
 
+### 4.1 قائمة التدقيق المسبق الإلزامية لتفادي أخطاء الـ CI التاريخية (Mandatory Pre-Commit Checklist)
+قبل عمل أي commit أو اقتراح push، يجب إلزامياً مراجعة النقاط الأربع التي سببت أعطال الـ CI في الجولات السابقة:
+1. **فحص حدود الرؤية بين التجميعات (`Cross-Assembly Accessibility`)**:
+   التأكد من أن أي استدعاء من مشروع الواجهة `TBDMovies.UI` لأي كلاس أو منشئ أو دالة في `Infrastructure` أو `Application` يستهدف عضواً معلناً بـ `public` صراحة، وخالٍ تماماً من أي معاملات `internal` (مثل `busyTimeoutOverrideMs` التي سببت `CS1739`).
+2. **فحص سلامة المفاتيح الأجنبية في الاختبارات (`Foreign Key Constraint Integrity`)**:
+   التأكد من أن أي اختبار وحدة يستدعي كتابة في جداول فرعية (`playback_progress`, `watch_events`, `custom_list_items`) يقوم بزرع السجلات الأبوية في `movies` و `media_files` أولاً، لمنع انهيار الاختبار بـ `SQLite Error 19 (FOREIGN KEY constraint failed)`.
+3. **فحص تطابق أسماء الخصائص للـ Records (`Exact Property Match`)**:
+   التأكد من مطابقة أسماء الخصائص مع تعريفات الـ Records بدقة (مثل `.Catalog`, `.Personal`, `.Playback` في `LibrarySnapshotToken` بدلاً من اختراع `.CatalogRevision`).
+4. **فحص حظر الكود الميت والتحذيرات (`Zero-Warning & Zero Dead Code`)**:
+   التأكد من عدم ترك أي حقول أو معاملات غير مستخدمة (مثل حقل `_tracker` في `TraktSyncService` الذي سبب `CS0414`).
+
 ### 5. التحقق الآلي الفعلي والنزاهة الإحصائية لخط الأساس (Proof by Logs & Strict Test Baseline)
 - **بناء الحل كاملاً (`dotnet build`)**: التأكد من خروج البناء بكود `0` وخلوه التام من أي أخطاء أو تحذيرات (`0 Warning(s), 0 Error(s)`).
 - **تشغيل حزمة الاختبارات (`dotnet test`) وفحص `Failed: 0` صراحة**:
