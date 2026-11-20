@@ -81,6 +81,8 @@
    التأكد من مطابقة أسماء الخصائص مع تعريفات الـ Records بدقة (مثل `.Catalog`, `.Personal`, `.Playback` في `LibrarySnapshotToken` بدلاً من اختراع `.CatalogRevision`).
 4. **فحص حظر الكود الميت والتحذيرات (`Zero-Warning & Zero Dead Code`)**:
    التأكد من عدم ترك أي حقول أو معاملات غير مستخدمة (مثل حقل `_tracker` في `TraktSyncService` الذي سبب `CS0414`).
+5. **فحص تواقيع دوال التهيئة والهجرة في الاختبارات (`Instance Migrator Call`)**:
+   التأكد من استدعاء `new DatabaseMigrator(connectionString).Migrate()` ككائن (`Instance Method`) وليس كدالة استاتيكية غير موجودة، لمنع خطأ المترجم `CS0117`.
 
 ### 5. التحقق الآلي الفعلي والنزاهة الإحصائية لخط الأساس (Proof by Logs & Strict Test Baseline)
 - **بناء الحل كاملاً (`dotnet build`)**: التأكد من خروج البناء بكود `0` وخلوه التام من أي أخطاء أو تحذيرات (`0 Warning(s), 0 Error(s)`).
