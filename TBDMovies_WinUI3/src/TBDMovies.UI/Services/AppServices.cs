@@ -531,7 +531,7 @@ internal static class AppServices
                 IMediaFileRepository mediaFiles = new UnitOfWorkMediaFileRepository(catalogFactory);
                 var personal = new PersonalLibraryRepository(connectionString, tracker: revisionTracker);
                 var settingsRepository = new SettingsRepository(connectionString);
-                var maintenance = new LibraryMaintenanceRepository(connectionString, busyTimeoutOverrideMs: null, tracker: revisionTracker);
+                var maintenance = new LibraryMaintenanceRepository(connectionString, tracker: revisionTracker);
                 var testRoot = GetTestDataRoot();
                 var subDlCredentialStore = new WindowsSubDlCredentialStore(
                     isolatedProfileRoot: testRoot,

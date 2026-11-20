@@ -201,7 +201,7 @@ public sealed class LibraryRevisionTrackerTests : IDisposable
     public void MaintenanceRepository_ClearCatalog_IncrementsAllCounters()
     {
         var tracker = new LibraryRevisionTracker();
-        var repo = new LibraryMaintenanceRepository(_cs, busyTimeoutOverrideMs: null, tracker: tracker);
+        var repo = new LibraryMaintenanceRepository(_cs, tracker: tracker);
 
         repo.ClearCatalog();
 
