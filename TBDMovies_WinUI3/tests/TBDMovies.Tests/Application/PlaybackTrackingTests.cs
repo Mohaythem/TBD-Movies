@@ -226,7 +226,7 @@ public sealed class PlaybackTrackingTests
         var connStr = $"Data Source={dbPath}";
         try
         {
-            DatabaseMigrator.MigrateToLatest(connStr);
+            new DatabaseMigrator(connStr).Migrate();
             using (var conn = new SqliteConnection(connStr))
             {
                 conn.Open();
