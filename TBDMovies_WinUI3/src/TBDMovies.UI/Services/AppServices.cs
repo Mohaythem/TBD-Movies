@@ -819,7 +819,7 @@ internal static class AppServices
             candidateData = new TraktDataClient();
             var snapshot = new TraktLocalSnapshotBuilder(Require(_movies), Require(_mediaFiles),
                 Require(_tvShows), Require(_tvSeasons), Require(_tvEpisodes), Require(_availabilityInspector));
-            candidateSync = new TraktSyncService(auth, candidateData, cache, candidateConfig, Require(_settingsRepository), timeProvider: null, snapshot, _personalRepo, _watchHistoryRepo, tracker: _revisionTracker);
+            candidateSync = new TraktSyncService(auth, candidateData, cache, candidateConfig, Require(_settingsRepository), timeProvider: null, snapshot, _personalRepo, _watchHistoryRepo);
             candidateSync.SyncCompleted += (_, _) => TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
             var projection = new TraktProjectionService();
             var json = JsonSerializer.Serialize(new TraktConfigDto(candidateConfig.ClientId, candidateConfig.RedirectUri));
@@ -944,8 +944,7 @@ internal static class AppServices
                 timeProvider: null,
                 snapshotBuilder,
                 personalRepo,
-                watchHistoryRepo,
-                tracker: _revisionTracker);
+                watchHistoryRepo);
             syncService.SyncCompleted += (_, _) => TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
 
             _traktAuthClient = authClient;

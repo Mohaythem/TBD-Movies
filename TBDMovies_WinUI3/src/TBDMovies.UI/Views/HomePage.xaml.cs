@@ -88,7 +88,7 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
                 return;
             }
 
-            if (currentSnapshot.CatalogRevision == _lastLoadedSnapshot.Value.CatalogRevision)
+            if (currentSnapshot.Catalog == _lastLoadedSnapshot.Value.Catalog)
             {
                 RefreshActivityShelvesOnly();
                 _lastLoadedSnapshot = currentSnapshot;

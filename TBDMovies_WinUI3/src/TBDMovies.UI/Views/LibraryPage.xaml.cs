@@ -221,9 +221,9 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
 
         // 3. ClearCatalog / Global clear
         if (_lastSnapshot.HasValue &&
-            currentSnapshot.CatalogRevision > _lastSnapshot.Value.CatalogRevision &&
-            currentSnapshot.PersonalRevision > _lastSnapshot.Value.PersonalRevision &&
-            currentSnapshot.PlaybackRevision > _lastSnapshot.Value.PlaybackRevision)
+            currentSnapshot.Catalog > _lastSnapshot.Value.Catalog &&
+            currentSnapshot.Personal > _lastSnapshot.Value.Personal &&
+            currentSnapshot.Playback > _lastSnapshot.Value.Playback)
         {
             if (AppServices.Library.ListMovies().Count == 0 && AppServices.Tv.ListShows().Count == 0)
             {
@@ -236,7 +236,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         }
 
         // 4. Catalog change (add/remove movie/show)
-        if (!_lastSnapshot.HasValue || currentSnapshot.CatalogRevision != _lastSnapshot.Value.CatalogRevision)
+        if (!_lastSnapshot.HasValue || currentSnapshot.Catalog != _lastSnapshot.Value.Catalog)
         {
             ReconcileCatalogChanges();
             HandleRecentOpenedScroll();
@@ -244,8 +244,8 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         }
 
         // 5. Personal change only (favorites/watchlist)
-        if (currentSnapshot.PersonalRevision != _lastSnapshot.Value.PersonalRevision &&
-            currentSnapshot.PlaybackRevision == _lastSnapshot.Value.PlaybackRevision)
+        if (currentSnapshot.Personal != _lastSnapshot.Value.Personal &&
+            currentSnapshot.Playback == _lastSnapshot.Value.Playback)
         {
             _lastSnapshot = currentSnapshot;
             HandleRecentOpenedScroll();
@@ -253,7 +253,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         }
 
         // 6. Playback change (progress/watched)
-        if (currentSnapshot.PlaybackRevision != _lastSnapshot.Value.PlaybackRevision)
+        if (currentSnapshot.Playback != _lastSnapshot.Value.Playback)
         {
             var savedOffset = GetCurrentScrollOffset();
             _lastSnapshot = currentSnapshot;
