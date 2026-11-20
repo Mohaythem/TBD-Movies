@@ -7,7 +7,7 @@ using TBDMovies.Domain.Playback;
 
 namespace TBDMovies.Infrastructure.Persistence.Repositories;
 
-public sealed class PlaybackProgressRepository(string connectionString) : IPlaybackProgressRepository
+public sealed class PlaybackProgressRepository(string connectionString, ILibraryRevisionTracker? tracker = null) : IPlaybackProgressRepository
 {
     public PlaybackProgress? GetByMediaFileId(int mediaFileId)
     {
@@ -118,6 +118,7 @@ public sealed class PlaybackProgressRepository(string connectionString) : IPlayb
         cmd.Parameters.AddWithValue("$dur", (object?)totalDurationSeconds ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$watched", lastWatchedAt.ToUniversalTime().ToString("O"));
         cmd.ExecuteNonQuery();
+        tracker?.IncrementPlayback();
     }
 
     public void DeleteProgress(int mediaFileId)
@@ -129,6 +130,7 @@ public sealed class PlaybackProgressRepository(string connectionString) : IPlayb
         cmd.CommandText = "DELETE FROM playback_progress WHERE media_file_id = $id;";
         cmd.Parameters.AddWithValue("$id", mediaFileId);
         cmd.ExecuteNonQuery();
+        tracker?.IncrementPlayback();
     }
 
     public void DeleteProgressForMovie(int movieId)
@@ -143,6 +145,7 @@ public sealed class PlaybackProgressRepository(string connectionString) : IPlayb
             """;
         cmd.Parameters.AddWithValue("$movieId", movieId);
         cmd.ExecuteNonQuery();
+        tracker?.IncrementPlayback();
     }
 
     public void DeleteProgressForEpisode(int episodeId)
@@ -157,6 +160,7 @@ public sealed class PlaybackProgressRepository(string connectionString) : IPlayb
             """;
         cmd.Parameters.AddWithValue("$episodeId", episodeId);
         cmd.ExecuteNonQuery();
+        tracker?.IncrementPlayback();
     }
 
     private static PlaybackProgress ReadRecord(SqliteDataReader reader) => new(

@@ -6,7 +6,7 @@ using Microsoft.Data.Sqlite;
 namespace TBDMovies.Infrastructure.Persistence.Repositories;
 
 /// <summary>Active viewings are separate from the append-only completed-watch event stream.</summary>
-public sealed class ViewingActivityRepository(string connectionString) : IViewingActivityRepository
+public sealed class ViewingActivityRepository(string connectionString, ILibraryRevisionTracker? tracker = null) : IViewingActivityRepository
 {
     public IReadOnlyList<ActiveViewingItem> ListActive(int limit)
     {
@@ -63,6 +63,7 @@ public sealed class ViewingActivityRepository(string connectionString) : IViewin
         result.Parameters.AddWithValue("$id", (object?)movieId ?? episodeId!.Value);
         var item = ReadActive(result).Single();
         transaction.Commit();
+        tracker?.IncrementPlayback();
         return item;
     }
 

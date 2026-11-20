@@ -10,8 +10,13 @@ namespace TBDMovies.Infrastructure.Persistence.Repositories;
 public sealed class ShowPersonalLibraryRepository : IShowPersonalRepository
 {
     private readonly string _connectionString;
+    private readonly ILibraryRevisionTracker? _tracker;
 
-    public ShowPersonalLibraryRepository(string connectionString) => _connectionString = connectionString;
+    public ShowPersonalLibraryRepository(string connectionString, ILibraryRevisionTracker? tracker = null)
+    {
+        _connectionString = connectionString;
+        _tracker = tracker;
+    }
 
     public ShowPersonalSnapshot GetState(int showId)
     {
@@ -77,6 +82,7 @@ public sealed class ShowPersonalLibraryRepository : IShowPersonalRepository
 
         var state = ReadState(connection, showId, transaction);
         transaction.Commit();
+        _tracker?.IncrementPersonal();
         return state;
     }
 

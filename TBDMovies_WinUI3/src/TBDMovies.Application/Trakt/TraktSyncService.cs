@@ -52,6 +52,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
     internal Func<Task>? BeforeCompleteAuthRegistrationAsync { get; set; }
     internal Func<Task>? BeforeBeginAuthRegistrationAsync { get; set; }
     internal Action? OnCancelActiveNetworkFinished { get; set; }
+    private readonly ILibraryRevisionTracker? _tracker;
     internal Action? AfterSyncStateRead { get; set; }
 
     public TraktSyncService(
@@ -63,7 +64,8 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         TimeProvider? timeProvider = null,
         ITraktLocalSnapshotBuilder? snapshotBuilder = null,
         IPersonalLibraryRepository? personalLibraryRepository = null,
-        IWatchHistoryRepository? watchHistoryRepository = null)
+        IWatchHistoryRepository? watchHistoryRepository = null,
+        ILibraryRevisionTracker? tracker = null)
     {
         _authService = authService ?? throw new ArgumentNullException(nameof(authService));
         _dataClient = dataClient ?? throw new ArgumentNullException(nameof(dataClient));
@@ -74,6 +76,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         _snapshotBuilder = snapshotBuilder;
         _personalLibraryRepository = personalLibraryRepository;
         _watchHistoryRepository = watchHistoryRepository;
+        _tracker = tracker;
 
         var authState = _authService.GetAuthState();
         _currentAccountId = authState.IsConnected ? authState.AccountId : null;

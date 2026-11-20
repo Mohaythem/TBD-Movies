@@ -127,7 +127,14 @@ internal static class AppServices
 
     public static ILibraryUiActions Library => Require(_library);
 
-    public static long CatalogRevision => _catalogFactory?.Revision ?? 0;
+    private static ILibraryRevisionTracker? _revisionTracker;
+    public static ILibraryRevisionTracker RevisionTracker => _revisionTracker ??= new LibraryRevisionTracker();
+
+    public static LibrarySnapshotToken LibrarySnapshot => _revisionTracker?.Snapshot ?? new LibrarySnapshotToken(0, 0, 0);
+
+    public static long CatalogRevision => _revisionTracker?.CatalogRevision ?? _catalogFactory?.Revision ?? 0;
+    public static long PersonalRevision => _revisionTracker?.PersonalRevision ?? 0;
+    public static long PlaybackRevision => _revisionTracker?.PlaybackRevision ?? 0;
 
     private static CatalogUnitOfWorkFactory? _catalogFactory;
 
@@ -516,12 +523,15 @@ internal static class AppServices
                 var dbExistedBeforeMigrate = File.Exists(dbPath) && new FileInfo(dbPath).Length > 0;
                 new DatabaseMigrator(connectionString).Migrate();
 
-                var catalogFactory = new CatalogUnitOfWorkFactory(connectionString);
+                var revisionTracker = new LibraryRevisionTracker();
+                _revisionTracker = revisionTracker;
+
+                var catalogFactory = new CatalogUnitOfWorkFactory(connectionString, tracker: revisionTracker);
                 IMovieRepository movies = new UnitOfWorkMovieRepository(catalogFactory);
                 IMediaFileRepository mediaFiles = new UnitOfWorkMediaFileRepository(catalogFactory);
-                var personal = new PersonalLibraryRepository(connectionString);
+                var personal = new PersonalLibraryRepository(connectionString, tracker: revisionTracker);
                 var settingsRepository = new SettingsRepository(connectionString);
-                var maintenance = new LibraryMaintenanceRepository(connectionString);
+                var maintenance = new LibraryMaintenanceRepository(connectionString, busyTimeoutOverrideMs: null, tracker: revisionTracker);
                 var testRoot = GetTestDataRoot();
                 var subDlCredentialStore = new WindowsSubDlCredentialStore(
                     isolatedProfileRoot: testRoot,
@@ -572,7 +582,7 @@ internal static class AppServices
                     personal,
                     tmdbClient);
                 var watchHistory = new WatchHistoryService(personal);
-                var history = new OperationHistoryService(operations, coordinator, mediaFiles, movies);
+                var history = new OperationHistoryService(operations, coordinator, mediaFiles, movies, tracker: revisionTracker);
                 var organization = new OrganizationService(mediaFiles, coordinator);
                 var repair = new LibraryRepairService(catalogFactory, fileOperations: operations);
                 _movies = movies;
@@ -588,9 +598,9 @@ internal static class AppServices
                 _catalogFactory = catalogFactory;
                 _personal = library;
                 _watchHistory = watchHistory;
-                _viewingActivity = new ViewingActivityService(new ViewingActivityRepository(connectionString));
-                _showPersonal = new ShowPersonalLibraryService(new ShowPersonalLibraryRepository(connectionString), tv);
-                var playbackProgress = new PlaybackProgressRepository(connectionString);
+                _viewingActivity = new ViewingActivityService(new ViewingActivityRepository(connectionString, tracker: revisionTracker));
+                _showPersonal = new ShowPersonalLibraryService(new ShowPersonalLibraryRepository(connectionString, tracker: revisionTracker), tv);
+                var playbackProgress = new PlaybackProgressRepository(connectionString, tracker: revisionTracker);
                 _playbackProgressRepository = playbackProgress;
                 _playbackTrackingService = new PlaybackTrackingService(
                     playbackProgress,
@@ -685,6 +695,7 @@ internal static class AppServices
         _connectionString = null;
         _library = null;
         _catalogFactory = null;
+        _revisionTracker = null;
         _personal = null;
         _watchHistory = null;
         _viewingActivity = null;
@@ -808,7 +819,7 @@ internal static class AppServices
             candidateData = new TraktDataClient();
             var snapshot = new TraktLocalSnapshotBuilder(Require(_movies), Require(_mediaFiles),
                 Require(_tvShows), Require(_tvSeasons), Require(_tvEpisodes), Require(_availabilityInspector));
-            candidateSync = new TraktSyncService(auth, candidateData, cache, candidateConfig, Require(_settingsRepository), timeProvider: null, snapshot, _personalRepo, _watchHistoryRepo);
+            candidateSync = new TraktSyncService(auth, candidateData, cache, candidateConfig, Require(_settingsRepository), timeProvider: null, snapshot, _personalRepo, _watchHistoryRepo, tracker: _revisionTracker);
             candidateSync.SyncCompleted += (_, _) => TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
             var projection = new TraktProjectionService();
             var json = JsonSerializer.Serialize(new TraktConfigDto(candidateConfig.ClientId, candidateConfig.RedirectUri));
@@ -933,7 +944,8 @@ internal static class AppServices
                 timeProvider: null,
                 snapshotBuilder,
                 personalRepo,
-                watchHistoryRepo);
+                watchHistoryRepo,
+                tracker: _revisionTracker);
             syncService.SyncCompleted += (_, _) => TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
 
             _traktAuthClient = authClient;

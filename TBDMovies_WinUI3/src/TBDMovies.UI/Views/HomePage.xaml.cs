@@ -1,5 +1,6 @@
 using System.Globalization;
 using TBDMovies.Application.Dto;
+using TBDMovies.Application.Repositories;
 using TBDMovies.Domain.Library.Availability;
 using TBDMovies.Domain.Library.Personal;
 using TBDMovies.Domain.Playback;
@@ -29,7 +30,7 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     private int _renderedContinueCount = -1;
     private int _renderedHistoryCount = -1;
     private int _renderedRecentCount = -1;
-    private long _lastLoadedCatalogRevision = -1;
+    private LibrarySnapshotToken? _lastLoadedSnapshot = null;
     private bool _activityDirty = false;
     private bool _playbackTrackingSubscribed = false;
     private bool _transitionsAttached = false;
@@ -74,14 +75,25 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     public void Activate()
     {
         EnsurePlaybackTrackingSubscribed();
-        var currentRev = AppServices.CatalogRevision;
-        if (_movies.Count > 0 && _lastLoadedCatalogRevision == currentRev)
+        var currentSnapshot = AppServices.LibrarySnapshot;
+
+        if (_lastLoadedSnapshot.HasValue)
         {
-            if (_activityDirty)
+            if (_lastLoadedSnapshot.Value == currentSnapshot)
+            {
+                if (_activityDirty)
+                {
+                    RefreshActivityShelvesOnly();
+                }
+                return;
+            }
+
+            if (currentSnapshot.CatalogRevision == _lastLoadedSnapshot.Value.CatalogRevision)
             {
                 RefreshActivityShelvesOnly();
+                _lastLoadedSnapshot = currentSnapshot;
+                return;
             }
-            return;
         }
 
         _movies = LoadMovies();
@@ -96,7 +108,7 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         _renderedHistoryCount = -1;
         _renderedRecentCount = -1;
         UpdateActivityShelves();
-        _lastLoadedCatalogRevision = currentRev;
+        _lastLoadedSnapshot = currentSnapshot;
         _activityDirty = false;
 
         if (!_transitionsAttached && _movies.Count > 0)
@@ -109,6 +121,7 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     private void RefreshActivityShelvesOnly()
     {
         _history = LoadHistory();
+        StatsRepeater.ItemsSource = BuildStats();
         _continueSource = BuildContinueWatching();
         _historyCards = BuildHistoryCards();
         UpdateContinueVisibility();

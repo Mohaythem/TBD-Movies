@@ -10,16 +10,18 @@ public class LibraryMaintenanceRepository : ILibraryMaintenanceRepository
 {
     private readonly string _connectionString;
     private readonly int? _busyTimeoutOverrideMs;
+    private readonly ILibraryRevisionTracker? _tracker;
 
-    public LibraryMaintenanceRepository(string connectionString)
-        : this(connectionString, busyTimeoutOverrideMs: null)
+    public LibraryMaintenanceRepository(string connectionString, ILibraryRevisionTracker? tracker = null)
+        : this(connectionString, busyTimeoutOverrideMs: null, tracker: tracker)
     {
     }
 
-    internal LibraryMaintenanceRepository(string connectionString, int? busyTimeoutOverrideMs)
+    internal LibraryMaintenanceRepository(string connectionString, int? busyTimeoutOverrideMs, ILibraryRevisionTracker? tracker = null)
     {
         _connectionString = connectionString;
         _busyTimeoutOverrideMs = busyTimeoutOverrideMs;
+        _tracker = tracker;
     }
 
     public (int Movies, int MediaFiles, int MetadataEntries, int Shows, int Seasons, int Episodes) ClearCatalog()
@@ -74,6 +76,7 @@ public class LibraryMaintenanceRepository : ILibraryMaintenanceRepository
         }
         
         tx.Commit();
+        _tracker?.IncrementAll();
         
         return (movies, mediaFiles, metadata, shows, seasons, episodes);
     }

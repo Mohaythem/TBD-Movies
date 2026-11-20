@@ -158,10 +158,29 @@ public sealed class CatalogUnitOfWork : ICatalogUnitOfWork
 public sealed class CatalogUnitOfWorkFactory : ICatalogUnitOfWorkFactory
 {
     private readonly string _connectionString;
+    private readonly ILibraryRevisionTracker? _tracker;
     private long _revision;
-    public CatalogUnitOfWorkFactory(string connectionString) => _connectionString = connectionString;
-    public long Revision => Interlocked.Read(ref _revision);
-    public ICatalogUnitOfWork Begin() => new CatalogUnitOfWork(_connectionString, () => Interlocked.Increment(ref _revision));
+
+    public CatalogUnitOfWorkFactory(string connectionString, ILibraryRevisionTracker? tracker = null)
+    {
+        _connectionString = connectionString;
+        _tracker = tracker;
+    }
+
+    public long Revision => _tracker?.CatalogRevision ?? Interlocked.Read(ref _revision);
+
+    public ICatalogUnitOfWork Begin() => new CatalogUnitOfWork(_connectionString, () =>
+    {
+        if (_tracker is not null)
+        {
+            _tracker.IncrementCatalog();
+        }
+        else
+        {
+            Interlocked.Increment(ref _revision);
+        }
+    });
+
     public ICatalogUnitOfWork BeginReadOnly() => CatalogUnitOfWork.CreateReadOnly(_connectionString);
 }
 

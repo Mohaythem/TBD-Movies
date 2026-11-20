@@ -15,18 +15,21 @@ public sealed class OperationHistoryService : IOperationHistoryUiActions
     private readonly IFileOperationCoordinator? _coordinator;
     private readonly IMediaFileRepository? _mediaFiles;
     private readonly IMovieRepository? _movies;
+    private readonly ILibraryRevisionTracker? _tracker;
     private readonly ConcurrentDictionary<string, PreparedUndo> _undoPreviews = new(StringComparer.Ordinal);
 
     public OperationHistoryService(
         IFileOperationStore store,
         IFileOperationCoordinator? coordinator = null,
         IMediaFileRepository? mediaFiles = null,
-        IMovieRepository? movies = null)
+        IMovieRepository? movies = null,
+        ILibraryRevisionTracker? tracker = null)
     {
         _store = store;
         _coordinator = coordinator;
         _mediaFiles = mediaFiles;
         _movies = movies;
+        _tracker = tracker;
     }
 
     public IReadOnlyList<OperationHistoryItem> ListOperationHistory(OperationHistoryQuery? query = null)
@@ -104,7 +107,9 @@ public sealed class OperationHistoryService : IOperationHistoryUiActions
             current.MediaFileId,
             current.Id,
             prepared.Identity);
-        return new UndoResult(coordinator.Execute(plan.OperationId, prepared.Roots));
+        var result = new UndoResult(coordinator.Execute(plan.OperationId, prepared.Roots));
+        _tracker?.IncrementAll();
+        return result;
     }
 
     public void DiscardUndoPreview(string previewId) => _undoPreviews.TryRemove(previewId, out _);
@@ -122,6 +127,7 @@ public sealed class OperationHistoryService : IOperationHistoryUiActions
         var coordinator = RequireCoordinator();
         var record = Require(operationId);
         var recovered = coordinator.Recover(operationId, HistoricalRoots(record));
+        _tracker?.IncrementAll();
         return new RecoveryResult(recovered, recovered.State);
     }
 

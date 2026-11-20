@@ -290,10 +290,9 @@ public sealed partial class MainWindow : Window
             _addMediaPage = new AddMediaPage();
             _addMediaPage.MediaRegistered += (_, _) =>
             {
-                _libraryPage?.InvalidateCatalog();
-                if (ReferenceEquals(_currentPage, _libraryPage))
+                if (_libraryPage is not null)
                 {
-                    _libraryPage?.Activate();
+                    _libraryPage.ReconcileCatalogChanges();
                 }
                 _homePage.Activate();
             };

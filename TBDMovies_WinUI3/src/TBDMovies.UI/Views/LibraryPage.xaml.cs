@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Threading.Tasks;
+using TBDMovies.Application.Repositories;
 using TBDMovies.UI.Models;
 using TBDMovies.UI.Services;
 using Microsoft.UI.Dispatching;
@@ -47,6 +48,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
     /// <summary>The catalog rows for this visit, or null when they still have to be read.</summary>
     private IReadOnlyList<MovieRecord>? _movies;
     private long _moviesRevision = -1;
+    private LibrarySnapshotToken? _lastSnapshot = null;
 
     /// <summary>
     /// The tab strip raises Checked while the XAML is still being parsed (the selected tab is
@@ -77,25 +79,198 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
 
     public event EventHandler<TVShowRecord>? ShowSelected;
 
+    private static ScrollViewer? FindDescendantScrollViewer(DependencyObject element)
+    {
+        if (element is ScrollViewer sv) return sv;
+        var count = VisualTreeHelper.GetChildrenCount(element);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(element, i);
+            var result = FindDescendantScrollViewer(child);
+            if (result is not null) return result;
+        }
+        return null;
+    }
+
+    private double GetCurrentScrollOffset()
+    {
+        var sv = FindDescendantScrollViewer(MoviesGrid);
+        return sv?.VerticalOffset ?? 0.0;
+    }
+
+    private void PopulateAndRestoreScroll(double savedOffset)
+    {
+        var count = PopulateLibrary();
+        UpdateVisualCountAndEmptyState(count);
+        if (savedOffset > 0)
+        {
+            var sv = FindDescendantScrollViewer(MoviesGrid);
+            sv?.ChangeView(horizontalOffset: null, verticalOffset: savedOffset, zoomFactor: null, disableAnimation: true);
+        }
+    }
+
+    private void UpdateVisualCountAndEmptyState(int count)
+    {
+        if (_state == LibraryViewState.Error)
+        {
+            ErrorState.Visibility = Visibility.Visible;
+            MoviesGrid.Visibility = Visibility.Collapsed;
+            EmptyState.Visibility = Visibility.Collapsed;
+            CountText.Text = string.Empty;
+            return;
+        }
+
+        CountText.Text = count == 0
+            ? string.Empty
+            : $"{LocalizationService.Number(count)} {LocalizationService.Text(count == 1 ? "ItemSingular" : "Items")}";
+
+        var isEmpty = count == 0;
+        MoviesGrid.Visibility = !isEmpty ? Visibility.Visible : Visibility.Collapsed;
+        ShowsGrid.Visibility = Visibility.Collapsed;
+        EmptyState.Visibility = isEmpty ? Visibility.Visible : Visibility.Collapsed;
+
+        if (isEmpty)
+        {
+            var filtered = _query.Length > 0 || _filterLocalOnly || _filterWatchedOnly || _mediaTypeFilter != "all";
+            EmptyState.Kind = filtered ? Controls.EmptyStateKind.NoResults : Controls.EmptyStateKind.EmptyLibrary;
+            EmptyState.Title = LocalizationService.Text(filtered ? "NoResults" : "EmptyLibrary");
+            EmptyState.Message = LocalizationService.Text(filtered ? "NoResultsHelp" : "EmptyLibraryHelp");
+            EmptyState.ActionText = LocalizationService.Text("ClearSearch");
+            EmptyState.IsActionVisible = filtered;
+        }
+    }
+
+    public void ReconcileCatalogChanges()
+    {
+        var savedOffset = GetCurrentScrollOffset();
+
+        if (_movies is null && _shows is null) return;
+
+        if (_movies is not null)
+        {
+            try
+            {
+                var newMovies = AppServices.Library.ListMovies().Select(LibraryProjection.ToCard).ToArray();
+                var newIds = new HashSet<int>(newMovies.Select(m => m.Id));
+
+                var removedMovieIds = _cachedMovieCards.Keys.Where(id => !newIds.Contains(id)).ToList();
+                foreach (var id in removedMovieIds)
+                {
+                    if (_cachedMovieCards.Remove(id, out var card))
+                    {
+                        card.Dispose();
+                    }
+                }
+
+                _movies = newMovies;
+                _moviesRevision = AppServices.CatalogRevision;
+            }
+            catch { }
+        }
+
+        if (_shows is not null)
+        {
+            try
+            {
+                var newShows = AppServices.Tv.ListShows().Select(TvProjection.ToCard).ToArray();
+                var newIds = new HashSet<int>(newShows.Select(s => s.Id));
+
+                var removedShowIds = _cachedShowCards.Keys.Where(id => !newIds.Contains(id)).ToList();
+                foreach (var id in removedShowIds)
+                {
+                    if (_cachedShowCards.Remove(id, out var card))
+                    {
+                        card.Dispose();
+                    }
+                    _showCards.Remove(id);
+                }
+
+                _shows = newShows;
+                _showsRevision = AppServices.CatalogRevision;
+            }
+            catch { }
+        }
+
+        _lastSnapshot = AppServices.LibrarySnapshot;
+        PopulateAndRestoreScroll(savedOffset);
+    }
+
     /// <summary>
     /// Reuse catalog rows after an activity-only return; reload after another catalog commit.
     /// </summary>
     public void Activate()
     {
         _isActivated = true;
-        if (_movies is not null && _moviesRevision != AppServices.CatalogRevision)
+        var currentSnapshot = AppServices.LibrarySnapshot;
+
+        // 1. Cold start: first visit
+        if (_movies is null && _shows is null)
         {
-            _movies = null;
-            foreach (var card in _cachedMovieCards.Values) card.Dispose();
-            _cachedMovieCards.Clear();
+            Refresh();
+            _lastSnapshot = currentSnapshot;
+            HandleRecentOpenedScroll();
+            return;
         }
-        if (_shows is not null && _showsRevision != AppServices.CatalogRevision)
+
+        // 2. Exact match: nothing changed across all 3 domains
+        if (_lastSnapshot.HasValue && _lastSnapshot.Value == currentSnapshot)
         {
-            _shows = null;
-            foreach (var card in _cachedShowCards.Values) card.Dispose();
-            _cachedShowCards.Clear();
+            HandleRecentOpenedScroll();
+            return;
         }
-        Refresh();
+
+        // 3. ClearCatalog / Global clear
+        if (_lastSnapshot.HasValue &&
+            currentSnapshot.CatalogRevision > _lastSnapshot.Value.CatalogRevision &&
+            currentSnapshot.PersonalRevision > _lastSnapshot.Value.PersonalRevision &&
+            currentSnapshot.PlaybackRevision > _lastSnapshot.Value.PlaybackRevision)
+        {
+            if (AppServices.Library.ListMovies().Count == 0 && AppServices.Tv.ListShows().Count == 0)
+            {
+                InvalidateCatalog();
+                Refresh();
+                _lastSnapshot = currentSnapshot;
+                HandleRecentOpenedScroll();
+                return;
+            }
+        }
+
+        // 4. Catalog change (add/remove movie/show)
+        if (!_lastSnapshot.HasValue || currentSnapshot.CatalogRevision != _lastSnapshot.Value.CatalogRevision)
+        {
+            ReconcileCatalogChanges();
+            HandleRecentOpenedScroll();
+            return;
+        }
+
+        // 5. Personal change only (favorites/watchlist)
+        if (currentSnapshot.PersonalRevision != _lastSnapshot.Value.PersonalRevision &&
+            currentSnapshot.PlaybackRevision == _lastSnapshot.Value.PlaybackRevision)
+        {
+            _lastSnapshot = currentSnapshot;
+            HandleRecentOpenedScroll();
+            return;
+        }
+
+        // 6. Playback change (progress/watched)
+        if (currentSnapshot.PlaybackRevision != _lastSnapshot.Value.PlaybackRevision)
+        {
+            var savedOffset = GetCurrentScrollOffset();
+            _lastSnapshot = currentSnapshot;
+            if (_filterWatchedOnly)
+            {
+                PopulateAndRestoreScroll(savedOffset);
+            }
+            HandleRecentOpenedScroll();
+            return;
+        }
+
+        _lastSnapshot = currentSnapshot;
+        HandleRecentOpenedScroll();
+    }
+
+    private void HandleRecentOpenedScroll()
+    {
         var opened = _recentShowOpened || _recentMovieOpened;
         if (opened && _sort == "recent" && _sortDescending)
         {
@@ -122,6 +297,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
     {
         _movies = null;
         _shows = null;
+        _lastSnapshot = null;
         _showCards.Clear();
         foreach (var card in _cachedMovieCards.Values) card.Dispose();
         foreach (var card in _cachedShowCards.Values) card.Dispose();
@@ -140,6 +316,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
             movie.RecordOpened(openedAt);
             _moviesRevision = after;
             if (_showsRevision == before) _showsRevision = after;
+            _lastSnapshot = AppServices.LibrarySnapshot;
         }
         else InvalidateCatalog();
         _recentMovieOpened = true;
@@ -156,6 +333,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
             show.RecordOpened(openedAt);
             _showsRevision = after;
             if (_moviesRevision == before) _moviesRevision = after;
+            _lastSnapshot = AppServices.LibrarySnapshot;
         }
         else InvalidateCatalog();
         _recentShowOpened = true;
@@ -173,6 +351,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
                 _movies = list;
                 if (_cachedMovieCards.TryGetValue(movieId, out var oldCard)) oldCard.Dispose();
                 _cachedMovieCards[movieId] = new LibraryCardItem(updatedRecord);
+                _lastSnapshot = AppServices.LibrarySnapshot;
                 PopulateLibrary();
                 return;
             }

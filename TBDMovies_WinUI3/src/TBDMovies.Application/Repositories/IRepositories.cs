@@ -233,3 +233,22 @@ public interface ICatalogUnitOfWorkFactory
     ICatalogUnitOfWork Begin();
     ICatalogUnitOfWork BeginReadOnly() => Begin();
 }
+
+public readonly record struct LibrarySnapshotToken(long Catalog, long Personal, long Playback)
+{
+    public bool Equals(LibrarySnapshotToken other) =>
+        Catalog == other.Catalog && Personal == other.Personal && Playback == other.Playback;
+    public override int GetHashCode() => HashCode.Combine(Catalog, Personal, Playback);
+}
+
+public interface ILibraryRevisionTracker
+{
+    long CatalogRevision { get; }
+    long PersonalRevision { get; }
+    long PlaybackRevision { get; }
+    LibrarySnapshotToken Snapshot { get; }
+    long IncrementCatalog();
+    long IncrementPersonal();
+    long IncrementPlayback();
+    void IncrementAll();
+}

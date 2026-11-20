@@ -8,8 +8,13 @@ namespace TBDMovies.Infrastructure.Persistence.Repositories;
 public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWatchHistoryRepository
 {
     private readonly string _connectionString;
+    private readonly ILibraryRevisionTracker? _tracker;
 
-    public PersonalLibraryRepository(string connectionString) => _connectionString = connectionString;
+    public PersonalLibraryRepository(string connectionString, ILibraryRevisionTracker? tracker = null)
+    {
+        _connectionString = connectionString;
+        _tracker = tracker;
+    }
 
     public PersonalMovieState GetState(int movieId)
     {
@@ -39,6 +44,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         command.ExecuteNonQuery();
         var state = ReadState(connection, movieId, transaction);
         transaction.Commit();
+        _tracker?.IncrementPersonal();
         return state;
     }
 
@@ -61,6 +67,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         command.ExecuteNonQuery();
         var state = ReadState(connection, movieId, transaction);
         transaction.Commit();
+        _tracker?.IncrementPersonal();
         return state;
     }
 
@@ -84,6 +91,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         command.ExecuteNonQuery();
         var state = ReadState(connection, movieId, transaction);
         transaction.Commit();
+        _tracker?.IncrementPersonal();
         return state;
     }
 
@@ -106,6 +114,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         command.ExecuteNonQuery();
         var state = ReadState(connection, movieId, transaction);
         transaction.Commit();
+        _tracker?.IncrementPersonal();
         return state;
     }
 
@@ -136,6 +145,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         }
         var events = ReadEvents(connection, movieId, transaction);
         transaction.Commit();
+        _tracker?.IncrementPlayback();
         return events.Single(item => item.Id == id);
     }
 
@@ -159,6 +169,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         delete.Parameters.AddWithValue("$id", eventId);
         delete.ExecuteNonQuery();
         transaction.Commit();
+        _tracker?.IncrementPlayback();
         return removed;
     }
 
@@ -302,6 +313,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         actionCmd.ExecuteNonQuery();
 
         transaction.Commit();
+        _tracker?.IncrementPersonal();
         return id;
     }
 
@@ -320,6 +332,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         command.Parameters.AddWithValue("$id", listId);
         command.ExecuteNonQuery();
         transaction.Commit();
+        _tracker?.IncrementPersonal();
     }
 
     public void DeleteCustomList(int listId)
@@ -344,6 +357,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
             command.Parameters.AddWithValue("$id", listId);
             command.ExecuteNonQuery();
         }
+        _tracker?.IncrementPersonal();
     }
 
     public void DeleteCustomListCascade(int listId)
@@ -354,6 +368,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         using var command = Command(connection, null, "DELETE FROM custom_lists WHERE id = $id;");
         command.Parameters.AddWithValue("$id", listId);
         command.ExecuteNonQuery();
+        _tracker?.IncrementPersonal();
     }
 
     public void AddMovieToCustomList(int listId, int movieId, DateTimeOffset now)
@@ -393,6 +408,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
 
         RecordPendingAddIfSynced(connection, transaction, listId, CustomListMediaKind.Movie, movieId, isMovie: true, now);
         transaction.Commit();
+        _tracker?.IncrementPersonal();
     }
 
     public void RemoveMovieFromCustomList(int listId, int movieId)
@@ -410,6 +426,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         command.Parameters.AddWithValue("$movie", movieId);
         command.ExecuteNonQuery();
         transaction.Commit();
+        _tracker?.IncrementPersonal();
     }
 
     public IReadOnlySet<int> GetCustomListIdsForMovie(int movieId)
@@ -462,6 +479,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
 
         RecordPendingAddIfSynced(connection, transaction, listId, CustomListMediaKind.Show, showId, isMovie: false, now);
         transaction.Commit();
+        _tracker?.IncrementPersonal();
     }
 
     public void RemoveShowFromCustomList(int listId, int showId)
@@ -479,6 +497,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         command.Parameters.AddWithValue("$show", showId);
         command.ExecuteNonQuery();
         transaction.Commit();
+        _tracker?.IncrementPersonal();
     }
 
     public IReadOnlySet<int> GetCustomListIdsForShow(int showId)
@@ -594,6 +613,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
                 updateCmd.Parameters.AddWithValue("$id", existingId);
                 updateCmd.ExecuteNonQuery();
                 transaction.Commit();
+                _tracker?.IncrementPersonal();
                 return existingId;
             }
         }
@@ -637,6 +657,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
 
         var newId = checked((int)(long)(insertCmd.ExecuteScalar() ?? throw new InvalidOperationException("Insert returned no ID.")));
         transaction.Commit();
+        _tracker?.IncrementPersonal();
         return newId;
     }
 
@@ -695,6 +716,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         insertCmd.ExecuteNonQuery();
 
         transaction.Commit();
+        _tracker?.IncrementPersonal();
     }
 
     public void RemoveCloudMediaFromCustomList(int listId, CustomListMediaKind kind, int tmdbId)
@@ -734,6 +756,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         deleteCmd.ExecuteNonQuery();
 
         transaction.Commit();
+        _tracker?.IncrementPersonal();
     }
 
     public void EnqueuePendingAction(int listId, CustomListMediaKind? kind, int? tmdbId, string actionType, DateTimeOffset now)
@@ -752,6 +775,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         command.Parameters.AddWithValue("$type", actionType);
         command.Parameters.AddWithValue("$now", now.ToString("O"));
         command.ExecuteNonQuery();
+        _tracker?.IncrementPersonal();
     }
 
     public IReadOnlyList<CustomListPendingAction> ListPendingActions(int? listId = null)
@@ -831,6 +855,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         command.Parameters.AddWithValue("$slug", traktSlug);
         command.Parameters.AddWithValue("$now", now.ToString("O"));
         command.ExecuteNonQuery();
+        _tracker?.IncrementPersonal();
     }
 
     public IReadOnlyList<(int MovieOrShowId, CustomListMediaKind Kind, int TmdbId)> ListLocalMembersWithTmdb(int listId)
@@ -863,6 +888,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         using var command = Command(connection, null, "DELETE FROM custom_list_pending_actions WHERE id = $id;");
         command.Parameters.AddWithValue("$id", actionId);
         command.ExecuteNonQuery();
+        _tracker?.IncrementPersonal();
     }
 
     public void SetListLastSynced(int listId, DateTimeOffset syncedAt)
@@ -873,6 +899,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         command.Parameters.AddWithValue("$synced", syncedAt.ToString("O"));
         command.Parameters.AddWithValue("$id", listId);
         command.ExecuteNonQuery();
+        _tracker?.IncrementPersonal();
     }
 
     private static void RecordPendingAddIfSynced(SqliteConnection connection, SqliteTransaction transaction, int listId, CustomListMediaKind kind, int mediaId, bool isMovie, DateTimeOffset now)
@@ -1020,6 +1047,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
             active.ExecuteNonQuery();
         }
         transaction.Commit();
+        _tracker?.IncrementPlayback();
         return entry;
     }
 
@@ -1041,6 +1069,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
             active.ExecuteNonQuery();
         }
         transaction.Commit();
+        _tracker?.IncrementPlayback();
         return removed;
     }
 
@@ -1054,6 +1083,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         using var command = Command(connection, transaction, "DELETE FROM watch_events;");
         var removed = command.ExecuteNonQuery();
         transaction.Commit();
+        _tracker?.IncrementPlayback();
         return removed;
     }
 

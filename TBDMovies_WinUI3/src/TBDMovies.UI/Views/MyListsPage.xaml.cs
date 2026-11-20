@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using TBDMovies.Application.Dto;
+using TBDMovies.Application.Repositories;
 using TBDMovies.Domain.Library.Personal;
 using TBDMovies.UI.Models;
 using TBDMovies.UI.Services;
@@ -45,6 +46,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
     /// <summary>The system tabs raise Checked during XAML parse; the constructor applies the first list.</summary>
     private readonly bool _isReady;
     private bool _isActivated;
+    private LibrarySnapshotToken? _lastLoadedSnapshot = null;
 
     /// <summary>Guards so rebuilding tabs and syncing the selection do not re-enter the Checked handler.</summary>
     private bool _rebuilding;
@@ -71,10 +73,19 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         _traktActive = true;
         AppServices.TraktSyncCompleted -= OnTraktSyncCompleted;
         AppServices.TraktSyncCompleted += OnTraktSyncCompleted;
+
+        var currentSnapshot = AppServices.LibrarySnapshot;
+        if (_lastLoadedSnapshot.HasValue && _lastLoadedSnapshot.Value == currentSnapshot)
+        {
+            UpdateSyncStatus();
+            return;
+        }
+
         Invalidate();
         RebuildTabs();
         Refresh();
         UpdateSyncStatus();
+        _lastLoadedSnapshot = currentSnapshot;
     }
 
     public void UpdateSyncStatus()
