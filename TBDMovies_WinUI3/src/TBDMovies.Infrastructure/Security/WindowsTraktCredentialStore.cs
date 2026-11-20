@@ -231,34 +231,13 @@ public sealed class WindowsTraktCredentialStore : ITraktCredentialStore
         return DeleteLegacyRowWithVacuumMarker(settings, diagnosticFolder);
     }
 
-    private static bool DeleteLegacyRowWithVacuumMarker(ISettingsRepository settings, string? diagnosticFolder)
-    {
-        try
-        {
-            settings.Set(SettingsService.SecurityVacuumPendingKey, "1", DateTimeOffset.UtcNow);
-        }
-        catch (Exception ex)
-        {
-            SecurityDiagnostics.Record(
-                "TraktCredentialStore",
-                $"Failed to set security_vacuum_pending before Trakt DPAPI row deletion: {ex.GetType().Name}: {ex.Message}",
-                diagnosticFolder);
-        }
-
-        try
-        {
-            settings.Delete(LegacyDpapiSettingsKey);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            SecurityDiagnostics.Record(
-                "TraktCredentialStore",
-                $"Failed to delete legacy DPAPI Trakt credential row: {ex.GetType().Name}: {ex.Message}",
-                diagnosticFolder);
-            return false;
-        }
-    }
+    private static bool DeleteLegacyRowWithVacuumMarker(ISettingsRepository settings, string? diagnosticFolder) =>
+        SettingsService.DeleteLegacyRowWithVacuumMarkerBestEffort(
+            settings,
+            LegacyDpapiSettingsKey,
+            "TraktCredentialStore",
+            diagnosticFolder,
+            clock: null);
 
     private static TraktCredentialPayload? DeserializePayload(string? json)
     {

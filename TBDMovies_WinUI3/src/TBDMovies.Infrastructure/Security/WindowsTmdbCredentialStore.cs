@@ -147,32 +147,11 @@ public sealed class WindowsTmdbCredentialStore : ITmdbCredentialStore
         return DeleteLegacyRowWithVacuumMarker(settings, diagnosticFolder);
     }
 
-    private static bool DeleteLegacyRowWithVacuumMarker(ISettingsRepository settings, string? diagnosticFolder)
-    {
-        try
-        {
-            settings.Set(SettingsService.SecurityVacuumPendingKey, "1", DateTimeOffset.UtcNow);
-        }
-        catch (Exception ex)
-        {
-            SecurityDiagnostics.Record(
-                "TmdbCredentialStore",
-                $"Failed to set security_vacuum_pending before TMDB DPAPI row deletion: {ex.GetType().Name}: {ex.Message}",
-                diagnosticFolder);
-        }
-
-        try
-        {
-            settings.Delete(LegacyDpapiSettingsKey);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            SecurityDiagnostics.Record(
-                "TmdbCredentialStore",
-                $"Failed to delete legacy DPAPI TMDB credential row: {ex.GetType().Name}: {ex.Message}",
-                diagnosticFolder);
-            return false;
-        }
-    }
+    private static bool DeleteLegacyRowWithVacuumMarker(ISettingsRepository settings, string? diagnosticFolder) =>
+        SettingsService.DeleteLegacyRowWithVacuumMarkerBestEffort(
+            settings,
+            LegacyDpapiSettingsKey,
+            "TmdbCredentialStore",
+            diagnosticFolder,
+            clock: null);
 }

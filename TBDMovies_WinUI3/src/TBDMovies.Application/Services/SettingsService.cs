@@ -246,23 +246,12 @@ public sealed class SettingsService : ISettingsUiActions
 
             try
             {
-                if (_settings is { } settings && settings.Get(LegacySubDlPlaintextKey) is not null)
+                if (_settings is { } settings)
                 {
-                    var hadPending = string.Equals(settings.Get(SecurityVacuumPendingKey), "1", StringComparison.Ordinal);
-                    MarkSecretReclaimPendingBestEffort();
-                    try
+                    if (DeleteLegacyRowWithVacuumMarkerBestEffort(settings, LegacySubDlPlaintextKey, "SettingsService", diagnosticDataFolder: null, _clock))
                     {
-                        settings.Delete(LegacySubDlPlaintextKey);
+                        CompleteSecretReclaimBestEffort();
                     }
-                    catch
-                    {
-                        if (!hadPending)
-                        {
-                            try { settings.Delete(SecurityVacuumPendingKey); } catch { }
-                        }
-                        throw;
-                    }
-                    CompleteSecretReclaimBestEffort();
                 }
             }
             catch (Exception cleanupEx)
@@ -296,11 +285,12 @@ public sealed class SettingsService : ISettingsUiActions
                     return false;
                 }
 
-                if (_settings is { } settings && settings.Get(LegacySubDlPlaintextKey) is not null)
+                if (_settings is { } settings)
                 {
-                    MarkSecretReclaimPendingBestEffort();
-                    settings.Delete(LegacySubDlPlaintextKey);
-                    CompleteSecretReclaimBestEffort();
+                    if (DeleteLegacyRowWithVacuumMarkerBestEffort(settings, LegacySubDlPlaintextKey, "SettingsService", diagnosticDataFolder: null, _clock))
+                    {
+                        CompleteSecretReclaimBestEffort();
+                    }
                 }
 
                 return true;
@@ -417,24 +407,12 @@ public sealed class SettingsService : ISettingsUiActions
                 var deletedLegacyPlaintext = false;
                 try
                 {
-                    if (settings.Get(LegacyTmdbPlaintextKey) is not null)
-                    {
-                        var hadPending = string.Equals(settings.Get(SecurityVacuumPendingKey), "1", StringComparison.Ordinal);
-                        MarkSecretReclaimPendingBestEffort();
-                        try
-                        {
-                            settings.Delete(LegacyTmdbPlaintextKey);
-                            deletedLegacyPlaintext = true;
-                        }
-                        catch
-                        {
-                            if (!hadPending)
-                            {
-                                try { settings.Delete(SecurityVacuumPendingKey); } catch { }
-                            }
-                            throw;
-                        }
-                    }
+                    deletedLegacyPlaintext = DeleteLegacyRowWithVacuumMarkerBestEffort(
+                        settings,
+                        LegacyTmdbPlaintextKey,
+                        "SettingsService",
+                        diagnosticDataFolder: null,
+                        _clock);
                 }
                 catch (Exception cleanupEx)
                 {
@@ -480,15 +458,27 @@ public sealed class SettingsService : ISettingsUiActions
                 lock (_credentialStateGate) { _tmdbToken = null; _tmdbState = TmdbCredentialState.StorageUnavailable; }
                 if (_credentialStore.Read() is not null) return false;
 
-                var hadLegacyPlaintext = _settings?.Get(LegacyTmdbPlaintextKey) is not null;
-                if (hadLegacyPlaintext)
+                var deletedLegacyPlaintext = false;
+                if (_settings is { } settings)
                 {
-                    MarkSecretReclaimPendingBestEffort();
-                    _settings!.Delete(LegacyTmdbPlaintextKey);
+                    deletedLegacyPlaintext = DeleteLegacyRowWithVacuumMarkerBestEffort(
+                        settings,
+                        LegacyTmdbPlaintextKey,
+                        "SettingsService",
+                        diagnosticDataFolder: null,
+                        _clock);
                 }
 
-                _settings?.Set("tmdb_explicitly_removed", "true", _clock());
-                if (hadLegacyPlaintext)
+                try
+                {
+                    _settings?.Set("tmdb_explicitly_removed", "true", _clock());
+                }
+                catch (Exception flagEx)
+                {
+                    SecurityDiagnostics.Record("SettingsService", $"Failed to set tmdb_explicitly_removed flag: {flagEx.GetType().Name}: {flagEx.Message}");
+                }
+
+                if (deletedLegacyPlaintext)
                 {
                     CompleteSecretReclaimBestEffort();
                 }
@@ -525,9 +515,7 @@ public sealed class SettingsService : ISettingsUiActions
         if (sanitizedLegacy is null)
         {
             SecurityDiagnostics.Record("SettingsService", "Purging invalid legacy plaintext TMDB token without writing to vault.");
-            MarkSecretReclaimPendingBestEffort();
-            settings.Delete(LegacyTmdbPlaintextKey);
-            return true;
+            return DeleteLegacyRowWithVacuumMarkerBestEffort(settings, LegacyTmdbPlaintextKey, "SettingsService", diagnosticDataFolder: null, _clock);
         }
 
         // Strictly preserve valid legacy secret rows whenever the protected store is null or transiently unreadable.
@@ -540,18 +528,14 @@ public sealed class SettingsService : ISettingsUiActions
         // over an obsolete settings value, including after an interrupted migration.
         if (GetTmdbToken() is not null)
         {
-            MarkSecretReclaimPendingBestEffort();
-            settings.Delete(LegacyTmdbPlaintextKey);
-            return true;
+            return DeleteLegacyRowWithVacuumMarkerBestEffort(settings, LegacyTmdbPlaintextKey, "SettingsService", diagnosticDataFolder: null, _clock);
         }
 
         _credentialStore.Write(sanitizedLegacy);
         if (!string.Equals(_credentialStore.Read(), sanitizedLegacy, StringComparison.Ordinal))
             throw new InvalidOperationException("Credential roundtrip verification failed.");
         lock (_credentialStateGate) { _tmdbToken = sanitizedLegacy; _tmdbState = TmdbCredentialState.Configured; }
-        MarkSecretReclaimPendingBestEffort();
-        settings.Delete(LegacyTmdbPlaintextKey);
-        return true;
+        return DeleteLegacyRowWithVacuumMarkerBestEffort(settings, LegacyTmdbPlaintextKey, "SettingsService", diagnosticDataFolder: null, _clock);
     }
 
     public static bool MigrateLegacySubDlPlaintext(
@@ -725,13 +709,48 @@ public sealed class SettingsService : ISettingsUiActions
             clock);
     }
 
-    private static bool DeleteLegacyRowWithVacuumMarkerBestEffort(
+    public static bool DeleteLegacyRowWithVacuumMarkerBestEffort(
         ISettingsRepository settings,
         string key,
         string diagnosticCategory,
         string? diagnosticDataFolder,
         Func<DateTimeOffset>? clock)
     {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        try
+        {
+            if (settings.Get(key) is null)
+            {
+                return false;
+            }
+        }
+        catch (Exception ex)
+        {
+            SecurityDiagnostics.Record(
+                diagnosticCategory,
+                $"Failed to inspect existing legacy row '{key}' before deletion: {ex.GetType().Name}: {ex.Message}",
+                diagnosticDataFolder);
+            return false;
+        }
+
+        bool hadPending;
+        try
+        {
+            hadPending = string.Equals(
+                settings.Get(SecurityVacuumPendingKey),
+                "1",
+                StringComparison.Ordinal);
+        }
+        catch (Exception ex)
+        {
+            SecurityDiagnostics.Record(
+                diagnosticCategory,
+                $"Aborting legacy secret row deletion; failed to inspect existing security_vacuum_pending before '{key}' deletion: {ex.GetType().Name}: {ex.Message}",
+                diagnosticDataFolder);
+            return false;
+        }
+
         var now = clock ?? (static () => DateTimeOffset.UtcNow);
         try
         {
@@ -741,8 +760,9 @@ public sealed class SettingsService : ISettingsUiActions
         {
             SecurityDiagnostics.Record(
                 diagnosticCategory,
-                $"Failed to set security_vacuum_pending before '{key}' deletion: {ex.GetType().Name}: {ex.Message}",
+                $"Aborting legacy secret row deletion; failed to set security_vacuum_pending before '{key}' deletion: {ex.GetType().Name}: {ex.Message}",
                 diagnosticDataFolder);
+            return false;
         }
 
         try
@@ -756,6 +776,24 @@ public sealed class SettingsService : ISettingsUiActions
                 diagnosticCategory,
                 $"Failed to delete legacy secret row '{key}': {ex.GetType().Name}: {ex.Message}",
                 diagnosticDataFolder);
+
+            if (!hadPending)
+            {
+                try
+                {
+                    if (settings.Get(key) is not null)
+                    {
+                        settings.Delete(SecurityVacuumPendingKey);
+                    }
+                }
+                catch (Exception rollbackEx)
+                {
+                    SecurityDiagnostics.Record(
+                        diagnosticCategory,
+                        $"Failed to rollback security_vacuum_pending marker after failed '{key}' deletion: {rollbackEx.GetType().Name}: {rollbackEx.Message}",
+                        diagnosticDataFolder);
+                }
+            }
             return false;
         }
     }
@@ -837,25 +875,17 @@ public sealed class SettingsService : ISettingsUiActions
             return;
         }
 
-        var hadLegacy = false;
+        var purged = DeleteLegacyRowWithVacuumMarkerBestEffort(settings, LegacyTmdbPlaintextKey, "SettingsService", diagnosticDataFolder: null, _clock);
         try
         {
-            hadLegacy = settings.Get(LegacyTmdbPlaintextKey) is not null;
-            if (hadLegacy)
-            {
-                MarkSecretReclaimPendingBestEffort();
-                settings.Delete(LegacyTmdbPlaintextKey);
-            }
-
             settings.Set("tmdb_explicitly_removed", "true", _clock());
         }
-        catch (Exception ex)
+        catch (Exception flagEx)
         {
-            SecurityDiagnostics.Record("SettingsService", $"Failed to purge legacy plaintext TMDB token when vault is unconfigured: {ex.GetType().Name}: {ex.Message}");
-            return;
+            SecurityDiagnostics.Record("SettingsService", $"Failed to set tmdb_explicitly_removed flag: {flagEx.GetType().Name}: {flagEx.Message}");
         }
 
-        if (hadLegacy)
+        if (purged)
         {
             CompleteSecretReclaimBestEffort();
         }
@@ -868,23 +898,10 @@ public sealed class SettingsService : ISettingsUiActions
             return;
         }
 
-        try
+        if (DeleteLegacyRowWithVacuumMarkerBestEffort(settings, key, "SettingsService", diagnosticDataFolder: null, _clock))
         {
-            if (settings.Get(key) is null)
-            {
-                return;
-            }
-
-            MarkSecretReclaimPendingBestEffort();
-            settings.Delete(key);
+            CompleteSecretReclaimBestEffort();
         }
-        catch (Exception ex)
-        {
-            SecurityDiagnostics.Record("SettingsService", $"Failed to purge legacy plaintext row '{key}' when vault is unconfigured: {ex.GetType().Name}: {ex.Message}");
-            return;
-        }
-
-        CompleteSecretReclaimBestEffort();
     }
 
     private void MarkSecretReclaimPendingBestEffort()

@@ -716,16 +716,87 @@ public sealed class SessionCredentialRegressionTests
         Assert.True(SettingsService.HasAnyRemainingLegacySecretRows(partialSettings));
         Assert.Equal("1", partialSettings.Get(SettingsService.SecurityVacuumPendingKey));
 
-        // 3. Transient failure writing security_vacuum_pending before delete STILL triggers ReclaimSecretPages via deletedLegacyRow
+        // 3. Transient failure writing security_vacuum_pending before delete PRESERVES legacy row and aborts deletion
         var resilientMaint = new Maintenance { ReclaimResult = true };
         var failMarkerSettings = new MemorySettings { FailSetKey = SettingsService.SecurityVacuumPendingKey };
         failMarkerSettings.Values["tmdb_read_access_token"] = LegacyToken;
         var resilientStore = new FakeCredentialStore();
 
         var resilientService = new SettingsService(resilientMaint, settings: failMarkerSettings, credentialStore: resilientStore);
-        Assert.True(resilientService.DeletedLegacySecretRowDuringStartup);
-        Assert.Null(failMarkerSettings.Get("tmdb_read_access_token"));
-        Assert.Equal(1, resilientMaint.ReclaimCalls);
+        Assert.False(resilientService.DeletedLegacySecretRowDuringStartup);
+        Assert.NotNull(failMarkerSettings.Get("tmdb_read_access_token"));
+        Assert.Equal(0, resilientMaint.ReclaimCalls);
+    }
+
+    [Fact]
+    public void DeleteLegacyRowWithVacuumMarkerBestEffort_RollbackGuard_WhenDeleteFails_AndNoPendingBefore_RollsBackMarker()
+    {
+        var settings = new MemorySettings { FailDeleteKey = "tmdb_read_access_token" };
+        settings.Values["tmdb_read_access_token"] = LegacyToken;
+
+        var deleted = SettingsService.DeleteLegacyRowWithVacuumMarkerBestEffort(
+            settings,
+            "tmdb_read_access_token",
+            "Tests",
+            diagnosticDataFolder: null,
+            clock: null);
+
+        Assert.False(deleted);
+        Assert.NotNull(settings.Get("tmdb_read_access_token"));
+        Assert.Null(settings.Get(SettingsService.SecurityVacuumPendingKey));
+    }
+
+    [Fact]
+    public void DeleteLegacyRowWithVacuumMarkerBestEffort_RollbackGuard_WhenDeleteFails_AndHadPendingBefore_RetainsMarker()
+    {
+        var settings = new MemorySettings { FailDeleteKey = "tmdb_read_access_token" };
+        settings.Values["tmdb_read_access_token"] = LegacyToken;
+        settings.Values[SettingsService.SecurityVacuumPendingKey] = "1";
+
+        var deleted = SettingsService.DeleteLegacyRowWithVacuumMarkerBestEffort(
+            settings,
+            "tmdb_read_access_token",
+            "Tests",
+            diagnosticDataFolder: null,
+            clock: null);
+
+        Assert.False(deleted);
+        Assert.NotNull(settings.Get("tmdb_read_access_token"));
+        Assert.Equal("1", settings.Get(SettingsService.SecurityVacuumPendingKey));
+    }
+
+    [Fact]
+    public void DeleteLegacyRowWithVacuumMarkerBestEffort_WhenRowDoesNotExist_ReturnsFalseWithoutSettingMarker()
+    {
+        var settings = new MemorySettings();
+
+        var deleted = SettingsService.DeleteLegacyRowWithVacuumMarkerBestEffort(
+            settings,
+            "non_existent_key",
+            "Tests",
+            diagnosticDataFolder: null,
+            clock: null);
+
+        Assert.False(deleted);
+        Assert.Null(settings.Get(SettingsService.SecurityVacuumPendingKey));
+    }
+
+    [Fact]
+    public void DeleteLegacyRowWithVacuumMarkerBestEffort_WhenSetMarkerFails_AbortsAndPreservesRow()
+    {
+        var settings = new MemorySettings { FailSetKey = SettingsService.SecurityVacuumPendingKey };
+        settings.Values["tmdb_read_access_token"] = LegacyToken;
+
+        var deleted = SettingsService.DeleteLegacyRowWithVacuumMarkerBestEffort(
+            settings,
+            "tmdb_read_access_token",
+            "Tests",
+            diagnosticDataFolder: null,
+            clock: null);
+
+        Assert.False(deleted);
+        Assert.NotNull(settings.Get("tmdb_read_access_token"));
+        Assert.Null(settings.Get(SettingsService.SecurityVacuumPendingKey));
     }
 
     private sealed class FakeCredentialStore : ITmdbCredentialStore
