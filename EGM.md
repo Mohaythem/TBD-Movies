@@ -18,8 +18,8 @@ flowchart TD
     INFRA["TBDMovies.Infrastructure<br/>(Library · net10.0-windows10.0.22621 · 34 files)"]
     APP["TBDMovies.Application<br/>(Library · net10.0 · 67 files)"]
     DOM["TBDMovies.Domain<br/>(Library · net10.0 · 19 files)"]
-    TESTS["TBDMovies.Tests<br/>(xUnit · net10.0-windows10.0.22621 · 91 files + 11 linked UI files)"]
-    QASEED["tools/TBDMovies.QaSeed<br/>(Exe · net10.0-windows10.0.22621 · 3 files · omitted from .slnx)"]
+    TESTS["TBDMovies.Tests<br/>(xUnit · net10.0-windows10.0.22621 · 92 files + 11 linked UI files + linked Seed)"]
+    QASEED["tools/TBDMovies.QaSeed<br/>(Exe · net10.0-windows10.0.22621 · 3 files · registered in .slnx)"]
 
     UI --> APP
     UI --> INFRA
@@ -51,8 +51,8 @@ Pinned SDK in `TBDMovies_WinUI3/global.json`: **`.NET SDK 10.0.400`** (`rollForw
 | `src/TBDMovies.FileSystem` | Yes | `Library` | `net10.0-windows10.0.22621` | `Domain`, `Application` | None | `23` |
 | `src/TBDMovies.Infrastructure` | Yes | `Library` | `net10.0-windows10.0.22621` | `Application` *(transitive `Domain`)* | `Microsoft.Data.Sqlite` (`10.0.11`), `System.Security.Cryptography.ProtectedData` (`10.0.14`) | `34` |
 | `src/TBDMovies.UI` | Yes | `WinExe` | `net10.0-windows10.0.22621` (`Min=10.0.17763.0`) | `Application`, `Infrastructure`, `FileSystem` | `Microsoft.WindowsAppSDK` (`1.7.260224002`), `Microsoft.Windows.SDK.BuildTools` (`10.0.26100.9169`), `CommunityToolkit.Mvvm` (`8.4.0` — *unused*), `Microsoft.Extensions.DependencyInjection` (`10.0.11` — *unused*) | `88` |
-| `tests/TBDMovies.Tests` | Yes | `Library` (Test) | `net10.0-windows10.0.22621` | `Domain`, `Application`, `Infrastructure`, `FileSystem` + 11 `<Compile Include>` UI files | `Microsoft.NET.Test.Sdk` (`17.14.1`), `xunit` (`2.9.3`), `xunit.runner.visualstudio` (`3.1.5`) | `91` |
-| `tools/TBDMovies.QaSeed` | **No** | `Exe` | `net10.0-windows10.0.22621` | `Infrastructure`, `Application`, `Domain` | None *(inherits `Sqlite` & `ProtectedData`)* | `3` |
+| `tests/TBDMovies.Tests` | Yes | `Library` (Test) | `net10.0-windows10.0.22621` | `Domain`, `Application`, `Infrastructure`, `FileSystem` + 11 `<Compile Include>` UI files + linked `Seed.cs` | `Microsoft.NET.Test.Sdk` (`17.14.1`), `xunit` (`2.9.3`), `xunit.runner.visualstudio` (`3.1.5`) | `92` |
+| `tools/TBDMovies.QaSeed` | **Yes** | `Exe` | `net10.0-windows10.0.22621` | `Infrastructure`, `Application`, `Domain` | None *(inherits `Sqlite` & `ProtectedData`)* | `3` |
 | `packaging/` + Root Meta | N/A | Inno Setup / Meta | Windows x64 (`Inno Setup 6`) | Packages Release `win-x64` build output of `TBDMovies.UI` | None | `3 + 5` |
 
 ---
@@ -229,7 +229,7 @@ Managed by `TBDMovies.Infrastructure.Persistence.Migrations.DatabaseMigrator` (`
 | `.gitignore` | `62` | Root Git ignore policy blocking `*.db`, `*.db-wal`, `*.db-shm`, `*.sqlite*`, `.env*`, `poster-cache/`, `*.zip`, `artifacts/`, `portable/`, and `ALL_IDEAS_ROADMAP.md`. |
 | `LICENSE` | `621` | Verbatim GNU General Public License v3.0 (`29 June 2007`). Zero custom riders. |
 | `TBDMovies_WinUI3/.gitignore` | `35` | Solution-scoped ignore rules excluding `bin/`, `obj/`, `.vs/`, `publish/`, `AppPackages/`, `*.msix*`, `*.pri`, `*.g.cs`, `TestResults/`, `*.trx`. |
-| `TBDMovies_WinUI3/TBDMovies.slnx` | `12` | XML solution manifest registering the 5 `src/*` projects and `tests/TBDMovies.Tests` (omits `tools/TBDMovies.QaSeed`). |
+| `TBDMovies_WinUI3/TBDMovies.slnx` | `15` | XML solution manifest registering the 5 `src/*` projects, `tests/TBDMovies.Tests`, and `tools/TBDMovies.QaSeed`. |
 | `TBDMovies_WinUI3/global.json` | `7` | Pins `.NET SDK 10.0.400` (`rollForward: "latestPatch"`, `allowPrerelease: false`). |
 
 ---
@@ -517,15 +517,15 @@ Managed by `TBDMovies.Infrastructure.Persistence.Migrations.DatabaseMigrator` (`
 
 ### 4.8 `TBDMovies_WinUI3/tools/TBDMovies.QaSeed/` (`3` Files)
 
-1. **`tools/TBDMovies.QaSeed/TBDMovies.QaSeed.csproj`** (`21` lines) — Standalone CLI (`OutputType=Exe`, `net10.0-windows10.0.22621`, `IsPackable=false`) referencing `Infrastructure`, `Application`, `Domain` *(not included in `TBDMovies.slnx`)*.
-2. **`tools/TBDMovies.QaSeed/Program.cs`** (`131` lines) — Top-level CLI supporting `verify <dbPath>`, `libcheck <dbPath>`, `timeload <dbPath>`, and `<dataRoot> <movieCount> <showCount> [seed]` synthetic catalog generation via `DatabaseMigrator` + `Seed`.
-3. **`tools/TBDMovies.QaSeed/Seed.cs`** (`247` lines) — `internal static class Seed` (`Movies`, `Shows`, `CustomLists` including Arabic `"قائمة العربية"`, `WatchEvents`).
+1. **`tools/TBDMovies.QaSeed/TBDMovies.QaSeed.csproj`** (`21` lines) — Standalone CLI (`OutputType=Exe`, `net10.0-windows10.0.22621`, `IsPackable=false`) referencing `Infrastructure`, `Application`, `Domain` (registered in `TBDMovies.slnx` under `/tools/`).
+2. **`tools/TBDMovies.QaSeed/Program.cs`** (`132` lines) — Top-level CLI supporting `verify <dbPath>` (Schema v23 3-state check), `libcheck <dbPath>`, `timeload <dbPath>`, and `<dataRoot> <movieCount> <showCount> [seed]` synthetic catalog generation via `DatabaseMigrator` + `Seed`.
+3. **`tools/TBDMovies.QaSeed/Seed.cs`** (`275` lines) — `internal static class Seed` (`Movies`, `Shows`, `CustomLists` including Arabic `"قائمة العربية"`, `WatchEvents`, with Schema v23 `metadata_status` nullable invariant).
 
 ---
 
-### 4.9 `TBDMovies_WinUI3/packaging/` (`3` Files)
+### 4.9 `TBDMovies_WinUI3/packaging/` (`2` Files)
 
-1. **`packaging/TBD-Movies.iss`** (`82` lines) — Inno Setup 6 installer script (`MyAppName="TBD Movies"`, `MyAppVersion="0.12.5"`, `MyAppExeName="TBD-Movies.exe"`, `AppId={{1A127282-7849-4212-A5F1-A8FD87661B8D}`, per-user `PrivilegesRequired=lowest` into `{localappdata}\Programs\TBD Movies`, packages Release `win-x64` build directory excluding `*.pdb` and `publish\*` to retain `.pri`/`.xbf`, preserves `%LOCALAPPDATA%\TBD Movies`, no `SignTool` configured `[L8]`).
+1. **`packaging/TBD-Movies.iss`** (`88` lines) — Inno Setup 6 installer script (`MyAppName="TBD Movies"`, `MyAppVersion="0.12.5"`, `MyAppExeName="TBD-Movies.exe"`, `AppId={{1A127282-7849-4212-A5F1-A8FD87661B8D}`, per-user `PrivilegesRequired=lowest` into `{localappdata}\Programs\TBD Movies`, packages Release `win-x64` build directory excluding `*.pdb` and `publish\*` to retain `.pri`/`.xbf`, preserves `%LOCALAPPDATA%\TBD Movies`, `AppMutex=TBDMovies_SingleInstance_Mutex`, `CloseApplicationsFilter={#MyAppExeName}`, conditional Authenticode `SignTool` hook `[L8]`).
 2. **`packaging/generate-icon.ps1`** (`167` lines) — PowerShell + `.NET System.Drawing` generator rendering 7 RGBA PNG frames (`16..256` px, `#18222D -> #111822` Mica tile + `#0078D4` Play Prism) to `src/TBDMovies.UI/Assets/TBD-Movies.ico` and `packaging/TBD-Movies.ico`.
 3. **`packaging/TBD-Movies.ico`** (`binary, 18436 bytes`) — Generated icon copy (byte-identical to `src/TBDMovies.UI/Assets/TBD-Movies.ico`).
 

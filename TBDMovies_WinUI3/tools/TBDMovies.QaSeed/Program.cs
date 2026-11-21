@@ -20,7 +20,8 @@ if (args.Length >= 2 && args[0] == "verify")
     Console.WriteLine("fk_violations=" + Scalar("SELECT COUNT(*) FROM pragma_foreign_key_check;"));
     Console.WriteLine("dup_movie_members=" + Scalar("SELECT COUNT(*) FROM (SELECT list_id,movie_id,COUNT(*) c FROM custom_list_members WHERE movie_id IS NOT NULL GROUP BY list_id,movie_id HAVING c>1);"));
     Console.WriteLine("dup_show_members=" + Scalar("SELECT COUNT(*) FROM (SELECT list_id,show_id,COUNT(*) c FROM custom_list_members WHERE show_id IS NOT NULL GROUP BY list_id,show_id HAVING c>1);"));
-    Console.WriteLine("bad_member_rows=" + Scalar("SELECT COUNT(*) FROM custom_list_members WHERE NOT ((media_kind='MOVIE' AND movie_id IS NOT NULL AND show_id IS NULL) OR (media_kind='SHOW' AND show_id IS NOT NULL AND movie_id IS NULL));"));
+    Console.WriteLine("dup_tmdb_members=" + Scalar("SELECT COUNT(*) FROM (SELECT list_id,media_kind,tmdb_id,COUNT(*) c FROM custom_list_members WHERE tmdb_id IS NOT NULL GROUP BY list_id,media_kind,tmdb_id HAVING c>1);"));
+    Console.WriteLine("bad_member_rows=" + Scalar("SELECT COUNT(*) FROM custom_list_members WHERE NOT ((media_kind='MOVIE' AND movie_id IS NOT NULL AND show_id IS NULL) OR (media_kind='SHOW' AND show_id IS NOT NULL AND movie_id IS NULL) OR (movie_id IS NULL AND show_id IS NULL AND tmdb_id IS NOT NULL AND tmdb_id > 0));"));
     Console.WriteLine("orphan_members=" + Scalar("SELECT COUNT(*) FROM custom_list_members m LEFT JOIN custom_lists l ON l.id=m.list_id WHERE l.id IS NULL;"));
     return 0;
 }

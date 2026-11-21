@@ -7,6 +7,7 @@ namespace TBDMovies.UI;
 
 public partial class App : Microsoft.UI.Xaml.Application
 {
+    private static System.Threading.Mutex? _appMutex;
     private Window? _window;
 
     public App()
@@ -49,6 +50,16 @@ public partial class App : Microsoft.UI.Xaml.Application
                 Environment.Exit(0);
                 return;
             }
+        }
+
+        // Hold named Win32 mutex for process lifetime so Inno Setup installer/uninstaller detects running application
+        try
+        {
+            _appMutex = new System.Threading.Mutex(true, "TBDMovies_SingleInstance_Mutex", out _);
+        }
+        catch
+        {
+            // Non-fatal if OS restricts named mutex creation
         }
 
         StartupTelemetry.PreInitMs = launchSw.ElapsedMilliseconds;

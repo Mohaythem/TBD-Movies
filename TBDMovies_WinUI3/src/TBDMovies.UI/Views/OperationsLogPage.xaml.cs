@@ -216,6 +216,7 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
 
         button.IsEnabled = false;
         UndoPreview? preview = null;
+        var undoSucceeded = false;
         try
         {
             preview = AppServices.History.PrepareUndo(operationId);
@@ -239,6 +240,7 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
             {
                 await Task.Run(() => AppServices.History.ConfirmUndo(preview.PreviewId));
                 preview = null;
+                undoSucceeded = true;
                 LibraryDataChanged?.Invoke(this, EventArgs.Empty);
                 ShowInfo(LocalizationService.Text("UndoSuccess"), InfoBarSeverity.Success);
                 Refresh();
@@ -259,7 +261,10 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
         }
         finally
         {
-            button.IsEnabled = true;
+            if (!undoSucceeded)
+            {
+                button.IsEnabled = true;
+            }
         }
     }
 

@@ -8,8 +8,8 @@
 ; settings under %LOCALAPPDATA%\TBD Movies, which is outside the install directory, so install and
 ; uninstall leave user data and media untouched.
 ;
-; Build:  ISCC.exe packaging\TBD Movies.iss
-; Output: artifacts\release\0.11.11\TBDMoviesSetup.exe
+; Build:  ISCC.exe packaging\TBD-Movies.iss
+; Output: artifacts\release\0.12.5\TBDMoviesSetup.exe
 
 #define MyAppName "TBD Movies"
 #define MyAppVersion "0.12.5"
@@ -43,14 +43,19 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
 SetupIconFile={#IconFile}
+AppMutex=TBDMovies_SingleInstance_Mutex
 OutputDir=..\artifacts\release\{#MyAppVersion}
 OutputBaseFilename=TBDMoviesSetup
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
-CloseApplicationsFilter=*.exe
+CloseApplicationsFilter={#MyAppExeName}
 RestartApplications=no
+#if defined(SIGN_ENABLED) && SIGN_ENABLED == "1"
+SignTool=tbdmovies $f
+SignedUninstaller=yes
+#endif
 ; Personal library data lives in %LOCALAPPDATA%\TBD Movies and is intentionally never installed here.
 
 [Languages]
@@ -62,16 +67,17 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [InstallDelete]
 Type: files; Name: "{autodesktop}\TBD-Movies.lnk"
 Type: files; Name: "{autodesktop}\TBD Movies.lnk"
-Type: files; Name: "{autodesktop}\DropSort.lnk"
 Type: files; Name: "{group}\TBD-Movies.lnk"
 Type: files; Name: "{group}\TBD Movies.lnk"
-Type: files; Name: "{group}\DropSort.lnk"
 Type: files; Name: "{userprograms}\(Default)\TBD Movies.lnk"
-Type: files; Name: "{userprograms}\(Default)\DropSort.lnk"
-Type: filesandordirs; Name: "{localappdata}\Programs\DropSort"
 
 [Files]
+#if defined(SIGN_ENABLED) && SIGN_ENABLED == "1"
+Source: "{#PayloadDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion signonce
+Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "*.pdb,publish\*,\publish,{#MyAppExeName}"
+#else
 Source: "{#PayloadDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "*.pdb,publish\*,\publish"
+#endif
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; AppUserModelID: "TBDMovies.TBDMovies"

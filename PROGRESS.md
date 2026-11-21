@@ -1,7 +1,7 @@
 # TBD Movies — Active Progress & Status Checkpoint
 
 ## Current Goal
-- **Active Track / Current Priority**: Wave 5 (`[U9]` Trakt custom lists & local lists unification). **Wave 5 Complete (Batches 5.1, 5.2, 5.3 verified with 1,379 / 1,379 tests, 1,414 runner tests)**.
+- **Active Track / Current Priority**: Wave 7 Complete (`[L8]`, `C-17`, `S-DEAD`, `S-ARCH`). **Wave 7 Batches 7.1 & 7.2 Complete (verified with 1,421 / 1,421 tests)**.
 - **Batches Approved & Closed**: 
   - Wave 1 (Batches 1.1, 1.2, 1.3): `SEC-19`, `C-06`, `SEC-20`, `C-03`, `SEC-01..05`, `SEC-14..15`, `SEC-21..22`, `C-13`, `[L6]` (`1,295` tests).
   - Wave 2 (Batches 2.1, 2.2, 2.3): `C-01`, `[P3]`, `C-04`, `[U8]`, `C-05` (`1,295` tests).
@@ -11,9 +11,41 @@
   - Wave 5 (Batch 5.1): `C-08`, `SEC-11`, `#290`, `#293` (`1,372` tests).
   - Wave 5 (Batch 5.2): `SEC-06..10`, `C-07.1..5` (`1,379` tests).
   - Wave 5 (Batch 5.3): `C-07.6`, `SEC-26`, Option A TraktPage Eradication & Navigation Unification (`1,379` tests).
-- **Baseline Test Suite**: **`1,379 / 1,379`** tests passing in Release (`1,414` runner test executions).
+  - Wave 7 (Batch 7.1): `S-DEAD`, `S-ARCH`, Decision 3 UndoOperation & RestoreFromBackup wiring (`1,418` tests).
+  - Wave 7 (Batch 7.2): `C-17`, `[L8]`, QaSeed Schema v23 Parity, AppMutex, and Inno Setup Hardening (`1,421` tests).
+- **Baseline Test Suite**: **`1,421 / 1,421`** tests passing in Release (`1,421` runner test executions, 0 failed).
 
 ## Completed Work
+55. **QA Seed Schema v23 Parity, Solution Re-Integration, AppMutex & Inno Setup Hardening [Wave 7, Batch 7.2 — C-17, [L8]]**:
+    - **Solution Re-Integration (`TBDMovies.slnx`)**:
+        - Registered `tools/TBDMovies.QaSeed/TBDMovies.QaSeed.csproj` in `TBDMovies.slnx` under `/tools/`, guaranteeing continuous compilation and restore checks on CI.
+    - **QaSeed Schema v23 Contract & Constraint Parity**:
+        - Updated `Program.cs` (`verify`) to account for the 3-state `CHECK` constraint on `custom_list_members` (local movie, local show, or cloud item with `tmdb_id > 0`), and added `dup_tmdb_members` query.
+        - Updated `Seed.cs` (`Movies` and `Shows`) to bind `provider` and `external_id` as `NULL` (`DBNull.Value`) when `metadata_status` is `'PENDING'` or `'NEEDS_MATCH'`, populating `'tmdb'` and `"m" + i` / `"s" + s` strictly when `'READY'`. Added cloud items seeding in `CustomLists`.
+    - **AppMutex & Inno Setup Packaging Hardening (`[L8]`)**:
+        - In `App.xaml.cs`, acquired and held a static named Win32 mutex `TBDMovies_SingleInstance_Mutex` for process lifetime after single-instance ownership is claimed.
+        - In `TBD-Movies.iss`, configured `AppMutex=TBDMovies_SingleInstance_Mutex`, scoped `CloseApplicationsFilter={#MyAppExeName}` (eliminating dangerous `*.exe` wildcard), pruned legacy `DropSort` lines from `[InstallDelete]`, and added conditional Authenticode signing hook (`#if defined(SIGN_ENABLED) && SIGN_ENABLED == "1"` with `SignTool=tbdmovies $f`).
+    - **OperationsLogPage Undo Recycling Guard**:
+        - Added `undoSucceeded` tracking to `OperationsLogPage.xaml.cs` so that button re-enabling in `finally` occurs strictly when undo did NOT succeed, preventing visual recycling glitches.
+    - **Automated Verification**:
+        - Added `QaSeedAndInstallerTests.cs` (3 facts) validating seeding integrity, FK checks, catalog reads, installer script properties, and solution structure.
+54. **UI Safety Actions Wiring, Dead Package/Asset Pruning & Concurrency Hardening [Wave 7, Batch 7.1 — S-DEAD, S-ARCH, Decision 3]**:
+    - **Interactive Undo Operation in `OperationsLogPage`**:
+        - Wired `UndoOperation` (`IOperationHistoryUiActions`) with double-click re-entrancy protection, confirmation dialog with operation details, and leak-free `DiscardUndoPreview` on all non-primary dialog results (`Cancel`, `Close`, `Esc`, backdrop dismiss).
+        - Integrated full UI refresh via `AppServices.RaiseLibraryDataChanged()` upon confirmed undo.
+    - **Database Backup Creation & Restoration in `SettingsPage`**:
+        - Hardened `DatabaseSafetyBackup.RestoreFromBackup` with `DatabaseWriteGate.Enter` and pre/post `SqliteConnection.ClearAllPools()` to prevent Windows file-lock collisions.
+        - Added `DatabaseSafetyBackup.ListBackups` enumerating verified backups sorted newest first.
+        - Added dedicated "Database & Backups" settings card with `CreateBackupButton` (manual snapshot) and `RestoreBackupButton` with `AvailableBackupsFlyout` dropdown + file picker fallback (`BrowseAndRestoreAsync`).
+    - **`S-DEAD` Dead Package & Asset Pruning**:
+        - Removed unused `CommunityToolkit.Mvvm` and `Microsoft.Extensions.DependencyInjection` dependencies from `TBDMovies.UI.csproj`.
+        - Deleted 14 unused SVG files (`Assets/MovieDetails/*.svg`) and pruned `.csproj` items.
+        - Deleted redundant duplicate `packaging/TBD-Movies.ico` and updated `generate-icon.ps1`.
+    - **Localization & Invariant Governance**:
+        - Added 19 new keys in 1-to-1 parity across English and Arabic dictionaries in `LocalizationService.cs`.
+        - Enforced Vector 11 invariant: omitted redundant `FontFamily` assignments on `FontIcon` to avoid `Application.Current` namespace collision (`CS0234`).
+    - **Verification**:
+        - 1,418 / 1,418 automated unit tests passed on Windows CI Run `44921541530`.
 53. **UX Unification, Dead Code Eradication & Poster Exception Hardening [Wave 5, Batch 5.3 — C-07.6, SEC-26, Option A]**:
     - **Duplicate Trakt Menus Elimination (`C-07.6`)**:
         - Removed rogue `foreach (var tList in trakt.GetLists(accountId))` loops from `MediaCardContextMenu.cs` (lines 266–292) and `MovieDetailsPage.xaml.cs` (lines 1105–1128), aligning them 1:1 with `TVShowDetailsPage.xaml.cs` and eliminating duplicate lists and broken one-way add bugs.

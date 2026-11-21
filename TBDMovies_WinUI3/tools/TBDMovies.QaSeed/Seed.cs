@@ -2,7 +2,7 @@
 
 namespace TBDMovies.QaSeed;
 
-/// <summary>Bulk synthetic seeding against the production v13 schema. QA only.</summary>
+/// <summary>Bulk synthetic seeding against the production v23 schema. QA only.</summary>
 internal static class Seed
 {
     private static string Ts(DateTimeOffset t) => t.ToString("O");
@@ -16,9 +16,10 @@ internal static class Seed
         movie.CommandText = """
             INSERT INTO movies(id, provider, external_id, title, year, overview, poster_path,
                                date_added, created_at, updated_at, genres, metadata_status)
-            VALUES ($id,'tmdb',$ext,$title,$year,$ov,$poster,$da,$ca,$ua,'["Drama"]',$ms);
+            VALUES ($id,$prov,$ext,$title,$year,$ov,$poster,$da,$ca,$ua,'["Drama"]',$ms);
             """;
         var pId = movie.Parameters.Add("$id", SqliteType.Integer);
+        var pProv = movie.Parameters.Add("$prov", SqliteType.Text);
         var pExt = movie.Parameters.Add("$ext", SqliteType.Text);
         var pTitle = movie.Parameters.Add("$title", SqliteType.Text);
         var pYear = movie.Parameters.Add("$year", SqliteType.Integer);
@@ -46,8 +47,10 @@ internal static class Seed
         for (var i = 1; i <= count; i++)
         {
             var added = now.AddMinutes(-i * 7); // spread date_added so Date-added sort is meaningful
+            var ms = (i % 11) switch { 0 => "PENDING", 1 => "NEEDS_MATCH", _ => "READY" };
             pId.Value = i;
-            pExt.Value = "m" + i;
+            pProv.Value = ms == "READY" ? (object)"tmdb" : DBNull.Value;
+            pExt.Value = ms == "READY" ? (object)("m" + i) : DBNull.Value;
             pTitle.Value = i % 250 == 0 ? longTitle(i) : title(i);
             pYear.Value = 1970 + rng.Next(56);
             pOv.Value = i % 5 == 0 ? DBNull.Value : (object)("Synthetic overview for QA item " + i); // NULL, never '' (domain: overview must be null or non-empty)
@@ -55,7 +58,7 @@ internal static class Seed
             pDa.Value = Ts(added);
             pCa.Value = Ts(added);
             pUa.Value = Ts(added);
-            pMs.Value = (i % 11) switch { 0 => "PENDING", 1 => "NEEDS_MATCH", _ => "READY" };
+            pMs.Value = ms;
             movie.ExecuteNonQuery();
 
             var kind = i % 10; // 0-6 present, 7-8 missing, 9 registered-only (no file)
@@ -87,14 +90,16 @@ internal static class Seed
                 show.CommandText = """
                     INSERT INTO tv_shows(id, provider, external_id, title, sort_title, year, genres,
                                          metadata_status, date_added, created_at, updated_at, poster_path)
-                    VALUES ($id,'tmdb',$ext,$title,$sort,$year,'["Drama"]',$ms,$da,$da,$da,$poster);
+                    VALUES ($id,$prov,$ext,$title,$sort,$year,'["Drama"]',$ms,$da,$da,$da,$poster);
                     """;
+                var ms = s % 9 == 0 ? "PENDING" : "READY";
                 show.Parameters.AddWithValue("$id", s);
-                show.Parameters.AddWithValue("$ext", "s" + s);
+                show.Parameters.AddWithValue("$prov", ms == "READY" ? (object)"tmdb" : DBNull.Value);
+                show.Parameters.AddWithValue("$ext", ms == "READY" ? (object)("s" + s) : DBNull.Value);
                 show.Parameters.AddWithValue("$title", title(s));
                 show.Parameters.AddWithValue("$sort", "qa show " + s); // unique
                 show.Parameters.AddWithValue("$year", 1990 + rng.Next(36));
-                show.Parameters.AddWithValue("$ms", s % 9 == 0 ? "PENDING" : "READY");
+                show.Parameters.AddWithValue("$ms", ms);
                 show.Parameters.AddWithValue("$da", Ts(added));
                 show.Parameters.AddWithValue("$poster", s % 6 == 0 ? DBNull.Value : (object)("/qa/show_" + (s % 200) + ".jpg"));
                 show.ExecuteNonQuery();
@@ -197,6 +202,29 @@ internal static class Seed
             m.Parameters.AddWithValue("$da", Ts(now));
             m.ExecuteNonQuery();
         }
+
+        // Cloud-only items (exercising Schema v22/v23 3-state custom_list_members)
+        if (listIds.Count > 0)
+        {
+            var cloudList = listIds[0];
+            using var cm = c.CreateCommand();
+            cm.Transaction = tx;
+            cm.CommandText = "INSERT OR IGNORE INTO custom_list_members(list_id, media_kind, tmdb_id, cloud_title, cloud_year, added_at) VALUES ($l,$k,$tmdb,$t,$y,$da);";
+            cm.Parameters.AddWithValue("$l", cloudList);
+            cm.Parameters.AddWithValue("$k", "MOVIE");
+            cm.Parameters.AddWithValue("$tmdb", 99901);
+            cm.Parameters.AddWithValue("$t", "Cloud Only Movie");
+            cm.Parameters.AddWithValue("$y", 2024);
+            cm.Parameters.AddWithValue("$da", Ts(now));
+            cm.ExecuteNonQuery();
+
+            cm.Parameters["$k"].Value = "SHOW";
+            cm.Parameters["$tmdb"].Value = 99902;
+            cm.Parameters["$t"].Value = "Cloud Only Show";
+            cm.Parameters["$y"].Value = 2025;
+            cm.ExecuteNonQuery();
+        }
+
         tx.Commit();
     }
 

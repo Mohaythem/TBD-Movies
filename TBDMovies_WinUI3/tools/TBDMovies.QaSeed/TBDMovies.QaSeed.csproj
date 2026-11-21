@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- QA only synthetic library seeder. Reuses the production DatabaseMigrator (v13 schema), then bulk
+  <!-- QA only synthetic library seeder. Reuses the production DatabaseMigrator (v23 schema), then bulk
        inserts movies, TV shows, custom lists, membership and watch events with realistic variety.
        Point the installed app at a seeded profile with TBDMOVIES_TEST_DATA_ROOT. Not shipped. -->
   <PropertyGroup>
