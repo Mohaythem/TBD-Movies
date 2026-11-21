@@ -134,7 +134,7 @@ public sealed class PathPolicy
         "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
     };
 
-    private static bool HasAlternateDataStream(string path)
+    internal static bool HasAlternateDataStream(string path)
     {
         int allowedDriveColonIndex = -1;
         if (path.StartsWith(@"\\?\", StringComparison.Ordinal) && path.Length >= 6 && char.IsLetter(path[4]) && path[5] == ':')

@@ -1,12 +1,15 @@
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Win32;
 using TBDMovies.Application.Playback;
+using TBDMovies.Domain.Media;
 using TBDMovies.Domain.Playback;
 using TBDMovies.FileSystem.Playback.Trackers;
+using TBDMovies.FileSystem.Safety;
 
 namespace TBDMovies.FileSystem.Playback;
 
@@ -21,11 +24,14 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
         MediaPlayerType playerType,
         string? customPlayerPath,
         string? customArgsTemplate,
-        Func<double, Task> onPlaybackEnded,
+        Func<double, double?, Task> onPlaybackEnded,
         CancellationToken cancellationToken = default,
-        Func<double, bool, Task>? onProgressTick = null)
+        Func<double, double?, bool, Task>? onProgressTick = null)
     {
-        if (string.IsNullOrWhiteSpace(mediaPath) || !File.Exists(mediaPath))
+        if (string.IsNullOrWhiteSpace(mediaPath) ||
+            !File.Exists(mediaPath) ||
+            !MediaFormatPolicy.IsSupportedVideoPath(mediaPath) ||
+            PathPolicy.HasAlternateDataStream(mediaPath))
         {
             return false;
         }
@@ -43,7 +49,8 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                 const int vlcPort = 8088;
                 const string vlcPassword = "tbd_internal";
                 var vlcArgs = BuildVlcTrackingArguments(mediaPath, startPositionSeconds, vlcPort, vlcPassword);
-                startInfo = new ProcessStartInfo(vlcPath, vlcArgs) { UseShellExecute = false };
+                useShell = IsWindowsAppsPath(vlcPath);
+                startInfo = new ProcessStartInfo(vlcPath, vlcArgs) { UseShellExecute = useShell };
                 tracker = new VlcHttpTimelineTracker(vlcPort, vlcPassword);
                 break;
 
@@ -51,7 +58,8 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                 var mpcPath = ResolveMpcPath();
                 var mpcPort = MpcWebTimelineTracker.ConfigureWebInterface(mpcPath);
                 var mpcArgs = BuildArguments(mediaPath, startPositionSeconds, playerType);
-                startInfo = new ProcessStartInfo(mpcPath, mpcArgs) { UseShellExecute = false };
+                useShell = IsWindowsAppsPath(mpcPath);
+                startInfo = new ProcessStartInfo(mpcPath, mpcArgs) { UseShellExecute = useShell };
                 tracker = new MpcWebTimelineTracker(mpcPort);
                 break;
 
@@ -59,13 +67,15 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                 var mpvPath = ResolveMpvPath();
                 var pipeName = $"tbd_mpv_{Guid.NewGuid():N}";
                 var mpvArgs = BuildMpvTrackingArguments(mediaPath, startPositionSeconds, pipeName);
-                startInfo = new ProcessStartInfo(mpvPath, mpvArgs) { UseShellExecute = false };
+                useShell = IsWindowsAppsPath(mpvPath);
+                startInfo = new ProcessStartInfo(mpvPath, mpvArgs) { UseShellExecute = useShell };
                 tracker = new MpvPipeTimelineTracker(pipeName);
                 break;
 
             case MediaPlayerType.Custom when !string.IsNullOrWhiteSpace(customPlayerPath):
                 var customArgs = BuildArguments(mediaPath, startPositionSeconds, playerType, customArgsTemplate);
-                startInfo = new ProcessStartInfo(customPlayerPath, customArgs) { UseShellExecute = false };
+                useShell = IsWindowsAppsPath(customPlayerPath);
+                startInfo = new ProcessStartInfo(customPlayerPath, customArgs) { UseShellExecute = useShell };
                 break;
 
             default:
@@ -82,9 +92,37 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
         {
             process = Process.Start(startInfo);
         }
-        catch (Exception)
+        catch (System.ComponentModel.Win32Exception ex) when (!useShell)
         {
-            // If explicit player fails to launch, fallback to ShellExecute
+            Trace.WriteLine($"[PlayerProcessLauncher] Direct launch failed with Win32 error (0x{ex.NativeErrorCode:X8}). Retrying with UseShellExecute = true.");
+            try
+            {
+                var shellStartInfo = new ProcessStartInfo(startInfo.FileName, startInfo.Arguments)
+                {
+                    UseShellExecute = true
+                };
+                useShell = true;
+                process = Process.Start(shellStartInfo);
+            }
+            catch (Exception fallbackEx)
+            {
+                Trace.WriteLine($"[PlayerProcessLauncher] Shell fallback launch failed: {fallbackEx.Message}");
+                try
+                {
+                    useShell = true;
+                    tracker = new WindowsMediaTimelineTracker();
+                    process = Process.Start(new ProcessStartInfo(mediaPath) { UseShellExecute = true });
+                }
+                catch (Exception mediaLaunchEx)
+                {
+                    Trace.WriteLine($"[PlayerProcessLauncher] Default media launch failed: {mediaLaunchEx.Message}");
+                    return false;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine($"[PlayerProcessLauncher] Player process start threw: {ex.Message}");
             if (!useShell)
             {
                 try
@@ -93,8 +131,9 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                     tracker = new WindowsMediaTimelineTracker();
                     process = Process.Start(new ProcessStartInfo(mediaPath) { UseShellExecute = true });
                 }
-                catch (Exception)
+                catch (Exception mediaLaunchEx)
                 {
+                    Trace.WriteLine($"[PlayerProcessLauncher] Default media launch failed: {mediaLaunchEx.Message}");
                     return false;
                 }
             }
@@ -104,7 +143,7 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
             }
         }
 
-        if (process is null && !useShell)
+        if (process is null && tracker is null)
         {
             return true;
         }
@@ -127,10 +166,33 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                 }
             }
             catch (OperationCanceledException) { }
-            catch (Exception) { }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[PlayerProcessLauncher] Background tracking error: {ex}");
+            }
         }, cancellationToken);
 
         return true;
+    }
+
+    public static bool IsWindowsAppsPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        return path.Contains(@"\WindowsApps\", StringComparison.OrdinalIgnoreCase) ||
+               path.Contains(@"/WindowsApps/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool SafeHasExited(Process? process)
+    {
+        if (process is null) return true;
+        try
+        {
+            return process.HasExited;
+        }
+        catch
+        {
+            return true;
+        }
     }
 
     private static async Task RunTrackingLoopAsync(
@@ -141,8 +203,8 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
         double? totalDurationSeconds,
         DateTimeOffset startTime,
         bool useShell,
-        Func<double, Task>? onPlaybackEnded,
-        Func<double, bool, Task>? onProgressTick,
+        Func<double, double?, Task>? onPlaybackEnded,
+        Func<double, double?, bool, Task>? onProgressTick,
         CancellationToken cancellationToken)
     {
         using (process)
@@ -155,10 +217,20 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
 
             while (!cancellationToken.IsCancellationRequested)
             {
+                if (tracker == null && process == null)
+                {
+                    break;
+                }
+
+                if (SafeHasExited(process))
+                {
+                    break;
+                }
+
                 var exitTask = process?.WaitForExitAsync(cancellationToken);
                 var delayTask = Task.Delay(1000, cancellationToken);
 
-                if (exitTask != null && !useShell)
+                if (exitTask != null && (tracker == null || !useShell))
                 {
                     var completed = await Task.WhenAny(exitTask, delayTask).ConfigureAwait(false);
                     if (completed == exitTask)
@@ -179,7 +251,7 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                         hadActiveSession = true;
                         lastReportedPosition = snapshot.PositionSeconds;
                         isPaused = snapshot.IsPaused;
-                        if (snapshot.DurationSeconds.HasValue && !totalDurationSeconds.HasValue)
+                        if (snapshot.DurationSeconds.HasValue && snapshot.DurationSeconds.Value > 0 && !totalDurationSeconds.HasValue)
                         {
                             totalDurationSeconds = snapshot.DurationSeconds;
                         }
@@ -190,7 +262,14 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                         {
                             if (onProgressTick != null)
                             {
-                                await onProgressTick(lastReportedPosition, isPaused).ConfigureAwait(false);
+                                try
+                                {
+                                    await onProgressTick(lastReportedPosition, totalDurationSeconds, isPaused).ConfigureAwait(false);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Trace.WriteLine($"[PlayerProcessLauncher] onProgressTick error: {ex.Message}");
+                                }
                             }
                             lastSavedPosition = lastReportedPosition;
                             lastSavedTime = DateTimeOffset.UtcNow;
@@ -203,7 +282,7 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                     }
                     else if (useShell && (DateTimeOffset.UtcNow - startTime).TotalSeconds >= 10.0 && !hadActiveSession)
                     {
-                        if (process?.HasExited == true)
+                        if (SafeHasExited(process))
                         {
                             break;
                         }
@@ -231,9 +310,16 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                     if (finalSnapshot != null && finalSnapshot.PositionSeconds > 0)
                     {
                         lastReportedPosition = finalSnapshot.PositionSeconds;
+                        if (finalSnapshot.DurationSeconds.HasValue && finalSnapshot.DurationSeconds.Value > 0 && !totalDurationSeconds.HasValue)
+                        {
+                            totalDurationSeconds = finalSnapshot.DurationSeconds;
+                        }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Trace.WriteLine($"[PlayerProcessLauncher] Final poll error: {ex.Message}");
+                }
             }
 
             var totalElapsed = (DateTimeOffset.UtcNow - startTime).TotalSeconds;
@@ -243,7 +329,7 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                 finalPos = startPositionSeconds + totalElapsed;
             }
 
-            if (totalDurationSeconds.HasValue && finalPos > totalDurationSeconds.Value)
+            if (totalDurationSeconds.HasValue && totalDurationSeconds.Value > 0 && finalPos > totalDurationSeconds.Value)
             {
                 finalPos = totalDurationSeconds.Value;
             }
@@ -252,7 +338,14 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
             {
                 if (onPlaybackEnded != null)
                 {
-                    await onPlaybackEnded(finalPos).ConfigureAwait(false);
+                    try
+                    {
+                        await onPlaybackEnded(finalPos, totalDurationSeconds).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        Trace.WriteLine($"[PlayerProcessLauncher] onPlaybackEnded error: {ex.Message}");
+                    }
                 }
             }
         }
@@ -363,11 +456,22 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                 ? $"--start={Math.Floor(startPositionSeconds)} \"{mediaPath}\""
                 : $"\"{mediaPath}\"",
             MediaPlayerType.Custom when !string.IsNullOrWhiteSpace(customArgsTemplate) =>
-                customArgsTemplate.Replace("{path}", mediaPath, StringComparison.OrdinalIgnoreCase)
-                                  .Replace("{seconds}", Math.Floor(startPositionSeconds).ToString(), StringComparison.OrdinalIgnoreCase)
-                                  .Replace("{time}", FormatHms(startPositionSeconds), StringComparison.OrdinalIgnoreCase),
+                BuildCustomArguments(customArgsTemplate, mediaPath, startPositionSeconds),
             _ => $"\"{mediaPath}\""
         };
+    }
+
+    public static string BuildCustomArguments(string customArgsTemplate, string mediaPath, double startPositionSeconds)
+    {
+        var safePath = mediaPath.Replace("\"", "\\\"");
+        var formattedSeconds = Math.Floor(Math.Max(0, startPositionSeconds)).ToString(CultureInfo.InvariantCulture);
+        var formattedHms = FormatHms(startPositionSeconds);
+
+        return customArgsTemplate
+            .Replace("\"{path}\"", $"\"{safePath}\"", StringComparison.OrdinalIgnoreCase)
+            .Replace("{path}", $"\"{safePath}\"", StringComparison.OrdinalIgnoreCase)
+            .Replace("{seconds}", formattedSeconds, StringComparison.OrdinalIgnoreCase)
+            .Replace("{time}", formattedHms, StringComparison.OrdinalIgnoreCase);
     }
 
     public static string BuildVlcTrackingArguments(string mediaPath, double startPositionSeconds, int port, string password)

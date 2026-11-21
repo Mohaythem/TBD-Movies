@@ -14,7 +14,7 @@ public interface IPlayerProcessLauncher
         MediaPlayerType playerType,
         string? customPlayerPath,
         string? customArgsTemplate,
-        Func<double, Task> onPlaybackEnded,
+        Func<double, double?, Task> onPlaybackEnded,
         CancellationToken cancellationToken = default,
-        Func<double, bool, Task>? onProgressTick = null);
+        Func<double, double?, bool, Task>? onProgressTick = null);
 }

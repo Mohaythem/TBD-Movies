@@ -1,14 +1,33 @@
 # TBD Movies — Active Progress & Status Checkpoint
 
 ## Current Goal
-- **Active Track / Next Priority**: Project development frozen until user directs next post-exam item. Pending open items in `/BUGS.md`: `[U9]` remaining gaps (Trakt Show Favorites pull & upload, `if (!userListsSuccess)` safeguard unit test, plus queue/tombstone polish), `[U10]` (live playback timeline measurement), `[L6]` (SQLite `VACUUM` after plaintext token deletion), `[L8]` (Inno Setup code signing), `[M1]`, `[U7]` & `[U3]` (Subtitles/SubDL — frozen), and `[U6]` (Random picker regression check).
-- **Batch Approved & Closed**: `[H1]`, `[P1]`, `[P3]`, `[P4]`, `[P5]`, `[P5-B]`, `[M2]`, `[M3]`, `[M4]`, `[L1]`, `[L2]`, `[L3]`, `[L4]`, `[L5]`, `[L7]`, `[L9]`, `[U4]`, `[U5]`, `[U5-B]`, `[U8]`, `[U9-EXE]` verified with `1,143 / 1,143` tests passing in Release; `[P2]` closed as By Design.
-- **Partially Implemented / Superseded (Tracked Open in `/BUGS.md`)**:
-  - `[U9]` & `[U9-Hardening]`: `Migration 22`, `Migration 23`, `[TBD] {name}` list unification, and `DeleteCustomListCascade` implemented, with open sub-items tracked in `/BUGS.md`.
-  - `[L6]`: `VACUUM` runs on DPAPI row purge (`[M2]`) only, NOT on plaintext `'tmdb_read_access_token'` deletion in `SettingsService.MigrateLegacyCredential()` (`L222-237`).
-  - `[U1]` & `[U2]`: UI controls and initial tracker scaffolding built, superseded in live playback by open **`[U10]`** (`WindowsMediaTimelineTracker.cs:37-48` static `Position` / session filtering & companion tracker issues).
+- **Active Track / Current Priority**: Wave 4 (Playback & Media Player Launch Architecture). Batch 4.1 completed and verified with **1,335 / 1,335** tests. Next priority: Batch 4.2 (`[U10]` live timeline trackers GSMTC / MPC-HC / VLC / mpv).
+- **Batches Approved & Closed**: 
+  - Wave 1 (Batches 1.1, 1.2, 1.3): `SEC-19`, `C-06`, `SEC-20`, `C-03`, `SEC-01..05`, `SEC-14..15`, `SEC-21..22`, `C-13`, `[L6]` (`1,295` tests).
+  - Wave 2 (Batches 2.1, 2.2, 2.3): `C-01`, `[P3]`, `C-04`, `[U8]`, `C-05` (`1,295` tests).
+  - Wave 3 (Batches 3.1, 3.2, 3.3): `SEC-16`, `C-09`, `C-10`, `C-11`, `C-12` (`1,328` tests).
+  - Wave 4 (Batch 4.1): `SEC-23`, `C-02` Primary (`1,335` tests).
+- **Baseline Test Suite**: **`1,335 / 1,335`** tests passing in Release (`846 [Fact]` + `101 [Theory]` with `489 [InlineData]`).
 
 ## Completed Work
+48. **External Player Launch Hardening & Duration Telemetry [Batch 4.1 — C-02, SEC-23]**:
+    - **Contract Upgrade (`IPlayerProcessLauncher`)**:
+        - Updated `onPlaybackEnded` to receive `(double finalPos, double? discoveredDuration)` and `onProgressTick` to receive `(double currentPos, double? discoveredDuration, bool isPaused)`.
+        - Propagated discovered video duration from player to `PlaybackTrackingService`, fixing duration loss for unlinked or non-TMDB items.
+    - **Unindexed Media Resilience (`MediaFileId <= 0`)**:
+        - Guarded `_progressRepository.SaveProgress` and `DeleteProgress` with `target.MediaFileId > 0`, eliminating `ArgumentOutOfRangeException`.
+        - Ensured `PlaybackEnded?.Invoke` is ALWAYS fired for all media items to keep UI pages (`HomePage`, `TVShowDetailsPage`, `MovieDetailsPage`) reactive and refreshed.
+    - **WindowsApps Protection & Safe Shell Fallback (`PlayerProcessLauncher.cs`)**:
+        - Added `IsWindowsAppsPath` and proactive `UseShellExecute = true` for WindowsApps executables.
+        - Implemented fallback retry on `Win32Exception` (0x80070005) using clean `ProcessStartInfo(fileName, arguments)` without `ArgumentList`.
+        - Added `SafeHasExited(Process? process)` to avoid `InvalidOperationException` if Windows closes process handles in shell mode.
+        - Prevented infinite loop in shell mode when `tracker == null` by awaiting `process.WaitForExitAsync()`.
+    - **Custom Arguments Sanitization & ADS Rejection (`SEC-23`)**:
+        - Prevented double-quoting in `BuildCustomArguments` by handling `"{path}"` vs `{path}`, escaping embedded quotes, and formatting `{seconds}` using `CultureInfo.InvariantCulture`.
+        - Enforced `MediaFormatPolicy.IsSupportedVideoPath` and `PathPolicy.HasAlternateDataStream` at the entry point of `LaunchAndTrackAsync`.
+        - Replaced silent empty catches with durable `System.Diagnostics.Trace.WriteLine`.
+    - **Unit Tests Added**:
+        - 7 new comprehensive unit tests in `PlaybackTrackingTests.cs`, bringing total test count to **1,335 / 1,335** passing tests.
 47. **Instant Library Rendering & Release Executable Production [U9-EXE]**:
     - **Synchronous Instant Rendering (`LibraryPage.xaml.cs`)**:
         - Replaced asynchronous `LoadShowsAsync()` and its background thread scheduling with synchronous, instantaneous `LoadShows()` matching `LoadMovies()` and `HomePage.LoadShows()`.

@@ -11,6 +11,7 @@ using TBDMovies.Application.Trakt;
 using TBDMovies.Domain.Playback;
 using TBDMovies.FileSystem.Playback;
 using TBDMovies.FileSystem.Playback.Trackers;
+using TBDMovies.FileSystem.Safety;
 using TBDMovies.Infrastructure.Persistence.Migrations;
 using TBDMovies.Infrastructure.Persistence.Repositories;
 using Xunit;
@@ -298,6 +299,7 @@ public sealed class PlaybackTrackingTests
     {
         public double SimulatedExitPosition { get; set; } = 300;
         public double? SimulatedTickPosition { get; set; }
+        public double? SimulatedDiscoveredDuration { get; set; }
 
         public async Task<bool> LaunchAndTrackAsync(
             string filePath,
@@ -306,15 +308,16 @@ public sealed class PlaybackTrackingTests
             MediaPlayerType playerType,
             string? customExecutablePath,
             string? customArgumentsTemplate,
-            Func<double, Task> onPlaybackExit,
+            Func<double, double?, Task> onPlaybackExit,
             CancellationToken cancellationToken = default,
-            Func<double, bool, Task>? onProgressTick = null)
+            Func<double, double?, bool, Task>? onProgressTick = null)
         {
+            var effectiveDuration = SimulatedDiscoveredDuration ?? totalDurationSeconds;
             if (SimulatedTickPosition.HasValue && onProgressTick != null)
             {
-                await onProgressTick(SimulatedTickPosition.Value, false);
+                await onProgressTick(SimulatedTickPosition.Value, effectiveDuration, false);
             }
-            await onPlaybackExit(SimulatedExitPosition);
+            await onPlaybackExit(SimulatedExitPosition, effectiveDuration);
             return true;
         }
     }
@@ -407,5 +410,273 @@ public sealed class PlaybackTrackingTests
             SqliteConnection.ClearAllPools();
             try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
         }
+    }
+
+    [Fact]
+    public async Task PlaybackTrackingService_WhenMediaFileIdZeroOrNegative_DoesNotThrow_AndStillFiresPlaybackEnded()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_unindexed_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+            var progressRepo = new PlaybackProgressRepository(connStr);
+            var mockLauncher = new FakePlayerLauncher { SimulatedExitPosition = 250 };
+            var service = new PlaybackTrackingService(progressRepo, mockLauncher);
+
+            var target = new PlaybackMediaTarget(
+                MediaFileId: 0,
+                FilePath: @"C:\unindexed.mkv",
+                TotalDurationSeconds: 1000,
+                IsMovie: true,
+                MovieId: null);
+
+            var endedFired = false;
+            var reportedId = -999;
+            service.PlaybackEnded += (_, id) =>
+            {
+                endedFired = true;
+                reportedId = id;
+            };
+
+            // Should complete cleanly without throwing ArgumentOutOfRangeException
+            var started = await service.StartPlaybackAsync(target, resume: false);
+            Assert.True(started);
+            Assert.True(endedFired);
+            Assert.Equal(0, reportedId);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task PlaybackTrackingService_PropagatesDiscoveredDuration_AndMarksWatchedWhenAbove90Percent()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_discovered_dur_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+
+            using (var conn = new SqliteConnection(connStr))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (50, 'Discovered Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (500, 50, 'C:\disc.mkv', 'c:\disc.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
+                ";
+                cmd.ExecuteNonQuery();
+            }
+
+            var progressRepo = new PlaybackProgressRepository(connStr);
+            var personalRepo = new PersonalLibraryRepository(connStr);
+            var mockLauncher = new FakePlayerLauncher
+            {
+                SimulatedDiscoveredDuration = 1000,
+                SimulatedExitPosition = 930 // 93% -> above 90% (watched) and above 92% (delete progress)
+            };
+            var mockTrakt = new FakeTraktClient();
+
+            var service = new PlaybackTrackingService(
+                progressRepo,
+                mockLauncher,
+                personalLibraryRepository: personalRepo,
+                traktDataClient: mockTrakt,
+                traktAuthService: new FakeTraktAuthService(),
+                traktClientId: "dummy_client_id");
+
+            var target = new PlaybackMediaTarget(
+                MediaFileId: 500,
+                FilePath: @"C:\disc.mkv",
+                TotalDurationSeconds: null, // Unknown upfront
+                IsMovie: true,
+                MovieId: 50,
+                MovieTitle: "Discovered Movie");
+
+            await service.StartPlaybackAsync(target, resume: false);
+
+            // Watched past 92% -> progress deleted
+            Assert.Null(progressRepo.GetByMediaFileId(500));
+
+            // Watched past 90% -> watch event recorded in personal library
+            var history = personalRepo.GetWatchHistory(50);
+            Assert.Single(history);
+
+            // Trakt Scrobble Stop called with ~93%
+            Assert.Contains(mockTrakt.Calls, c => c.Action == "stop" && Math.Abs(c.Progress - 93.0) < 0.1);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task PlaybackTrackingService_WhenBothDurationsNull_DoesNotThrowDivisionByZero_AndSavesPositionSafely()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_no_duration_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+
+            using (var conn = new SqliteConnection(connStr))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (60, 'No Duration Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (600, 60, 'C:\nodur.mkv', 'c:\nodur.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
+                ";
+                cmd.ExecuteNonQuery();
+            }
+
+            var progressRepo = new PlaybackProgressRepository(connStr);
+            var personalRepo = new PersonalLibraryRepository(connStr);
+            var mockLauncher = new FakePlayerLauncher
+            {
+                SimulatedDiscoveredDuration = null, // Still unknown
+                SimulatedExitPosition = 500
+            };
+            var mockTrakt = new FakeTraktClient();
+
+            var service = new PlaybackTrackingService(
+                progressRepo,
+                mockLauncher,
+                personalLibraryRepository: personalRepo,
+                traktDataClient: mockTrakt,
+                traktAuthService: new FakeTraktAuthService(),
+                traktClientId: "dummy_client_id");
+
+            var target = new PlaybackMediaTarget(
+                MediaFileId: 600,
+                FilePath: @"C:\nodur.mkv",
+                TotalDurationSeconds: null,
+                IsMovie: true,
+                MovieId: 60,
+                MovieTitle: "No Duration Movie");
+
+            await service.StartPlaybackAsync(target, resume: false);
+
+            // Progress should be safely saved without exception
+            var saved = progressRepo.GetByMediaFileId(600);
+            Assert.NotNull(saved);
+            Assert.Equal(500, saved.PositionSeconds);
+            Assert.Null(saved.TotalDurationSeconds);
+
+            // No watch event recorded because percentage is 0
+            Assert.Empty(personalRepo.GetWatchHistory(60));
+
+            // Scrobble is pause (not stop)
+            Assert.Contains(mockTrakt.Calls, c => c.Action == "pause" && c.Progress == 0.0);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task PlaybackTrackingService_ScrobbleIncludesDiscoveredDuration_WhenTargetDurationNull()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_scrobble_dur_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+
+            using (var conn = new SqliteConnection(connStr))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (70, 'Scrobble Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (700, 70, 'C:\scrob.mkv', 'c:\scrob.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
+                ";
+                cmd.ExecuteNonQuery();
+            }
+
+            var progressRepo = new PlaybackProgressRepository(connStr);
+            var mockLauncher = new FakePlayerLauncher
+            {
+                SimulatedDiscoveredDuration = 2000,
+                SimulatedExitPosition = 1000 // 50%
+            };
+            var mockTrakt = new FakeTraktClient();
+
+            var service = new PlaybackTrackingService(
+                progressRepo,
+                mockLauncher,
+                traktDataClient: mockTrakt,
+                traktAuthService: new FakeTraktAuthService(),
+                traktClientId: "dummy_client_id");
+
+            var target = new PlaybackMediaTarget(
+                MediaFileId: 700,
+                FilePath: @"C:\scrob.mkv",
+                TotalDurationSeconds: null,
+                IsMovie: true,
+                MovieId: 70,
+                MovieTitle: "Scrobble Movie");
+
+            await service.StartPlaybackAsync(target, resume: false);
+
+            // Trakt scrobble payload must report 50% (not 0.0%)
+            Assert.Contains(mockTrakt.Calls, c => c.Action == "pause" && Math.Abs(c.Progress - 50.0) < 0.1);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
+        }
+    }
+
+    [Fact]
+    public void PlayerProcessLauncher_CustomArgs_SafelyQuotesAndEscapesMediaPath_WithoutDoubleQuoting()
+    {
+        // Case 1: Template already has quotes around {path} -> exactly one pair of quotes in output
+        var args1 = PlayerProcessLauncher.BuildArguments(@"C:\My Movies\film.mkv", 0, MediaPlayerType.Custom, @"""{path}"" --fullscreen");
+        Assert.Equal(@"""C:\My Movies\film.mkv"" --fullscreen", args1);
+
+        // Case 2: Template has bare {path} without quotes -> safely enclosed in quotes
+        var args2 = PlayerProcessLauncher.BuildArguments(@"C:\My Movies\film.mkv", 0, MediaPlayerType.Custom, @"--play {path}");
+        Assert.Equal(@"--play ""C:\My Movies\film.mkv""", args2);
+
+        // Case 3: Path contains embedded quotes -> inner quotes escaped, seconds formatted in InvariantCulture
+        var args3 = PlayerProcessLauncher.BuildArguments(@"C:\My""Movies\film.mkv", 125.7, MediaPlayerType.Custom, @"--play {path} --time {seconds}");
+        Assert.Equal(@"--play ""C:\My\""Movies\film.mkv"" --time 125", args3);
+    }
+
+    [Fact]
+    public void PlayerProcessLauncher_DetectsWindowsAppsPaths()
+    {
+        Assert.True(PlayerProcessLauncher.IsWindowsAppsPath(@"C:\Program Files\WindowsApps\Microsoft.Media.Player\player.exe"));
+        Assert.True(PlayerProcessLauncher.IsWindowsAppsPath(@"C:/Program Files/WindowsApps/Microsoft.Media.Player/player.exe"));
+        Assert.False(PlayerProcessLauncher.IsWindowsAppsPath(@"C:\Program Files\MPC-HC\mpc-hc64.exe"));
+        Assert.False(PlayerProcessLauncher.IsWindowsAppsPath(@"C:\Program Files\VideoLAN\VLC\vlc.exe"));
+        Assert.False(PlayerProcessLauncher.IsWindowsAppsPath(null));
+        Assert.False(PlayerProcessLauncher.IsWindowsAppsPath(""));
+        Assert.False(PlayerProcessLauncher.IsWindowsAppsPath("   "));
+    }
+
+    [Fact]
+    public void PlayerProcessLauncher_AcceptsNormalDriveLetterPaths_AndRejectsNtfsAlternateDataStreams()
+    {
+        // Normal paths with drive letters must be accepted (no false positives)
+        Assert.False(PathPolicy.HasAlternateDataStream(@"C:\Movies\movie.mkv"));
+        Assert.False(PathPolicy.HasAlternateDataStream(@"D:\Videos\film.mp4"));
+        Assert.False(PathPolicy.HasAlternateDataStream(@"\\?\C:\Movies\movie.mkv"));
+        Assert.False(PathPolicy.HasAlternateDataStream(@"\\server\share\movie.mkv"));
+
+        // NTFS Alternate Data Streams must be rejected (true positives)
+        Assert.True(PathPolicy.HasAlternateDataStream(@"C:\Movies\movie.mkv:hidden.exe"));
+        Assert.True(PathPolicy.HasAlternateDataStream(@"\\?\C:\Movies\movie.mkv:stream.ps1"));
+        Assert.True(PathPolicy.HasAlternateDataStream(@"\\server\share\movie.mkv:ads"));
     }
 }

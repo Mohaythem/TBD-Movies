@@ -113,38 +113,46 @@ public sealed class PlaybackTrackingService
             playerType,
             customPath,
             customArgs,
-            async (finalPosition) =>
+            async (finalPosition, discoveredDuration) =>
             {
-                await HandlePlaybackExitAsync(target, finalPosition).ConfigureAwait(false);
+                await HandlePlaybackExitAsync(target, finalPosition, discoveredDuration).ConfigureAwait(false);
             },
             cancellationToken,
-            (currentPosition, isPaused) =>
+            (currentPosition, discoveredDuration, isPaused) =>
             {
                 if (isPaused || target.MediaFileId <= 0) return Task.CompletedTask;
-                var duration = target.TotalDurationSeconds;
+                var duration = (discoveredDuration is > 0) ? discoveredDuration : target.TotalDurationSeconds;
                 _progressRepository.SaveProgress(target.MediaFileId, currentPosition, duration, _clock());
                 return Task.CompletedTask;
             }).ConfigureAwait(false);
     }
 
-    private async Task HandlePlaybackExitAsync(PlaybackMediaTarget target, double finalPosition)
+    private async Task HandlePlaybackExitAsync(PlaybackMediaTarget target, double finalPosition, double? discoveredDuration)
     {
         var now = _clock();
-        var duration = target.TotalDurationSeconds;
-        var progressPercent = duration is > 0 ? (finalPosition / duration.Value) * 100.0 : 0.0;
+        var effectiveDuration = (discoveredDuration.HasValue && discoveredDuration.Value > 0)
+            ? discoveredDuration
+            : target.TotalDurationSeconds;
 
-        // If watched past 92% (in end credits), mark as completed and clear resume point
-        if (duration.HasValue && progressPercent >= 92.0)
+        var progressPercent = (effectiveDuration is > 0)
+            ? (finalPosition / effectiveDuration.Value) * 100.0
+            : 0.0;
+
+        if (target.MediaFileId > 0)
         {
-            _progressRepository.DeleteProgress(target.MediaFileId);
-        }
-        else
-        {
-            _progressRepository.SaveProgress(target.MediaFileId, finalPosition, duration, now);
+            // If watched past 92% (in end credits), mark as completed and clear resume point
+            if (effectiveDuration is > 0 && progressPercent >= 92.0)
+            {
+                _progressRepository.DeleteProgress(target.MediaFileId);
+            }
+            else
+            {
+                _progressRepository.SaveProgress(target.MediaFileId, finalPosition, effectiveDuration, now);
+            }
         }
 
         // Auto mark as watched if progress >= 90%
-        if (progressPercent >= 90.0)
+        if (effectiveDuration is > 0 && progressPercent >= 90.0)
         {
             try
             {
@@ -159,21 +167,31 @@ public sealed class PlaybackTrackingService
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[PlaybackTrackingService] Failed to record local watch event: {ex.Message}");
+                Trace.WriteLine($"[PlaybackTrackingService] Failed to record local watch event: {ex.Message}");
             }
         }
 
         // Trakt Scrobble: Trakt auto-scrobbles on Stop if >= 80%.
         // To maintain strict parity with local 90% threshold, send Pause if < 90% (saving position without marking watched),
         // and send Stop only when >= 90% (marking watched on both local and Trakt).
-        var scrobbleAction = progressPercent >= 90.0 ? TraktScrobbleAction.Stop : TraktScrobbleAction.Pause;
-        await TryScrobbleAsync(target, finalPosition, scrobbleAction).ConfigureAwait(false);
+        var scrobbleTarget = (effectiveDuration.HasValue && !target.TotalDurationSeconds.HasValue)
+            ? target with { TotalDurationSeconds = effectiveDuration }
+            : target;
+
+        var scrobbleAction = (effectiveDuration is > 0 && progressPercent >= 90.0)
+            ? TraktScrobbleAction.Stop
+            : TraktScrobbleAction.Pause;
+
+        await TryScrobbleAsync(scrobbleTarget, finalPosition, scrobbleAction).ConfigureAwait(false);
 
         try
         {
             PlaybackEnded?.Invoke(this, target.MediaFileId);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Trace.WriteLine($"[PlaybackTrackingService] PlaybackEnded invocation error: {ex.Message}");
+        }
     }
 
     private async Task TryScrobbleAsync(PlaybackMediaTarget target, double currentPositionSeconds, TraktScrobbleAction action)
