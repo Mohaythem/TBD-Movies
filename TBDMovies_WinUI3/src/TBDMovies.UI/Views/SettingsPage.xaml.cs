@@ -799,7 +799,7 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
                 var item = new MenuFlyoutItem
                 {
                     Text = label,
-                    Icon = new FontIcon { Glyph = "\uE74E", FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["SymbolThemeFontFamily"] }
+                    Icon = new FontIcon { Glyph = "\uE74E" }
                 };
                 var path = backup.FilePath;
                 item.Click += async (_, _) => await ExecuteRestoreAsync(path);
@@ -822,7 +822,7 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         var browseItem = new MenuFlyoutItem
         {
             Text = LocalizationService.Text("BrowseBackupFile"),
-            Icon = new FontIcon { Glyph = "\uE838", FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["SymbolThemeFontFamily"] }
+            Icon = new FontIcon { Glyph = "\uE838" }
         };
         browseItem.Click += async (_, _) => await BrowseAndRestoreAsync();
         AvailableBackupsFlyout.Items.Add(browseItem);

@@ -93,6 +93,7 @@ Before committing changes or proposing a push, verify the following ten historic
 8. **Repository Method Signature Match**: Match method names on repository interfaces exactly (`GetWatchEvents` vs. non-existent `GetWatchHistory`, preventing `CS1061`).
 9. **Diagnostics Namespace Import Check**: Explicitly import `using System.Diagnostics;` whenever referencing `Trace.WriteLine` or diagnostic classes (preventing `CS0103`).
 10. **Init-Only Properties & Required Constructor Arguments**: Initialize `init`-only properties via object initializers (`new Foo { Bar = ... }`, preventing `CS8852`), and strictly provide all required constructor arguments in correct order (such as all eight required parameters for `MovieCandidate`, preventing `CS7036`).
+11. **Application Namespace Collision (CS0234)**: Never write `Application.Current` unqualified in `TBDMovies.UI` code-behind, as C# resolves `Application` to `TBDMovies.Application` rather than `Microsoft.UI.Xaml.Application`. For `FontIcon`, omit `FontFamily` (it defaults to `SymbolThemeFontFamily`), or use the fully qualified `Microsoft.UI.Xaml.Application.Current`.
 
 ### Step 5: Automated Verification & Strict Test Baseline
 - **Clean Solution Build (`dotnet build`)**: Build must produce exit code `0` with zero warnings and zero errors (`0 Warning(s), 0 Error(s)`).
