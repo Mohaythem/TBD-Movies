@@ -392,6 +392,19 @@ public sealed class NetworkHardeningTests
         Assert.True(SpinWait.SpinUntil(() => guard.Execute(@"\\server\share\task4.mkv", () => 4, () => -4) == 4, TimeSpan.FromSeconds(1)));
     }
 
+    [Theory]
+    [InlineData(@"\\server\share\file.mkv", @"\\SERVER\SHARE")]
+    [InlineData(@"\\?\UNC\server\share\sub\file.mkv", @"\\SERVER\SHARE")]
+    [InlineData("//server/share/file.mkv", @"\\SERVER\SHARE")]
+    [InlineData("//?/UNC/server/share/sub/file.mkv", @"\\SERVER\SHARE")]
+    [InlineData(@"Z:\Videos\file.mkv", @"Z:\")]
+    [InlineData(@"\\?\Z:\Videos\file.mkv", @"Z:\")]
+    [InlineData("//?/Z:/Videos/file.mkv", @"Z:\")]
+    public void ShareKey_normalizes_slashes_and_unc_spellings(string path, string expectedKey)
+    {
+        Assert.Equal(expectedKey, NetworkReadGuard.ShareKey(path));
+    }
+
     private sealed class FakeInspector : IAvailabilityInspector
     {
         public AvailabilityInspectionStatus Status { get; set; }

@@ -222,8 +222,7 @@ public sealed class ReconciliationService : IReconciliationUiActions
     }
 
     private static bool IsNetworkPath(string path) =>
-        (path.StartsWith(@"\\", StringComparison.Ordinal) && !path.StartsWith(@"\\?\", StringComparison.Ordinal)) ||
-        path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase);
+        NetworkPathClassifier.IsNetworkPath(path);
 
     public RelinkPreview PrepareMediaRelink(int mediaFileId, string candidatePath) =>
         PrepareMediaRelink(mediaFileId, candidatePath, () => false);

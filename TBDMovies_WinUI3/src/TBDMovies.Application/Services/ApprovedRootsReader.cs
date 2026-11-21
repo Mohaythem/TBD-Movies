@@ -118,12 +118,6 @@ public static class ApprovedRootsReader
         return result;
     }
 
-    public static bool IsNetworkPath(string path)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return false;
-        return (path.StartsWith(@"\\", StringComparison.Ordinal) &&
-            !path.StartsWith(@"\\?\", StringComparison.Ordinal) &&
-            !path.StartsWith(@"\\.\", StringComparison.Ordinal)) ||
-            path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase);
-    }
+    public static bool IsNetworkPath(string path) =>
+        NetworkPathClassifier.IsNetworkPath(path);
 }

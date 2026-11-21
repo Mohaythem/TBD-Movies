@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using TBDMovies.Application.Services;
 
 namespace TBDMovies.FileSystem.Inspection;
 
@@ -32,9 +33,6 @@ public sealed class NetworkReadGuard
     private readonly int _maxConcurrencyPerShare;
     private readonly Func<char, DriveType>? _driveTypeProvider;
     private readonly ConcurrentDictionary<string, ShareState> _shares = new(StringComparer.OrdinalIgnoreCase);
-
-    private static readonly ConcurrentDictionary<char, (bool IsNetwork, long ExpiryTicks)> _driveTypeCache = new();
-    private static readonly TimeSpan DriveCacheTtl = TimeSpan.FromSeconds(15);
 
     public NetworkReadGuard(
         TimeSpan? timeout = null,
@@ -150,100 +148,29 @@ public sealed class NetworkReadGuard
 
     public bool CheckNetworkPath(string path) => IsNetworkPath(path, _driveTypeProvider);
 
-    public static bool IsNetworkPath(string path) => IsNetworkPath(path, driveTypeProvider: null);
+    public static bool IsNetworkPath(string path) => NetworkPathClassifier.IsNetworkPath(path);
 
-    public static bool IsNetworkPath(string path, Func<char, DriveType>? driveTypeProvider)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return false;
+    public static bool IsNetworkPath(string path, Func<char, DriveType>? driveTypeProvider) =>
+        NetworkPathClassifier.IsNetworkPath(path, driveTypeProvider);
 
-        if ((path.StartsWith(@"\\", StringComparison.Ordinal) &&
-            !path.StartsWith(@"\\?\", StringComparison.Ordinal) &&
-            !path.StartsWith(@"\\.\", StringComparison.Ordinal)) ||
-            path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        if (TryExtractDriveLetter(path, out var driveLetter))
-        {
-            return IsNetworkDrive(driveLetter, driveTypeProvider);
-        }
-
-        return false;
-    }
-
-    public static bool TryExtractDriveLetter(string path, out char driveLetter)
-    {
-        driveLetter = default;
-        if (string.IsNullOrWhiteSpace(path)) return false;
-
-        var trimmed = path.Trim();
-        if (trimmed.Length >= 2 && char.IsLetter(trimmed[0]) && trimmed[1] == ':')
-        {
-            driveLetter = char.ToUpperInvariant(trimmed[0]);
-            return true;
-        }
-
-        if (trimmed.Length >= 6 &&
-            (trimmed.StartsWith(@"\\?\", StringComparison.Ordinal) || trimmed.StartsWith(@"\\.\", StringComparison.Ordinal)) &&
-            char.IsLetter(trimmed[4]) && trimmed[5] == ':')
-        {
-            driveLetter = char.ToUpperInvariant(trimmed[4]);
-            return true;
-        }
-
-        return false;
-    }
-
-    private static bool IsNetworkDrive(char driveLetter, Func<char, DriveType>? provider)
-    {
-        if (provider is not null)
-        {
-            try
-            {
-                return provider(driveLetter) == DriveType.Network;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        var now = System.Diagnostics.Stopwatch.GetTimestamp();
-        if (_driveTypeCache.TryGetValue(driveLetter, out var cached) && now < cached.ExpiryTicks)
-        {
-            return cached.IsNetwork;
-        }
-
-        var isNetwork = false;
-        try
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                var drive = new DriveInfo(driveLetter.ToString());
-                isNetwork = drive.DriveType == DriveType.Network;
-            }
-        }
-        catch
-        {
-            isNetwork = false;
-        }
-
-        var expiry = now + (long)(DriveCacheTtl.TotalSeconds * System.Diagnostics.Stopwatch.Frequency);
-        _driveTypeCache[driveLetter] = (isNetwork, expiry);
-        return isNetwork;
-    }
+    public static bool TryExtractDriveLetter(string path, out char driveLetter) =>
+        NetworkPathClassifier.TryExtractDriveLetter(path, out driveLetter);
 
     public static string ShareKey(string path)
     {
+        if (string.IsNullOrWhiteSpace(path)) return string.Empty;
+
         if (TryExtractDriveLetter(path, out var driveLetter))
         {
             return $"{char.ToUpperInvariant(driveLetter)}:\\";
         }
 
-        var normalized = path.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase)
-            ? @"\\" + path[8..]
-            : path;
+        var normalized = path.Trim().Replace('/', '\\');
+        if (normalized.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = @"\\" + normalized[8..];
+        }
+
         var parts = normalized.TrimStart('\\').Split('\\', StringSplitOptions.RemoveEmptyEntries);
         return parts.Length >= 2 ? $@"\\{parts[0]}\{parts[1]}".ToUpperInvariant() : normalized.ToUpperInvariant();
     }

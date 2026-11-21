@@ -379,7 +379,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
 
             var missingEp = _show.Seasons
                 .SelectMany(s => s.Episodes.Select(e => (SeasonNumber: s.Number, Episode: (EpisodeRecord?)e)))
-                .FirstOrDefault(pair => pair.Episode is not null && (pair.Episode.IsFileMissing || (!pair.Episode.HasLocalFile && SafeEpisodeFiles(pair.Episode.Id).Any(f => f.Status == MediaFileStatus.Missing || !File.Exists(f.CurrentPath)))));
+                .FirstOrDefault(pair => pair.Episode is not null && !pair.Episode.HasLocalFile && pair.Episode.FilePath is not null && SafeEpisodeFiles(pair.Episode.Id).Any(f => f.Status == MediaFileStatus.Missing));
 
             if (missingEp.Episode is not null)
             {
@@ -806,7 +806,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
     private async Task RelinkEpisodeAsync(int episodeId)
     {
         var files = SafeEpisodeFiles(episodeId);
-        var missingFile = files.FirstOrDefault(f => f.Status == MediaFileStatus.Missing || !File.Exists(f.CurrentPath)) ?? files.FirstOrDefault();
+        var missingFile = files.FirstOrDefault(f => f.Status == MediaFileStatus.Missing);
         if (missingFile is null) return;
 
         var picker = new Windows.Storage.Pickers.FileOpenPicker();
