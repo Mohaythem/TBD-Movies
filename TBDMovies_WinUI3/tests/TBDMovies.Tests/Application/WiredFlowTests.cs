@@ -543,7 +543,12 @@ public sealed class WiredFlowTests : IDisposable
         Assert.False(File.Exists(source));
         Assert.True(File.Exists(preview.Plan.Destination));
 
-        var historyService = new OperationHistoryService(store, coordinator, MediaFiles(), Movies());
+        var historyService = new OperationHistoryService(
+            store,
+            coordinator,
+            MediaFiles(),
+            Movies(),
+            approvedRootsProvider: () => new[] { _workspace });
 
         // 1. Prepare and Discard
         var undoPreview1 = historyService.PrepareUndo(organizeResult.Record.Id);
