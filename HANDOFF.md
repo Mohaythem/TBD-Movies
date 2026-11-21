@@ -5,8 +5,8 @@
 **Current Branch**: `codex` (Up to date and verified on GitHub Actions CI — **100% Green**)  
 **Tech Stack**: WinUI 3 / **C# 14** / .NET 10 (`net10.0-windows10.0.22621`) / Windows App SDK `1.7.260224002` / SQLite WAL (`library.db` — **`DatabaseMigrator.LatestVersion = 23`**) / Unpackaged mode (`win-x64`).  
 **Windows Release Baseline**: Clean `Release` build (`0 Warning(s), 0 Error(s)`).  
-**Automated Test Baseline**: **`1,364 / 1,364`** test cases (100% pass without regression: `Failed: 0, Passed: 1,364, Skipped: 0`; `1,400` executed runner test cases).  
-**Overall Development State**: **Engineering & Security Remediation (Batches R-1 through R-4) successfully completed and verified**. Ready for **Wave 5: `[U9]` Trakt custom lists & local lists unification**.
+**Automated Test Baseline**: **`1,372 / 1,372`** test cases (100% pass without regression: `Failed: 0, Passed: 1,372, Skipped: 0`; `1,408` executed runner test cases).  
+**Overall Development State**: **Wave 5 in progress (Batch 5.1 complete: Trakt ClientId Unification & Error Handling Hardening)**. Ready for **Batch 5.2 (Cache valve hardening against malformed JSON, fix sync queues and show favorites pull/upload)**.
 
 ---
 
@@ -63,7 +63,8 @@ Before taking any action, review and strictly adhere to the following root repos
   - Waves 1 & 2 (Batch 2.3): `1,295` tests.
   - Wave 3 (Batches 3.1..3.3): `1,328` tests.
   - Wave 4 (Batches 4.1..4.2): `1,343` tests.
-  - Remediation Wave R (Batches R-1..R-4): **`1,364 / 1,364`** tests passing (`1,400` executed test cases in xUnit).
+  - Remediation Wave R (Batches R-1..R-4): `1,364 / 1,364` tests passing (`1,400` executed test cases in xUnit).
+  - Wave 5 (Batch 5.1): **`1,372 / 1,372`** tests passing (`1,408` executed test cases in xUnit).
 
 • **Standard Verification Command (Windows PowerShell)**:
 ```powershell

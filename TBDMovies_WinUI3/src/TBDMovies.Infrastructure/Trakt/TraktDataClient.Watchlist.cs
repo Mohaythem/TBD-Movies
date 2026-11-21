@@ -17,18 +17,20 @@ public sealed partial class TraktDataClient
         long tmdbId,
         TraktMediaKind kind,
         string token,
+        string? clientId = null,
         CancellationToken ct = default)
     {
-        return await SendWatchlistMutationAsync("sync/watchlist", tmdbId, kind, token, ct).ConfigureAwait(false);
+        return await SendWatchlistMutationAsync("sync/watchlist", tmdbId, kind, token, clientId, ct).ConfigureAwait(false);
     }
 
     public async Task<TraktSyncWriteResult> RemoveWatchlistAsync(
         long tmdbId,
         TraktMediaKind kind,
         string token,
+        string? clientId = null,
         CancellationToken ct = default)
     {
-        return await SendWatchlistMutationAsync("sync/watchlist/remove", tmdbId, kind, token, ct).ConfigureAwait(false);
+        return await SendWatchlistMutationAsync("sync/watchlist/remove", tmdbId, kind, token, clientId, ct).ConfigureAwait(false);
     }
 
     private async Task<TraktSyncWriteResult> SendWatchlistMutationAsync(
@@ -36,6 +38,7 @@ public sealed partial class TraktDataClient
         long tmdbId,
         TraktMediaKind kind,
         string token,
+        string? clientId,
         CancellationToken ct)
     {
         if (tmdbId <= 0) return new TraktSyncWriteResult(false, 0, "Invalid tmdbId");
@@ -47,7 +50,8 @@ public sealed partial class TraktDataClient
         TraktRequestHeaders.IdentifyApplication(request);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        request.Headers.Add("trakt-api-key", TraktDefaults.OfficialClientId);
+        var effectiveClientId = string.IsNullOrWhiteSpace(clientId) ? TraktDefaults.OfficialClientId : clientId;
+        request.Headers.Add("trakt-api-key", effectiveClientId);
         request.Headers.Add("trakt-api-version", TraktDataConfig.ApiVersion);
 
         object payloadObject = kind == TraktMediaKind.Show
@@ -104,9 +108,13 @@ public sealed partial class TraktDataClient
                 }
                 return new TraktSyncWriteResult(true, count);
             }
-            catch
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                return new TraktSyncWriteResult(true, 1);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return new TraktSyncWriteResult(false, 0, ex.Message);
             }
         }
     }

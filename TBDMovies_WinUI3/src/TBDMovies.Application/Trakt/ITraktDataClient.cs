@@ -65,6 +65,7 @@ public interface ITraktDataClient
         long tmdbId,
         TraktMediaKind kind,
         string token,
+        string? clientId = null,
         CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, 1));
 
     /// <summary>
@@ -74,6 +75,7 @@ public interface ITraktDataClient
         long tmdbId,
         TraktMediaKind kind,
         string token,
+        string? clientId = null,
         CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, 1));
 
     /// <summary>
@@ -83,6 +85,7 @@ public interface ITraktDataClient
         long tmdbId,
         TraktMediaKind kind,
         string token,
+        string? clientId = null,
         CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, 1));
 
     /// <summary>
@@ -92,6 +95,7 @@ public interface ITraktDataClient
         long tmdbId,
         TraktMediaKind kind,
         string token,
+        string? clientId = null,
         CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, 1));
 
     /// <summary>
@@ -101,6 +105,7 @@ public interface ITraktDataClient
         IReadOnlyList<long>? movieTmdbIds,
         IReadOnlyList<long>? showTmdbIds,
         string token,
+        string? clientId = null,
         CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, (movieTmdbIds?.Count ?? 0) + (showTmdbIds?.Count ?? 0)));
 
     /// <summary>

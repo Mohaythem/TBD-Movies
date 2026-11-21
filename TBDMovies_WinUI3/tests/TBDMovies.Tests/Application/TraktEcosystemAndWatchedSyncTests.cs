@@ -549,13 +549,13 @@ public sealed class TraktEcosystemAndWatchedSyncTests
 
         public (long TmdbId, TraktMediaKind Kind, bool IsAdd)? LastWatchlistCall { get; private set; }
 
-        public Task<TraktSyncWriteResult> AddWatchlistAsync(long tmdbId, TraktMediaKind kind, string token, CancellationToken ct = default)
+        public Task<TraktSyncWriteResult> AddWatchlistAsync(long tmdbId, TraktMediaKind kind, string token, string? clientId = null, CancellationToken ct = default)
         {
             LastWatchlistCall = (tmdbId, kind, true);
             return Task.FromResult(new TraktSyncWriteResult(true, 1));
         }
 
-        public Task<TraktSyncWriteResult> RemoveWatchlistAsync(long tmdbId, TraktMediaKind kind, string token, CancellationToken ct = default)
+        public Task<TraktSyncWriteResult> RemoveWatchlistAsync(long tmdbId, TraktMediaKind kind, string token, string? clientId = null, CancellationToken ct = default)
         {
             LastWatchlistCall = (tmdbId, kind, false);
             return Task.FromResult(new TraktSyncWriteResult(true, 1));

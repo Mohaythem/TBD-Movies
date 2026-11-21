@@ -1209,8 +1209,8 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         try
         {
             var result = inWatchlist
-                ? await _dataClient.AddWatchlistAsync(tmdbId, TraktMediaKind.Movie, token, ct).ConfigureAwait(false)
-                : await _dataClient.RemoveWatchlistAsync(tmdbId, TraktMediaKind.Movie, token, ct).ConfigureAwait(false);
+                ? await _dataClient.AddWatchlistAsync(tmdbId, TraktMediaKind.Movie, token, _config.ClientId, ct).ConfigureAwait(false)
+                : await _dataClient.RemoveWatchlistAsync(tmdbId, TraktMediaKind.Movie, token, _config.ClientId, ct).ConfigureAwait(false);
 
             if (result.Success)
             {
@@ -1252,8 +1252,8 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         try
         {
             var result = inWatchlist
-                ? await _dataClient.AddWatchlistAsync(tmdbId, TraktMediaKind.Show, token, ct).ConfigureAwait(false)
-                : await _dataClient.RemoveWatchlistAsync(tmdbId, TraktMediaKind.Show, token, ct).ConfigureAwait(false);
+                ? await _dataClient.AddWatchlistAsync(tmdbId, TraktMediaKind.Show, token, _config.ClientId, ct).ConfigureAwait(false)
+                : await _dataClient.RemoveWatchlistAsync(tmdbId, TraktMediaKind.Show, token, _config.ClientId, ct).ConfigureAwait(false);
 
             if (result.Success)
             {
@@ -1799,8 +1799,8 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             }
 
             var result = isFavorite
-                ? await _dataClient.AddFavoriteAsync(tmdbId, TraktMediaKind.Movie, token, ct).ConfigureAwait(false)
-                : await _dataClient.RemoveFavoriteAsync(tmdbId, TraktMediaKind.Movie, token, ct).ConfigureAwait(false);
+                ? await _dataClient.AddFavoriteAsync(tmdbId, TraktMediaKind.Movie, token, _config.ClientId, ct).ConfigureAwait(false)
+                : await _dataClient.RemoveFavoriteAsync(tmdbId, TraktMediaKind.Movie, token, _config.ClientId, ct).ConfigureAwait(false);
 
             if (!result.Success)
             {
@@ -1846,8 +1846,8 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             }
 
             var result = isFavorite
-                ? await _dataClient.AddFavoriteAsync(tmdbId, TraktMediaKind.Show, token, ct).ConfigureAwait(false)
-                : await _dataClient.RemoveFavoriteAsync(tmdbId, TraktMediaKind.Show, token, ct).ConfigureAwait(false);
+                ? await _dataClient.AddFavoriteAsync(tmdbId, TraktMediaKind.Show, token, _config.ClientId, ct).ConfigureAwait(false)
+                : await _dataClient.RemoveFavoriteAsync(tmdbId, TraktMediaKind.Show, token, _config.ClientId, ct).ConfigureAwait(false);
 
             if (!result.Success)
             {
@@ -1892,8 +1892,8 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                             ? TraktMediaKind.Show
                             : TraktMediaKind.Movie;
                         var res = string.Equals(action.Action, "ADD", StringComparison.OrdinalIgnoreCase)
-                            ? await _dataClient.AddFavoriteAsync(action.TmdbId, kind, token, cancellationToken)
-                            : await _dataClient.RemoveFavoriteAsync(action.TmdbId, kind, token, cancellationToken);
+                            ? await _dataClient.AddFavoriteAsync(action.TmdbId, kind, token, _config.ClientId, cancellationToken)
+                            : await _dataClient.RemoveFavoriteAsync(action.TmdbId, kind, token, _config.ClientId, cancellationToken);
                         if (!res.Success)
                         {
                             surviving.Add(action);
@@ -1973,7 +1973,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                         {
                             try
                             {
-                                await _dataClient.AddFavoriteAsync(tmdbId, TraktMediaKind.Movie, authToken, cancellationToken);
+                                await _dataClient.AddFavoriteAsync(tmdbId, TraktMediaKind.Movie, authToken, _config.ClientId, cancellationToken);
                             }
                             catch (Exception ex)
                             {
@@ -2039,7 +2039,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
 
             if (localMoviesToPush.Count > 0 || localShowsToPush.Count > 0)
             {
-                await _dataClient.AddCollectionBatchAsync(localMoviesToPush, localShowsToPush, authToken, cancellationToken);
+                await _dataClient.AddCollectionBatchAsync(localMoviesToPush, localShowsToPush, authToken, _config.ClientId, cancellationToken);
             }
         }
         catch (OperationCanceledException)

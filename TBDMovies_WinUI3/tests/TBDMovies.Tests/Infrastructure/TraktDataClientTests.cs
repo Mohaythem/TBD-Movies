@@ -1139,4 +1139,129 @@ public sealed class TraktDataClientTests
         Assert.Equal(HttpMethod.Delete, req.Method);
         Assert.EndsWith("/users/me/lists/999", req.RequestUri!.AbsolutePath);
     }
+
+    [Fact]
+    public async Task AddWatchlistAsync_WithCustomClientId_SendsConfiguredTraktApiKeyHeader()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"added\":{\"movies\":1}}") });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        var result = await client.AddWatchlistAsync(550, TraktMediaKind.Movie, TestAccessToken, "custom_client_999");
+
+        Assert.True(result.Success);
+        var req = Assert.Single(handler.CapturedRequests);
+        Assert.Equal("custom_client_999", req.Headers.GetValues("trakt-api-key").Single());
+    }
+
+    [Fact]
+    public async Task AddFavoriteAsync_WithCustomClientId_SendsConfiguredTraktApiKeyHeader()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"added\":{\"movies\":1}}") });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        var result = await client.AddFavoriteAsync(550, TraktMediaKind.Movie, TestAccessToken, "custom_client_888");
+
+        Assert.True(result.Success);
+        var req = Assert.Single(handler.CapturedRequests);
+        Assert.Equal("custom_client_888", req.Headers.GetValues("trakt-api-key").Single());
+    }
+
+    [Fact]
+    public async Task AddCollectionBatchAsync_WithCustomClientId_SendsConfiguredTraktApiKeyHeader()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"added\":{\"movies\":1}}") });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        var result = await client.AddCollectionBatchAsync(new long[] { 550 }, null, TestAccessToken, "custom_client_777");
+
+        Assert.True(result.Success);
+        var req = Assert.Single(handler.CapturedRequests);
+        Assert.Equal("custom_client_777", req.Headers.GetValues("trakt-api-key").Single());
+    }
+
+    [Fact]
+    public async Task SendWatchlistMutationAsync_OnMalformedJson_ReturnsFailureResult()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{ broken-json }") });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        var result = await client.AddWatchlistAsync(550, TraktMediaKind.Movie, TestAccessToken);
+
+        Assert.False(result.Success);
+        Assert.Equal(0, result.AddedOrRemovedCount);
+    }
+
+    [Fact]
+    public async Task SendScrobbleAsync_OnMalformedJson_ReturnsFailureResult()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.Created) { Content = new StringContent("{ broken-json }") });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        var payload = new TraktScrobblePayload(
+            Movie: new TraktScrobbleMovie(Title: "Inception", Year: 2010, Ids: new TraktSyncIds(Tmdb: 550)),
+            Progress: 50.0);
+
+        var result = await client.ScrobbleStartAsync(payload, TestClientId, TestAccessToken);
+
+        Assert.False(result.Success);
+        Assert.NotNull(result.Error);
+    }
+
+    [Fact]
+    public async Task AddFavoriteAsync_OnMalformedJson_ReturnsFailureResult()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{ broken-json }") });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        var result = await client.AddFavoriteAsync(550, TraktMediaKind.Movie, TestAccessToken);
+
+        Assert.False(result.Success);
+        Assert.Equal(0, result.AddedOrRemovedCount);
+    }
+
+    [Fact]
+    public async Task SendWatchlistMutationAsync_WhenCancelled_RethrowsOperationCanceledException()
+    {
+        var handler = new FakeHttpMessageHandler();
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => client.AddWatchlistAsync(550, TraktMediaKind.Movie, TestAccessToken, ct: cts.Token));
+    }
+
+    [Fact]
+    public async Task AddCollectionBatchAsync_WhenCancelled_RethrowsOperationCanceledException()
+    {
+        var handler = new FakeHttpMessageHandler();
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => client.AddCollectionBatchAsync(new long[] { 550 }, null, TestAccessToken, ct: cts.Token));
+    }
 }

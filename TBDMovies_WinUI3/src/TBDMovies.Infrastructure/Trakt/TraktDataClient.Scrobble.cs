@@ -112,19 +112,10 @@ public sealed partial class TraktDataClient
                 return new TraktScrobbleResult(false, null, payload.Progress, $"HTTP {(int)response.StatusCode}");
             }
 
-            byte[] bytes;
             try
             {
-                bytes = await ReadBoundedStreamAsync(
+                var bytes = await ReadBoundedStreamAsync(
                     response.Content, _options.MaxResponseBytesPerPage, relativePath, timeout.Token).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                return new TraktScrobbleResult(false, null, payload.Progress, ex.Message);
-            }
-
-            try
-            {
                 using var document = JsonDocument.Parse(bytes);
                 var root = document.RootElement;
                 var action = root.TryGetProperty("action", out var aProp) ? aProp.GetString() : null;
@@ -133,9 +124,13 @@ public sealed partial class TraktDataClient
                     : payload.Progress;
                 return new TraktScrobbleResult(true, action, progress);
             }
-            catch
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                return new TraktScrobbleResult(true, null, payload.Progress);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                return new TraktScrobbleResult(false, null, payload.Progress, ex.Message);
             }
         }
     }

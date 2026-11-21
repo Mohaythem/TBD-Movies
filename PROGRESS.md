@@ -1,16 +1,30 @@
 # TBD Movies — Active Progress & Status Checkpoint
 
 ## Current Goal
-- **Active Track / Current Priority**: Engineering & Security Remediation (Batches R-1 to R-4) completed and verified with **1,364 / 1,364** tests. Next priority: Wave 5 (`[U9]` Trakt custom lists & local lists unification).
+- **Active Track / Current Priority**: Wave 5 (`[U9]` Trakt custom lists & local lists unification). Batch 5.1 completed and verified with **1,372 / 1,372** tests. Next priority: Batch 5.2 (Cache valve hardening against malformed JSON, fix sync queues and show favorites pull/upload).
 - **Batches Approved & Closed**: 
   - Wave 1 (Batches 1.1, 1.2, 1.3): `SEC-19`, `C-06`, `SEC-20`, `C-03`, `SEC-01..05`, `SEC-14..15`, `SEC-21..22`, `C-13`, `[L6]` (`1,295` tests).
   - Wave 2 (Batches 2.1, 2.2, 2.3): `C-01`, `[P3]`, `C-04`, `[U8]`, `C-05` (`1,295` tests).
   - Wave 3 (Batches 3.1, 3.2, 3.3): `SEC-16`, `C-09`, `C-10`, `C-11`, `C-12` (`1,328` tests).
   - Wave 4 (Batches 4.1, 4.2): `SEC-23`, `C-02`, `[U10]` (`1,343` tests).
   - Remediation Wave R (Batches R-1, R-2, R-3, R-4): `ENG-NEW-01..07`, `SEC-NEW-01..02`, `C-05` closure (`1,364` tests).
-- **Baseline Test Suite**: **`1,364 / 1,364`** tests passing in Release.
+  - Wave 5 (Batch 5.1): `C-08`, `SEC-11`, `#290`, `#293` (`1,372` tests).
+- **Baseline Test Suite**: **`1,372 / 1,372`** tests passing in Release.
 
 ## Completed Work
+51. **Trakt ClientId Unification & Error Handling Hardening [Wave 5, Batch 5.1 — C-08, SEC-11, #290, #293]**:
+    - **Interface Unification (`ITraktDataClient.cs`)**:
+        - Extended `AddWatchlistAsync`, `RemoveWatchlistAsync`, `AddFavoriteAsync`, `RemoveFavoriteAsync`, and `AddCollectionBatchAsync` with optional `string? clientId = null`, preserving source-level backward compatibility while enabling configured app ID propagation.
+    - **Client Implementation (`TraktDataClient.*`)**:
+        - Replaced hardcoded `TraktDefaults.OfficialClientId` in `FavoritesAndCollection.cs` and `Watchlist.cs` with dynamic `effectiveClientId = string.IsNullOrWhiteSpace(clientId) ? TraktDefaults.OfficialClientId : clientId`, setting `"trakt-api-key"` correctly for custom Trakt app credentials (`C-08`, `SEC-11`).
+        - Eliminated dangerous bare catches in `Watchlist.cs:107` (`#293`) and `Scrobble.cs:136` (`#290`) that falsely fabricated `Success = true` on network disconnects or corrupt JSON.
+        - Unified stream reading and JSON parsing in `Scrobble.cs`, properly catching and rethrowing `OperationCanceledException` while returning `Success = false` on malformed responses.
+        - Parsed response body in `SendBatchSyncPayloadAsync` to count actual `added`, `deleted`, and `existing` elements without fabricating artificial counts.
+    - **Sync Service Alignment (`TraktSyncService.cs`)**:
+        - Passed `_config.ClientId` to all 7 call sites across movie/show watchlist push, favorite push, offline queue drain, local liked movies upstream sync, and bulk collection sync.
+    - **Test Double & Unit Test Hardening**:
+        - Updated `TestTraktDataClient` in `TraktEcosystemAndWatchedSyncTests.cs` to match interface method arity, avoiding Default Interface Method (DIM) fallback traps.
+        - Added 8 comprehensive unit tests in `TraktDataClientTests.cs` verifying custom Client ID header transmission, malformed JSON failure handling, and cancellation propagation, expanding test baseline to **1,372** tests.
 50. **Comprehensive Engineering, Architectural & Security Remediation [Batches R-1, R-2, R-3, R-4]**:
     - **Batch R-1 (`ENG-NEW-01`, `ENG-NEW-02`)**:
         - Centralized network path and mapped drive classification in `NetworkPathClassifier.cs` with a 15-second TTL cache for drive letter queries using `Stopwatch.Frequency`.
