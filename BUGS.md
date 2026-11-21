@@ -57,10 +57,6 @@
 - **Technical Context**: TMDB v3 32-character API keys are accepted exclusively via URL query string by TMDB servers; transmitting them in a `Bearer` authorization header returns `401 Unauthorized`. Bearer headers are reserved strictly for v4 JWT tokens.
 - **Status**: Maintained in stable working state (v3 keys in query string, JWT in Bearer header) pending further review.
 
-### [L8] [Open — Ready Design Pending Certificate 📋] Inno Setup Installer Code Signing
-- **Affected Subsystem**: `TBDMovies_WinUI3/packaging/TBD-Movies.iss`.
-- **Prepared Design**: Guarded via `#if SIGN_ENABLED == "1"` directive with `SignTool=tbdmovies $f` and `signonce` flag for `TBD-Movies.exe`, structured for integration with Azure Trusted Signing.
-
 ### [U3] [Pending User Test ⏸️] Subtitle Download & Normalization Engine
 - **Status**: Frozen pending user verification; modification of subtitle engine code is strictly prohibited until explicitly ordered by the user.
 
@@ -101,3 +97,4 @@
 | **`U10`** | Playback position freezing at 30s and seek loss | `Trackers/`, `PlayerProcessLauncher` | Real-time GSMTC dynamic formula, dual MPC-HC web interface, wall-clock freeze, immediate flush | **Resolved & Verified ✅** (`1,343` tests) |
 | **`C-05`** | Asymmetric `PlaybackEnded` subscription in details | `TVShowDetailsPage`, `MovieDetailsPage` | Balanced `EnsurePlaybackTrackingSubscribed` on `Loaded` with cleanup on `Unloaded/Deactivate` | **Resolved & Verified ✅** (`1,364` tests) |
 | **`C-08 / SEC-11`** | Hardcoded OfficialClientId & error swallowing in Trakt writes | `ITraktDataClient`, `TraktDataClient.*`, `TraktSyncService` | Propagated configured ClientId across all 5 mutation APIs; eliminated bare catches `#290` & `#293` | **Resolved & Verified ✅** (`1,372` tests) |
+| **`L8 / C-17`** | Inno Setup installer code signing hook & QaSeed schema drift | `TBD-Movies.iss`, `TBDMovies.slnx`, `Seed.cs`, `App.xaml.cs` | Guarded signing hook `#if SIGN_ENABLED == "1"`, AppMutex, scoped filter, schema v23 parity | **Resolved & Verified ✅** (`1,421` tests) |
