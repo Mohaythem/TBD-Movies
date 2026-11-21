@@ -1101,31 +1101,6 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
                 }
             });
             AddToListFlyout.Items.Add(watchlistItem);
-
-            foreach (var tList in trakt.GetLists(accountId))
-            {
-                var listItems = trakt.GetListItems(tList.TraktId, accountId);
-                var inCustomList = listItems.Any(item => item.GetTmdbId() == tmdbId.Value);
-                var listItem = BuildListItem(tList.Name, inCustomList, async (_, _) =>
-                {
-                    try
-                    {
-                        if (trakt is ITraktListActions writer)
-                        {
-                            var res = await writer.AddMovieToListAsync(tList.TraktId, tmdbId.Value, accountId).ConfigureAwait(false);
-                            if (res.IsConfirmed)
-                            {
-                                _ = writer.RefreshListAsync(tList.TraktId, accountId);
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[MovieDetailsPage] AddMovieToListAsync failed: {ex.Message}");
-                    }
-                });
-                AddToListFlyout.Items.Add(listItem);
-            }
         }
     }
 

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Threading.Tasks;
@@ -180,18 +181,26 @@ public sealed record ShowCardItem(TVShowRecord Show, string SecondaryLine) : INo
                 var posterRef = Show.PosterReference;
                 _ = Task.Run(async () =>
                 {
-                    var downloaded = await AppServices.Poster.EnsurePosterCachedAsync("TMDB", posterRef);
-                    if (downloaded != null && File.Exists(downloaded))
+                    try
                     {
-                        AppServices.UiDispatcherQueue?.TryEnqueue(() =>
+                        var downloaded = await AppServices.Poster.EnsurePosterCachedAsync("TMDB", posterRef);
+                        if (downloaded != null && File.Exists(downloaded))
                         {
-                            if (Show.PosterReference == posterRef)
+                            AppServices.UiDispatcherQueue?.TryEnqueue(() =>
                             {
-                                _posterSource = new BitmapImage(new Uri(downloaded)) { DecodePixelWidth = 360 };
-                                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PosterSource)));
-                                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPosterMissing)));
-                            }
-                        });
+                                if (Show.PosterReference == posterRef)
+                                {
+                                    _posterSource = new BitmapImage(new Uri(downloaded)) { DecodePixelWidth = 360 };
+                                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PosterSource)));
+                                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPosterMissing)));
+                                }
+                            });
+                        }
+                    }
+                    catch (OperationCanceledException) { }
+                    catch (Exception ex)
+                    {
+                        Trace.WriteLine($"[ShowCardModel] EnsurePosterCachedAsync failed for {posterRef}: {ex.Message}");
                     }
                 });
             }

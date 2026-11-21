@@ -262,33 +262,6 @@ public static class MediaCardContextMenu
                 }
             });
             sub.Items.Add(watchlistItem);
-
-            foreach (var tList in trakt.GetLists(accountId))
-            {
-                var listItems = trakt.GetListItems(tList.TraktId, accountId);
-                var inCustomList = listItems.Any(item => item.GetTmdbId() == tmdbId.Value);
-                var listItem = new ToggleMenuFlyoutItem
-                {
-                    Text = tList.Name,
-                    IsChecked = inCustomList
-                };
-                listItem.Click += (_, _) => RunSafe(owner, async () =>
-                {
-                    if (trakt is ITraktListActions writer)
-                    {
-                        var res = await writer.AddMovieToListAsync(tList.TraktId, tmdbId.Value, accountId).ConfigureAwait(false);
-                        if (res.IsConfirmed)
-                        {
-                            _ = writer.RefreshListAsync(tList.TraktId, accountId);
-                        }
-                        if (changed is not null)
-                        {
-                            owner.DispatcherQueue.TryEnqueue(() => changed());
-                        }
-                    }
-                });
-                sub.Items.Add(listItem);
-            }
         }
 
         menu.Items.Add(sub);
