@@ -32,17 +32,18 @@
 
 ## 1. Active & Open Issues
 
-### [U9] [Partially Open — Deferred to Wave 5 ⚠️] Unification of Trakt Custom Lists with Local Lists & Two-Way Sync
-- **Affected Subsystems**: `TraktSyncService.cs`, `PersonalLibraryRepository.cs`, `MyListsPage.xaml.cs`.
-- **Completed Work**: Database Migrations 22 & 23, immediate cascade deletion of remotely removed lists with network safety valve (`userListsSuccess == false`), and zero-flicker synchronous rendering in `LibraryPage`.
-- **Remaining Open Items**:
-  1. Show Favorites Pull: Inactive in `TraktSyncService.cs:1934` due to missing `IShowPersonalRepository` injection.
-  2. Show Favorites Upload: Omitted from bulk upward synchronization loop (`L1963-1984`).
-  3. Safety Valve Unit Test: Missing dedicated test `SyncAsync_WhenUserListsFetchFails_DoesNotDeleteLocalCustomLists`.
-  4. Queue Coalescing Logic: `hasAdd && hasRemove` cancels out entire actions even on odd-numbered toggles (`ADD -> REMOVE -> ADD`).
-  5. Deleted List Filtering: Missing `is_deleted = 0` filters in 3 queries within `PersonalLibraryRepository.cs`.
-  6. Spurious Cloud Badge: Incorrect "Cloud" badge display on movie cards that possess local media files on disk.
-  7. View Unification: Merge redundant `MyListsPage` and `TraktPage` views, pruning ~750 lines of dead code in `MyListsPage.Trakt.cs`.
+### [U9] [CLOSED & VERIFIED ✅] Unification of Trakt Custom Lists with Local Lists & Two-Way Sync
+- **Affected Subsystems**: `TraktSyncService.cs`, `PersonalLibraryRepository.cs`, `MyListsPage.xaml.cs`, `MainWindow.xaml.cs`.
+- **Completed Work (Batches 5.1, 5.2, 5.3)**:
+  1. Unified Trakt Client ID and cancellation checks (`C-08`, `SEC-11`).
+  2. Disaster prevention guard aborting downstream deletion on corrupted/null payload (`SEC-06`).
+  3. Replaced naive queue cancellation with net-intent chronological compaction (`SEC-08`).
+  4. Injected `IShowPersonalRepository` into `TraktSyncService`, synchronizing TV show favorites downstream and upstream (`SEC-09`).
+  5. Enforced `is_deleted = 0` tombstone filtering in `PersonalLibraryRepository.cs` (`C-07.1..5`).
+  6. Eliminated broken duplicate Trakt submenu loop in `MediaCardContextMenu.cs` and `MovieDetailsPage.xaml.cs` (`C-07.6`).
+  7. Guarded poster downloading tasks with `try-catch` handling `OperationCanceledException` and `Trace.WriteLine` (`SEC-26`).
+  8. Completely unified views: eradicated `TraktPage.xaml` and `TraktPage.xaml.cs` (>1,500 lines of dead code), pruned `TraktNavItem`, normalized navigation to `MyListsPage`, and aligned `StartupPerformanceChallengerTests.cs`.
+  9. Added 7 comprehensive unit tests in `UnifiedTraktListsTests.cs` (1,379 total unit tests). Verified 100% pass on Windows CI runner.
 
 ### [L6] [Partially Open — Secrets Sanitization & VACUUM Gap ⚠️] Residual Plaintext TMDB Tokens in SQLite Freelist Pages
 - **Affected Subsystems**: `SettingsService.cs`, `AppServices.cs`, `AppSettingsStore.cs`.

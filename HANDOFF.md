@@ -5,8 +5,8 @@
 **Current Branch**: `codex` (Up to date and verified on GitHub Actions CI — **100% Green**)  
 **Tech Stack**: WinUI 3 / **C# 14** / .NET 10 (`net10.0-windows10.0.22621`) / Windows App SDK `1.7.260224002` / SQLite WAL (`library.db` — **`DatabaseMigrator.LatestVersion = 23`**) / Unpackaged mode (`win-x64`).  
 **Windows Release Baseline**: Clean `Release` build (`0 Warning(s), 0 Error(s)`).  
-**Automated Test Baseline**: **`1,379 / 1,379`** test cases (100% pass without regression: `Failed: 0, Passed: 1,379, Skipped: 0`; `1,415` executed runner test cases).  
-**Overall Development State**: **Wave 5 in progress (Batch 5.2 complete: Cache disaster protection, queue compaction parity, show favorites sync, tombstone filtering)**. Ready for **Batch 5.3 (UX unification, Settings & MyLists cleanup)**.
+**Automated Test Baseline**: **`1,379 / 1,379`** test cases (100% pass without regression: `Failed: 0, Passed: 1,379, Skipped: 0`; `1,414` executed runner test cases).  
+**Overall Development State**: **Wave 5 Complete ([U9] Trakt Two-Way Synchronization & List Unification closed and verified)**. UX unification complete, TraktPage eradicated, dead code pruned, poster caching hardened. Ready for next architectural milestone.
 
 ---
 
@@ -81,13 +81,7 @@ dotnet test "TBDMovies_WinUI3\TBDMovies.slnx" -c Release
 
 *(All items below remain deferred; no code may be modified without explicit user authorization)*
 
-• **1. Trakt Unified Lists & Favorites (`[U9]` Remaining Items)**:
-  - **Show Favorites Pull**: `remoteFavShowTmdb` in `TraktSyncService.cs:1934` is read into memory but not persisted due to missing `IShowPersonalRepository` injection.
-  - **Show Favorites Upload**: Bulk upward synchronization loop (`L1963-1984`) uploads movies only and omits TV shows.
-  - **Safety Valve Unit Test**: Add dedicated unit test `SyncAsync_WhenUserListsFetchFails_DoesNotDeleteLocalCustomLists` for the `if (!userListsSuccess)` guard (`L1666`).
-  - **Queue Coalescing Edge Case**: Logic `if (hasAdd && hasRemove)` (`L1564`) cancels entire operations on odd-numbered toggles (`ADD -> REMOVE -> ADD`).
-  - **Deleted List Filtering**: Enforce `custom_lists.is_deleted = 0` in `PersonalLibraryRepository.cs` queries (`GetCustomListIdsForMovie`, `GetCustomListIdsForShow`, `RequireCustomList`).
-  - **View Consolidation**: Merge `MyListsPage` and `TraktPage`, pruning dead code in `MyListsPage.Trakt.cs`.
+• **1. Trakt Unified Lists & Favorites (`[U9]`)**: **CLOSED & VERIFIED ✅** (Delivered across Batches 5.1, 5.2, 5.3).
 
 • **2. Plaintext Secrets VACUUM Gap in SQLite (`[L6]`)**:
   - `VACUUM` currently runs only in the DPAPI sanitization path outside `DatabaseWriteGate`; deletion of `'tmdb_read_access_token'` does not invoke `VACUUM;`. Migrate plaintext `'subdl_api_key'` to Windows Credential Manager.

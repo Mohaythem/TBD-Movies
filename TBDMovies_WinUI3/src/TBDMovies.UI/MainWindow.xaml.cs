@@ -24,7 +24,6 @@ public sealed partial class MainWindow : Window
     private MyListsPage? _myListsPage;
     private AddMediaPage? _addMediaPage;
     private CheckLibraryPage? _checkLibraryPage;
-    private TraktPage? _traktPage;
     private SettingsPage? _settingsPage;
     private OperationsLogPage? _operationsLogPage;
     private MovieDetailsPage? _movieDetailsPage;
@@ -313,19 +312,6 @@ public sealed partial class MainWindow : Window
         return _checkLibraryPage;
     }
 
-    private TraktPage GetTraktPage()
-    {
-        if (_traktPage is null)
-        {
-            _traktPage = new TraktPage();
-            _traktPage.MovieSelected += (_, movieId) => OpenMovieById("trakt", movieId);
-            _traktPage.ShowSelected += (_, showId) => OpenShowById("trakt", showId);
-            _traktPage.SettingsRequested += (_, _) => Navigate("settings");
-            HostLazyPage(_traktPage);
-        }
-        return _traktPage;
-    }
-
     private SettingsPage GetSettingsPage()
     {
         if (_settingsPage is null)
@@ -343,10 +329,6 @@ public sealed partial class MainWindow : Window
                 if (ReferenceEquals(_currentPage, _myListsPage))
                 {
                     _myListsPage?.Activate();
-                }
-                if (ReferenceEquals(_currentPage, _traktPage))
-                {
-                    _traktPage?.Activate();
                 }
             };
             HostLazyPage(_settingsPage);
@@ -509,15 +491,6 @@ public sealed partial class MainWindow : Window
         Navigate("show");
     }
 
-    private void OpenMovieById(string origin, int movieId)
-    {
-        _detailsReturnDestination = origin;
-        var detailsPage = GetMovieDetailsPage();
-        detailsPage.SetReturnDestination(origin);
-        detailsPage.LoadMovie(movieId);
-        Navigate("details");
-    }
-
     /// <summary>
     /// Opens a movie's details from a Check Library metadata-issue row so the user can review and rematch
     /// its metadata. Back returns to Check Library, since that is where the review was started.
@@ -544,7 +517,6 @@ public sealed partial class MainWindow : Window
     {
         _ when ReferenceEquals(sender, _homePage) => "home",
         _ when ReferenceEquals(sender, _myListsPage) => "lists",
-        _ when ReferenceEquals(sender, _traktPage) => "trakt",
         _ => "library",
     };
 
@@ -652,10 +624,11 @@ public sealed partial class MainWindow : Window
 
     private void Navigate(string destination)
     {
+        if (destination == "trakt") destination = "lists";
+
         Page page = destination switch
         {
             "library" => GetLibraryPage(),
-            "trakt" => GetTraktPage(),
             "lists" => GetMyListsPage(),
             "add" => GetAddMediaPage(),
             "check" => GetCheckLibraryPage(),
@@ -686,7 +659,6 @@ public sealed partial class MainWindow : Window
         var selected = destination switch
         {
             "library" or "details" or "show" => LibraryNavItem,
-            "trakt" => TraktNavItem,
             "lists" => MyListsNavItem,
             "add" => AddMediaNavItem,
             "check" => CheckLibraryNavItem,
@@ -701,7 +673,6 @@ public sealed partial class MainWindow : Window
                 "home" => HomeNavItem,
                 "lists" => MyListsNavItem,
                 "check" => CheckLibraryNavItem,
-                "trakt" => TraktNavItem,
                 _ => LibraryNavItem,
             };
         }
@@ -831,7 +802,6 @@ public sealed partial class MainWindow : Window
         SetNavigationItemText(MyListsNavItem, "MyLists");
         SetNavigationItemText(AddMediaNavItem, "AddMedia");
         SetNavigationItemText(CheckLibraryNavItem, "CheckLibrary");
-        SetNavigationItemText(TraktNavItem, "NavTrakt");
         SetNavigationItemText(SettingsNavItem, "Settings");
     }
 
@@ -1023,7 +993,6 @@ public sealed partial class MainWindow : Window
         _libraryPage?.ApplyLocalization();
         _myListsPage?.ApplyLocalization();
         _addMediaPage?.ApplyLocalization();
-        _traktPage?.ApplyLocalization();
         _checkLibraryPage?.ApplyLocalization();
         _settingsPage?.ApplyLocalization();
         _operationsLogPage?.ApplyLocalization();

@@ -1,7 +1,7 @@
 # TBD Movies — Active Progress & Status Checkpoint
 
 ## Current Goal
-- **Active Track / Current Priority**: Wave 5 (`[U9]` Trakt custom lists & local lists unification). Batch 5.2 completed and verified with **1,379 / 1,379** tests. Next priority: Batch 5.3 (UX unification, unify TraktPage into SettingsPage & MyListsPage, prune dead code, fix duplicate context menus).
+- **Active Track / Current Priority**: Wave 5 (`[U9]` Trakt custom lists & local lists unification). **Wave 5 Complete (Batches 5.1, 5.2, 5.3 verified with 1,379 / 1,379 tests, 1,414 runner tests)**.
 - **Batches Approved & Closed**: 
   - Wave 1 (Batches 1.1, 1.2, 1.3): `SEC-19`, `C-06`, `SEC-20`, `C-03`, `SEC-01..05`, `SEC-14..15`, `SEC-21..22`, `C-13`, `[L6]` (`1,295` tests).
   - Wave 2 (Batches 2.1, 2.2, 2.3): `C-01`, `[P3]`, `C-04`, `[U8]`, `C-05` (`1,295` tests).
@@ -10,9 +10,20 @@
   - Remediation Wave R (Batches R-1, R-2, R-3, R-4): `ENG-NEW-01..07`, `SEC-NEW-01..02`, `C-05` closure (`1,364` tests).
   - Wave 5 (Batch 5.1): `C-08`, `SEC-11`, `#290`, `#293` (`1,372` tests).
   - Wave 5 (Batch 5.2): `SEC-06..10`, `C-07.1..5` (`1,379` tests).
-- **Baseline Test Suite**: **`1,379 / 1,379`** tests passing in Release.
+  - Wave 5 (Batch 5.3): `C-07.6`, `SEC-26`, Option A TraktPage Eradication & Navigation Unification (`1,379` tests).
+- **Baseline Test Suite**: **`1,379 / 1,379`** tests passing in Release (`1,414` runner test executions).
 
 ## Completed Work
+53. **UX Unification, Dead Code Eradication & Poster Exception Hardening [Wave 5, Batch 5.3 — C-07.6, SEC-26, Option A]**:
+    - **Duplicate Trakt Menus Elimination (`C-07.6`)**:
+        - Removed rogue `foreach (var tList in trakt.GetLists(accountId))` loops from `MediaCardContextMenu.cs` (lines 266–292) and `MovieDetailsPage.xaml.cs` (lines 1105–1128), aligning them 1:1 with `TVShowDetailsPage.xaml.cs` and eliminating duplicate lists and broken one-way add bugs.
+    - **Poster Cache Exception Hardening (`SEC-26`)**:
+        - Guarded `EnsurePosterCachedAsync` calls inside fire-and-forget `Task.Run` blocks in `MovieModels.cs` (`MovieRecord.PosterSource`) and `ShowModels.cs` (`ShowCardItem.PosterSource`) with `try-catch`, quietly ignoring `OperationCanceledException` and logging via `Trace.WriteLine` to eliminate unobserved task exceptions in both Debug and Release.
+    - **Option A Dead Code Eradication & Navigation Unification**:
+        - Physically deleted `TraktPage.xaml` (381 lines) and `TraktPage.xaml.cs` (1,125 lines) with proven 100% feature parity in modern `SettingsPage` and `MyListsPage`.
+        - Removed `TraktNavItem` from `MainWindow.xaml` and completely pruned `_traktPage`, `GetTraktPage()`, `OpenMovieById`, activation checks, and localization calls from `MainWindow.xaml.cs`.
+        - Enforced upfront navigation normalization (`if (destination == "trakt") destination = "lists";`), guaranteeing zero broken deep links and perfectly synchronized `MyListsNavItem` sidebar highlights.
+        - Updated `StartupPerformanceChallengerTests.cs` (lines 150–185) to align with the modern unified navigation architecture.
 52. **Trakt Two-Way Synchronization Hardening & Custom List Parity [Wave 5, Batch 5.2 — SEC-06..10, C-07.1..5]**:
     - **Disaster Prevention Against Corrupt Cache (`SEC-06`)**:
         - Hardened `TraktSyncService.ReconcileCustomListsAsync` so that reading a missing or corrupted/unparseable JSON cache payload immediately logs and aborts downstream list deletion, permanently eliminating the catastrophic vulnerability where all local custom lists were cascade-deleted.

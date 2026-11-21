@@ -152,13 +152,12 @@ public sealed class StartupPerformanceChallengerTests : IDisposable
         Assert.Contains("lists", navItems);
         Assert.Contains("add", navItems);
         Assert.Contains("check", navItems);
-        Assert.Contains("trakt", navItems);
         Assert.Contains("settings", navItems);
 
         var cs = File.ReadAllText(csPath);
 
         // Verify that Navigate handles all tags plus internal navigation destinations
-        var expectedDestinations = new[] { "home", "library", "trakt", "lists", "add", "check", "settings", "operations", "details", "show" };
+        var expectedDestinations = new[] { "home", "library", "lists", "add", "check", "settings", "operations", "details", "show" };
         foreach (var dest in expectedDestinations)
         {
             Assert.Contains($"\"{dest}\"", cs);
@@ -168,7 +167,6 @@ public sealed class StartupPerformanceChallengerTests : IDisposable
         var expectedGetters = new[]
         {
             "GetLibraryPage()",
-            "GetTraktPage()",
             "GetMyListsPage()",
             "GetAddMediaPage()",
             "GetCheckLibraryPage()",
