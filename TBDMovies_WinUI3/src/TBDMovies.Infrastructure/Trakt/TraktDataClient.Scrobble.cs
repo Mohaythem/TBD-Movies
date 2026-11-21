@@ -65,6 +65,7 @@ public sealed partial class TraktDataClient
         string accessToken,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             new Uri($"{TraktDataConfig.ApiBaseUrl}/{relativePath}"));

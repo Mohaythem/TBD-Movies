@@ -147,6 +147,7 @@ public sealed class TraktDataClientTests
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             CapturedRequests.Add(request);
             if (request.Content != null)
             {

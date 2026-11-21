@@ -41,6 +41,7 @@ public sealed partial class TraktDataClient
         string? clientId,
         CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
         if (tmdbId <= 0) return new TraktSyncWriteResult(false, 0, "Invalid tmdbId");
         if (string.IsNullOrWhiteSpace(token)) return new TraktSyncWriteResult(false, 0, "Missing token");
 
