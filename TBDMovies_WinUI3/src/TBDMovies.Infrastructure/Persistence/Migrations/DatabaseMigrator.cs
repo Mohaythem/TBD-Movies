@@ -803,7 +803,8 @@ public class DatabaseMigrator
                         includeViewing: i + 1 >= 16, includeShowPersonal: i + 1 >= 17,
                         includeTrakt: i + 1 >= 18, includeCustomTitle: i + 1 >= 19,
                         includeScaleIndexes: i + 1 >= 20, includePlaybackProgress: i + 1 >= 21,
-                        includeUnifiedTraktLists: i + 1 >= 22);
+                        includeUnifiedTraktLists: i + 1 >= 22,
+                        includeRelaxedPendingActions: i + 1 >= 23);
 
                 cmd.CommandText = $"PRAGMA user_version = {i + 1};";
                 cmd.ExecuteNonQuery();
@@ -829,7 +830,8 @@ public class DatabaseMigrator
     private static void ValidateSchema(SqliteConnection connection, SqliteTransaction? transaction = null,
         bool includeActivity = true, bool includeViewing = true, bool includeShowPersonal = true,
         bool includeTrakt = true, bool includeCustomTitle = true, bool includeScaleIndexes = true,
-        bool includePlaybackProgress = true, bool includeUnifiedTraktLists = true, bool exhaustive = true)
+        bool includePlaybackProgress = true, bool includeUnifiedTraktLists = true,
+        bool includeRelaxedPendingActions = true, bool exhaustive = true)
     {
         var requiredTables = new[]
         {
@@ -910,8 +912,11 @@ public class DatabaseMigrator
                 RequireTableColumns(connection, "custom_list_members", transaction, "tmdb_id", "cloud_title", "cloud_year");
                 RequireTableColumns(connection, "custom_list_pending_actions", transaction,
                     "list_id", "media_kind", "tmdb_id", "action_type", "created_at");
-                RequireColumnNullable(connection, "custom_list_pending_actions", "media_kind", transaction);
-                RequireColumnNullable(connection, "custom_list_pending_actions", "tmdb_id", transaction);
+                if (includeRelaxedPendingActions)
+                {
+                    RequireColumnNullable(connection, "custom_list_pending_actions", "media_kind", transaction);
+                    RequireColumnNullable(connection, "custom_list_pending_actions", "tmdb_id", transaction);
+                }
             }
         }
         if (exhaustive)
