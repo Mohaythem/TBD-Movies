@@ -682,8 +682,8 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
             conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
-                INSERT INTO custom_lists(id, name, display_name, created_at, updated_at)
-                VALUES (1, 'Favorites', 'Favorites', '2026-01-01', '2026-01-01');
+                INSERT INTO custom_lists(id, display_name, created_at)
+                VALUES (1, 'Favorites', '2026-01-01');
 
                 INSERT INTO custom_list_members(id, list_id, media_kind, movie_id, added_at)
                 VALUES (1, 1, 'MOVIE', 1, '2026-01-01');
