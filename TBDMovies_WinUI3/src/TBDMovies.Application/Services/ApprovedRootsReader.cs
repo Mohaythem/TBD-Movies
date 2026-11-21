@@ -13,7 +13,8 @@ public static class ApprovedRootsReader
         ISettingsRepository? settings,
         string? dataFolder = null,
         bool skipNetworkPaths = false,
-        bool verifyDirectoryExists = true)
+        bool verifyDirectoryExists = true,
+        Action<Exception>? onError = null)
     {
         var roots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (!string.IsNullOrWhiteSpace(dataFolder))
@@ -24,7 +25,10 @@ public static class ApprovedRootsReader
                 if (!verifyDirectoryExists || Directory.Exists(fullData))
                     roots.Add(fullData);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                onError?.Invoke(ex);
+            }
         }
 
         if (settings is null)
@@ -35,18 +39,18 @@ public static class ApprovedRootsReader
             var rawMediaFolders = settings.Get("ui_media_folders");
             if (!string.IsNullOrWhiteSpace(rawMediaFolders))
             {
-                foreach (var folder in ParseFolderEntries(rawMediaFolders))
+                foreach (var folder in ParseFolderEntries(rawMediaFolders, onError))
                 {
-                    TryAddRoot(roots, folder, skipNetworkPaths, verifyDirectoryExists);
+                    TryAddRoot(roots, folder, skipNetworkPaths, verifyDirectoryExists, onError);
                 }
             }
 
-            TryAddRoot(roots, settings.Get("ui_movie_folder"), skipNetworkPaths, verifyDirectoryExists);
-            TryAddRoot(roots, settings.Get("ui_show_folder"), skipNetworkPaths, verifyDirectoryExists);
+            TryAddRoot(roots, settings.Get("ui_movie_folder"), skipNetworkPaths, verifyDirectoryExists, onError);
+            TryAddRoot(roots, settings.Get("ui_show_folder"), skipNetworkPaths, verifyDirectoryExists, onError);
         }
-        catch
+        catch (Exception ex)
         {
-            // Fallback to roots gathered so far
+            onError?.Invoke(ex);
         }
 
         return roots.ToList();
@@ -56,7 +60,8 @@ public static class ApprovedRootsReader
         HashSet<string> roots,
         string? candidate,
         bool skipNetworkPaths,
-        bool verifyDirectoryExists)
+        bool verifyDirectoryExists,
+        Action<Exception>? onError)
     {
         if (string.IsNullOrWhiteSpace(candidate)) return;
         var trimmed = candidate.Trim();
@@ -73,11 +78,11 @@ public static class ApprovedRootsReader
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
         {
-            // Ignore single malformed path without aborting remaining valid directories
+            onError?.Invoke(ex);
         }
     }
 
-    private static List<string> ParseFolderEntries(string raw)
+    private static List<string> ParseFolderEntries(string raw, Action<Exception>? onError)
     {
         var result = new List<string>();
         var trimmed = raw.Trim();
@@ -88,7 +93,10 @@ public static class ApprovedRootsReader
             {
                 parsed = JsonSerializer.Deserialize<string[]>(trimmed);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                onError?.Invoke(ex);
+            }
 
             if (parsed is not null)
             {

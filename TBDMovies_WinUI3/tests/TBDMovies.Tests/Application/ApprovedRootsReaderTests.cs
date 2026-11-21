@@ -128,4 +128,21 @@ public sealed class ApprovedRootsReaderTests : IDisposable
 
         Assert.Contains(_folderA, roots, StringComparer.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void Invokes_OnError_When_Encountering_Malformed_Data()
+    {
+        var settings = new MemorySettingsRepository();
+        settings.Set("ui_media_folders", "[malformed_json_not_array", DateTimeOffset.UtcNow);
+
+        var errors = new List<Exception>();
+        var roots = ApprovedRootsReader.ResolveApprovedRoots(
+            settings,
+            dataFolder: null,
+            skipNetworkPaths: false,
+            verifyDirectoryExists: false,
+            onError: ex => errors.Add(ex));
+
+        Assert.NotEmpty(errors);
+    }
 }

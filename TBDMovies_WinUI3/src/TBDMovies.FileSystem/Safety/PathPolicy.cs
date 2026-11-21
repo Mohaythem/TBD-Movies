@@ -32,6 +32,8 @@ public sealed class PathPolicy
         AssertNoReparseComponents(Path.GetDirectoryName(destinationPath)!);
         AssertApproved(sourcePath);
         AssertApproved(destinationPath);
+        AssertNotProtectedDatabaseFile(sourcePath);
+        AssertNotProtectedDatabaseFile(destinationPath);
 
         if (!File.Exists(sourcePath)) throw new SourceMissingException($"Source is unavailable: {sourcePath}");
         var destinationParent = Path.GetDirectoryName(destinationPath)!;
@@ -77,8 +79,22 @@ public sealed class PathPolicy
         var canonical = Canonical(path);
         AssertNoReparseComponents(canonical);
         AssertApproved(canonical);
+        AssertNotProtectedDatabaseFile(canonical);
         if (!File.Exists(canonical)) throw new UnsafePathException($"Recovery path is unavailable: {canonical}");
         return canonical;
+    }
+
+    private static readonly HashSet<string> ProtectedFileNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "library.db", "library.db-wal", "library.db-shm",
+        "operations.db", "operations.db-wal", "operations.db-shm"
+    };
+
+    private static void AssertNotProtectedDatabaseFile(string path)
+    {
+        var fileName = Path.GetFileName(path);
+        if (ProtectedFileNames.Contains(fileName))
+            throw new UnsafePathException($"Operation cannot target protected database file: {fileName}");
     }
 
     public static SourceIdentity Identity(string path) => WindowsNative.Identity(Canonical(path));

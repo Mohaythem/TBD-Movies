@@ -588,7 +588,12 @@ internal static class AppServices
                     mediaFiles,
                     movies,
                     tracker: revisionTracker,
-                    approvedRootsProvider: () => ApprovedRootsReader.ResolveApprovedRoots(settingsRepository, DataFolder, skipNetworkPaths: false, verifyDirectoryExists: false));
+                    approvedRootsProvider: () => ApprovedRootsReader.ResolveApprovedRoots(
+                        settingsRepository,
+                        Path.Combine(DataFolder, "staging"),
+                        skipNetworkPaths: false,
+                        verifyDirectoryExists: false,
+                        onError: ex => TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record("ApprovedRootsReader", ex, DataFolder)));
                 var organization = new OrganizationService(mediaFiles, coordinator);
                 var repair = new LibraryRepairService(catalogFactory, fileOperations: operations);
                 _movies = movies;
@@ -745,12 +750,17 @@ internal static class AppServices
             IReadOnlyList<string> approvedRoots;
             try
             {
-                approvedRoots = ApprovedRootsReader.ResolveApprovedRoots(settings, DataFolder, skipNetworkPaths: true, verifyDirectoryExists: true);
+                approvedRoots = ApprovedRootsReader.ResolveApprovedRoots(
+                    settings,
+                    Path.Combine(DataFolder, "staging"),
+                    skipNetworkPaths: true,
+                    verifyDirectoryExists: true,
+                    onError: ex => TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record("ApprovedRootsReader", ex, DataFolder));
             }
             catch (Exception ex)
             {
                 TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record("RecoverInterruptedOperations", ex, DataFolder);
-                approvedRoots = string.IsNullOrWhiteSpace(DataFolder) ? [] : [DataFolder];
+                approvedRoots = string.IsNullOrWhiteSpace(DataFolder) ? [] : [Path.Combine(DataFolder, "staging")];
             }
 
             foreach (var op in nonterminal)
@@ -982,7 +992,12 @@ internal static class AppServices
     public static IReadOnlyList<TBDMovies.Domain.Core.Operations.StaleTempFileInfo> DetectStaleTempFiles(IEnumerable<string>? extraRoots = null, CancellationToken token = default)
     {
         var roots = new HashSet<string>(
-            ApprovedRootsReader.ResolveApprovedRoots(_settingsRepository, DataFolder, skipNetworkPaths: false, verifyDirectoryExists: true),
+            ApprovedRootsReader.ResolveApprovedRoots(
+                _settingsRepository,
+                DataFolder,
+                skipNetworkPaths: false,
+                verifyDirectoryExists: true,
+                onError: ex => TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record("ApprovedRootsReader", ex, DataFolder)),
             StringComparer.OrdinalIgnoreCase);
         if (extraRoots is not null)
         {

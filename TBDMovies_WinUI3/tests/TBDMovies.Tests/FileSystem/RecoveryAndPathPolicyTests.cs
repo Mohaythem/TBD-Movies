@@ -332,6 +332,21 @@ public sealed class RecoveryAndPathPolicyTests : IDisposable
             policy.ValidatePlan(Create("valid_src.mkv", "valid"), adsPath, OperationType.Move));
     }
 
+    [Theory]
+    [InlineData("library.db")]
+    [InlineData("library.db-wal")]
+    [InlineData("library.db-shm")]
+    [InlineData("operations.db")]
+    public void PathPolicy_Rejects_Protected_Database_Files(string dbFile)
+    {
+        var policy = new PathPolicy([_directory]);
+        var source = Create("movie.mkv", "sample");
+        var dest = Path.Combine(_directory, dbFile);
+
+        Assert.Throws<UnsafePathException>(() =>
+            policy.ValidatePlan(source, dest, OperationType.Move));
+    }
+
     private string Create(string name, string contents)
     {
         var path = Path.Combine(_directory, name);
