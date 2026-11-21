@@ -823,6 +823,37 @@ public class TmdbClientAndPosterCacheTests : IDisposable
         }
     }
 
+    [Fact]
+    public void DiskPosterCache_PruneToSize_RemovesOldestFilesUntilUnderWatermark()
+    {
+        var handler = new MockHttpMessageHandler();
+        using var cache = new DiskPosterCache(_testCacheDir, new HttpClient(handler));
+
+        var file1 = Path.Combine(_testCacheDir, "poster1.jpg");
+        var file2 = Path.Combine(_testCacheDir, "poster2.jpg");
+        var file3 = Path.Combine(_testCacheDir, "poster3.jpg");
+
+        File.WriteAllBytes(file1, new byte[1000]);
+        File.SetLastAccessTimeUtc(file1, DateTime.UtcNow.AddMinutes(-30));
+        File.SetLastWriteTimeUtc(file1, DateTime.UtcNow.AddMinutes(-30));
+
+        File.WriteAllBytes(file2, new byte[1000]);
+        File.SetLastAccessTimeUtc(file2, DateTime.UtcNow.AddMinutes(-20));
+        File.SetLastWriteTimeUtc(file2, DateTime.UtcNow.AddMinutes(-20));
+
+        File.WriteAllBytes(file3, new byte[1000]);
+        File.SetLastAccessTimeUtc(file3, DateTime.UtcNow.AddMinutes(-10));
+        File.SetLastWriteTimeUtc(file3, DateTime.UtcNow.AddMinutes(-10));
+
+        // Max 2000 bytes -> 90% watermark is 1800 bytes.
+        // Total 3000 -> removing file1 (1000) leaves 2000 (> 1800) -> removing file2 (1000) leaves 1000 (<= 1800).
+        var pruned = cache.PruneToSize(2000);
+        Assert.Equal(2, pruned);
+        Assert.False(File.Exists(file1));
+        Assert.False(File.Exists(file2));
+        Assert.True(File.Exists(file3));
+    }
+
     private static byte[] CreateValidJpegBytes()
     {
         var bytes = new byte[150];

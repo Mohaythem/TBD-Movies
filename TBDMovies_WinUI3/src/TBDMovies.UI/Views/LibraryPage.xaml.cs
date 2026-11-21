@@ -407,6 +407,10 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         ToolTipService.SetToolTip(RandomPickerButton, randomTooltip);
         RandomPickerButton.SetValue(Microsoft.UI.Xaml.Automation.AutomationProperties.NameProperty, randomTooltip);
         UpdateViewModeToggleButtonVisuals();
+        foreach (var card in _cachedMovieCards.Values) card.Dispose();
+        foreach (var card in _cachedShowCards.Values) card.Dispose();
+        _cachedMovieCards.Clear();
+        _cachedShowCards.Clear();
         Refresh();
     }
 

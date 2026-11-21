@@ -13,6 +13,7 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
 {
     public const long DefaultMaxPosterSizeBytes = 10 * 1024 * 1024; // 10 MB limit to prevent disk flooding
     public const long MaxPosterSizeBytes = DefaultMaxPosterSizeBytes;
+    public const long DefaultMaxCacheSizeBytes = 256 * 1024 * 1024; // 256 MB LRU cache boundary
 
     private readonly ConcurrentDictionary<string, Task<string?>> _inFlight = new();
     private readonly string _cacheDirectory;
@@ -46,7 +47,7 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
 
         if (httpClient == null)
         {
-            _httpClient = new HttpClient();
+            _httpClient = new HttpClient(new SocketsHttpHandler { AllowAutoRedirect = false });
             _ownsHttpClient = true;
         }
         else
@@ -207,7 +208,19 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
 
                 if (tempPath != null && IsValidImage(tempPath, out _))
                 {
+                    if (File.Exists(targetPath) && IsReparsePoint(new FileInfo(targetPath)))
+                    {
+                        TryDeleteFile(tempPath);
+                        var dataFolder = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(Path.GetFullPath(_cacheDirectory)));
+                        TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record(
+                            "DiskPosterCache",
+                            $"Refusing to overwrite reparse-point target '{Path.GetFileName(targetPath)}'.",
+                            dataFolder);
+                        return null;
+                    }
+
                     File.Move(tempPath, targetPath, overwrite: true);
+                    PruneToSize();
                     return targetPath;
                 }
 
@@ -303,6 +316,51 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
             return dir.EnumerateFiles("*", SearchOption.TopDirectoryOnly)
                 .Where(f => !f.Name.StartsWith('.'))
                 .Sum(f => f.Length);
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    public int PruneToSize(long maxBytes = DefaultMaxCacheSizeBytes)
+    {
+        if (maxBytes <= 0) return 0;
+        try
+        {
+            if (!Directory.Exists(_cacheDirectory)) return 0;
+            var dir = new DirectoryInfo(_cacheDirectory);
+            if (IsReparsePoint(dir)) return 0;
+
+            var files = dir.EnumerateFiles("*", SearchOption.TopDirectoryOnly)
+                .Where(f => !f.Name.StartsWith('.') && !IsReparsePoint(f))
+                .ToList();
+
+            var totalBytes = files.Sum(f => f.Length);
+            if (totalBytes <= maxBytes) return 0;
+
+            var targetBytes = (long)(maxBytes * 0.90);
+            var sortedFiles = files
+                .OrderBy(f => f.LastAccessTimeUtc < f.LastWriteTimeUtc ? f.LastAccessTimeUtc : f.LastWriteTimeUtc)
+                .ToList();
+
+            var prunedCount = 0;
+            foreach (var file in sortedFiles)
+            {
+                if (totalBytes <= targetBytes) break;
+                try
+                {
+                    var len = file.Length;
+                    file.Delete();
+                    totalBytes -= len;
+                    prunedCount++;
+                }
+                catch
+                {
+                    // Best effort pruning
+                }
+            }
+            return prunedCount;
         }
         catch
         {

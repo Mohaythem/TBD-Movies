@@ -754,7 +754,11 @@ public class DatabaseMigrator
         if (currentVersion == 0 && HasUserSchemaObjects(connection))
             throw new InvalidOperationException("A non-empty database with schema version 0 is not a supported TBDMovies schema.");
 
+        ExecutePragma(connection, "foreign_keys", "ON");
+        ExecutePragma(connection, "journal_mode", "WAL");
+        ExecutePragma(connection, "synchronous", "NORMAL");
         ExecutePragma(connection, "secure_delete", "ON");
+        ExecutePragma(connection, "busy_timeout", "10000");
 
         // Fast path: when the database is already at the target latest version, skip redundant
         // PRAGMA foreign_key_check and exhaustive schema validation (column introspection),
@@ -766,11 +770,6 @@ public class DatabaseMigrator
         }
 
         EnsureForeignKeyIntegrity(connection, null, "Existing database");
-        ExecutePragma(connection, "foreign_keys", "ON");
-        ExecutePragma(connection, "journal_mode", "WAL");
-        ExecutePragma(connection, "synchronous", "NORMAL");
-        ExecutePragma(connection, "secure_delete", "ON");
-        ExecutePragma(connection, "busy_timeout", "10000");
 
         // Protect an existing database before a forward migration. A brand-new database (version 0) has
         // no data to protect, so no backup is taken. If the required backup cannot be created or
@@ -908,9 +907,11 @@ public class DatabaseMigrator
             {
                 RequireTableColumns(connection, "custom_lists", transaction,
                     "trakt_list_id", "trakt_slug", "sync_status", "is_deleted", "last_synced_at");
-                RequireTableColumns(connection, "custom_list_members", transaction, "tmdb_id");
+                RequireTableColumns(connection, "custom_list_members", transaction, "tmdb_id", "cloud_title", "cloud_year");
                 RequireTableColumns(connection, "custom_list_pending_actions", transaction,
                     "list_id", "media_kind", "tmdb_id", "action_type", "created_at");
+                RequireColumnNullable(connection, "custom_list_pending_actions", "media_kind", transaction);
+                RequireColumnNullable(connection, "custom_list_pending_actions", "tmdb_id", transaction);
             }
         }
         if (exhaustive)
@@ -952,6 +953,7 @@ public class DatabaseMigrator
     private static void RequireTableColumns(
         SqliteConnection connection, string table, SqliteTransaction? transaction, params string[] columns)
     {
+        AssertSafeSqlIdentifier(table);
         var present = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         using (var command = connection.CreateCommand())
         {
@@ -966,8 +968,31 @@ public class DatabaseMigrator
                     $"Required SQLite column '{table}.{column}' is missing (schema drift).");
     }
 
+    private static void RequireColumnNullable(
+        SqliteConnection connection, string table, string column, SqliteTransaction? transaction = null)
+    {
+        AssertSafeSqlIdentifier(table);
+        AssertSafeSqlIdentifier(column);
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"PRAGMA table_info({table});";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+            {
+                var notNull = reader.GetInt32(3);
+                if (notNull != 0)
+                    throw new InvalidOperationException($"Column '{table}.{column}' is expected to be nullable but is NOT NULL.");
+                return;
+            }
+        }
+        throw new InvalidOperationException($"Column '{table}.{column}' was not found.");
+    }
+
     private static int ReadIntPragma(SqliteConnection connection, string name)
     {
+        AssertSafeSqlIdentifier(name);
         using var command = connection.CreateCommand();
         command.CommandText = $"PRAGMA {name};";
         return Convert.ToInt32(command.ExecuteScalar());
@@ -1009,6 +1034,7 @@ public class DatabaseMigrator
     private static bool HasTableColumn(
         SqliteConnection connection, string table, string column, SqliteTransaction? transaction = null)
     {
+        AssertSafeSqlIdentifier(table);
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = $"PRAGMA table_info({table});";
@@ -1020,8 +1046,16 @@ public class DatabaseMigrator
 
     private static void ExecutePragma(SqliteConnection connection, string name, string value)
     {
+        AssertSafeSqlIdentifier(name);
+        AssertSafeSqlIdentifier(value);
         using var command = connection.CreateCommand();
         command.CommandText = $"PRAGMA {name} = {value};";
         command.ExecuteNonQuery();
+    }
+
+    private static void AssertSafeSqlIdentifier(string identifier)
+    {
+        if (string.IsNullOrWhiteSpace(identifier) || !System.Text.RegularExpressions.Regex.IsMatch(identifier, @"^[A-Za-z0-9_]+$"))
+            throw new ArgumentException($"Invalid SQL identifier: {identifier}", nameof(identifier));
     }
 }

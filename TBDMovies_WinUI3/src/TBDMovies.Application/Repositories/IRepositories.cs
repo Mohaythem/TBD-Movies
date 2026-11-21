@@ -173,6 +173,9 @@ public interface IWatchHistoryRepository
     /// <summary>The ids of all TV shows with at least one watched episode.</summary>
     IReadOnlySet<int> GetWatchedShowIds() => new HashSet<int>();
 
+    /// <summary>The count of distinct watched episodes per TV show id.</summary>
+    IReadOnlyDictionary<int, int> GetWatchedEpisodeCountsByShow() => new Dictionary<int, int>();
+
     /// <summary>
     /// Removes every watch event - movie, episode and events orphaned by deleted media - and reports
     /// how many rows were deleted. Personal preferences and the watchlist are untouched.

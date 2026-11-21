@@ -656,6 +656,62 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
         }
     }
 
+    [Fact]
+    public void RestoreFromBackup_SuccessfulRestore_CleansUpPreRestoreTempFile()
+    {
+        new DatabaseMigrator(_connectionString).Migrate();
+        SeedMovie(1);
+        var backup = DatabaseSafetyBackup.CreateVerifiedBackup(_connectionString);
+
+        DatabaseSafetyBackup.RestoreFromBackup(backup, _connectionString);
+
+        var preRestore = _dbPath + ".pre-restore";
+        var incoming = _dbPath + ".restore-incoming";
+        Assert.False(File.Exists(preRestore), ".pre-restore file should be cleaned up on verified restore");
+        Assert.False(File.Exists(incoming), ".restore-incoming file should be cleaned up");
+    }
+
+    [Fact]
+    public void ClearCatalog_DeletesCustomListsAndPendingActionsWithoutViolatingForeignKeys()
+    {
+        new DatabaseMigrator(_connectionString).Migrate();
+        SeedMovie(1);
+
+        using (var conn = new SqliteConnection(_connectionString))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                INSERT INTO custom_lists(id, name, display_name, created_at, updated_at)
+                VALUES (1, 'Favorites', 'Favorites', '2026-01-01', '2026-01-01');
+
+                INSERT INTO custom_list_members(id, list_id, media_kind, movie_id, added_at)
+                VALUES (1, 1, 'MOVIE', 1, '2026-01-01');
+
+                INSERT INTO custom_list_pending_actions(id, list_id, media_kind, tmdb_id, action_type, created_at)
+                VALUES (1, 1, 'MOVIE', 100, 'ADD', '2026-01-01');
+                """;
+            cmd.ExecuteNonQuery();
+        }
+
+        var maintenance = new LibraryMaintenanceRepository(_connectionString);
+        var counts = maintenance.ClearCatalog();
+
+        using (var conn = new SqliteConnection(_connectionString))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "SELECT COUNT(*) FROM custom_lists;";
+            Assert.Equal(0L, Convert.ToInt64(cmd.ExecuteScalar()));
+
+            cmd.CommandText = "SELECT COUNT(*) FROM custom_list_members;";
+            Assert.Equal(0L, Convert.ToInt64(cmd.ExecuteScalar()));
+
+            cmd.CommandText = "SELECT COUNT(*) FROM custom_list_pending_actions;";
+            Assert.Equal(0L, Convert.ToInt64(cmd.ExecuteScalar()));
+        }
+    }
+
     private static int CountMovies(string dbPath)
     {
         var connString = new SqliteConnectionStringBuilder

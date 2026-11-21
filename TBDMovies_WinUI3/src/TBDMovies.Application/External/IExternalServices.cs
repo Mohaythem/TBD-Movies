@@ -48,6 +48,7 @@ public interface IPosterCacheMaintenance
 {
     int Clear();
     long GetCacheSizeBytes() => 0;
+    int PruneToSize(long maxBytes = 256 * 1024 * 1024) => 0;
 }
 
 public interface IFileOperationCoordinator

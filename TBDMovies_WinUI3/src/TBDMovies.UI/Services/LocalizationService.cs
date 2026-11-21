@@ -255,7 +255,6 @@ public static class LocalizationService
         // Shared vocabulary
         ["Search"] = "Search",
         ["Cancel"] = "Cancel",
-        ["Save"] = "Save",
         ["Copy"] = "Copy",
         ["Refresh"] = "Refresh",
         ["Close"] = "Close",
@@ -289,8 +288,6 @@ public static class LocalizationService
         ["MovieSingular"] = "movie",
         ["Shows"] = "shows",
         ["ShowSingular"] = "show",
-        ["Items"] = "items",
-        ["ItemSingular"] = "item",
         ["Manage"] = "Manage",
         ["Rename"] = "Rename",
         ["Delete"] = "Delete",
@@ -459,7 +456,6 @@ public static class LocalizationService
         ["EmptyShows"] = "No TV shows yet",
         ["EmptyShowsHelp"] = "Add episode files from Add Media to build the hierarchy.",
         ["IssueEpisodeFileMissing"] = "Episode file is missing",
-        ["TmdbNotConfiguredHelp"] = "Add a TMDB read access token in Settings to search for titles.",
         // Check Library
         ["CheckDescription"] = "Verify that every registered item still exists on disk.",
         ["LibraryCheck"] = "Library check",
@@ -781,6 +777,9 @@ public static class LocalizationService
         ["PlayerCustomPath"] = "Player Executable Path",
         ["PlayerCustomArgs"] = "Arguments Template",
         ["PlayerCustomArgsHelp"] = "Use {path} for file path, {seconds} for start position, {time} for hh:mm:ss",
+        ["CloudItem"] = "Cloud",
+        ["BrowseEllipsis"] = "Browse…",
+        ["AddSub"] = "+ Sub",
     };
 
     private static readonly IReadOnlyDictionary<string, string> Arabic = new Dictionary<string, string>
@@ -1032,7 +1031,6 @@ public static class LocalizationService
         // Shared vocabulary
         ["Search"] = "بحث",
         ["Cancel"] = "إلغاء",
-        ["Save"] = "حفظ",
         ["Copy"] = "نسخ",
         ["Refresh"] = "تحديث",
         ["Close"] = "إغلاق",
@@ -1066,8 +1064,6 @@ public static class LocalizationService
         ["MovieSingular"] = "فيلم",
         ["Shows"] = "مسلسلًا",
         ["ShowSingular"] = "مسلسل",
-        ["Items"] = "عنصرًا",
-        ["ItemSingular"] = "عنصر واحد",
         ["Manage"] = "إدارة",
         ["Rename"] = "إعادة تسمية",
         ["Delete"] = "حذف",
@@ -1237,7 +1233,6 @@ public static class LocalizationService
         ["EmptyShows"] = "لا توجد مسلسلات بعد",
         ["EmptyShowsHelp"] = "أضف ملفات حلقات من إضافة وسائط لبناء التسلسل.",
         ["IssueEpisodeFileMissing"] = "ملف الحلقة مفقود",
-        ["TmdbNotConfiguredHelp"] = "أضف رمز وصول TMDB من الإعدادات للبحث عن العناوين.",
         // Check Library
         ["CheckDescription"] = "تحقّق من أن كل عنصر مُسجَّل لا يزال موجودًا على القرص.",
         ["LibraryCheck"] = "فحص المكتبة",
@@ -1560,6 +1555,9 @@ public static class LocalizationService
         ["PlayerCustomPath"] = "مسار المشغل المخصص",
         ["PlayerCustomArgs"] = "قالب المعاملات",
         ["PlayerCustomArgsHelp"] = "استخدم {path} لمسار الفيديو، و{seconds} للثواني، و{time} للوقت بتنسيق س:د:ث",
+        ["CloudItem"] = "سحابي",
+        ["BrowseEllipsis"] = "استعراض…",
+        ["AddSub"] = "+ ترجمة",
     };
 
     public static UiLanguage CurrentLanguage { get; private set; } = UiLanguage.English;

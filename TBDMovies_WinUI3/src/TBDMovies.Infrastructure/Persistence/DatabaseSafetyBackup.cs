@@ -343,6 +343,8 @@ public static class DatabaseSafetyBackup
             if (!IsRestorableDatabase(target, out _))
                 throw new DatabaseBackupException("The restored database failed verification.");
 
+            TryDelete(preRestore);
+
             SqliteConnection.ClearAllPools();
         }
         catch

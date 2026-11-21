@@ -76,7 +76,7 @@ public static class TmdbUrl
         }
 
         // The id is the leading digits of the second segment; a "-slug" suffix (or none) is dropped.
-        var digits = new string(segments[1].TakeWhile(char.IsDigit).ToArray());
+        var digits = new string(segments[1].TakeWhile(char.IsAsciiDigit).ToArray());
         if (digits.Length == 0)
         {
             return false;

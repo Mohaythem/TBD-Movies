@@ -101,15 +101,15 @@ public sealed class QaSeedAndInstallerTests : IDisposable
 
         var content = File.ReadAllText(issPath);
 
-        Assert.Contains("AppMutex=TBDMovies_SingleInstance_Mutex", content);
+        Assert.Contains("AppMutex=TBDMovies_SingleInstance_Mutex,Global\\TBDMovies_SingleInstance_Mutex", content);
         Assert.Contains("CloseApplicationsFilter={#MyAppExeName}", content);
         Assert.DoesNotContain("CloseApplicationsFilter=*.exe", content);
         Assert.DoesNotContain("DropSort", content, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("#if defined(SIGN_ENABLED) && SIGN_ENABLED == \"1\"", content);
         Assert.Contains("SignTool=tbdmovies $f", content);
         Assert.Contains("SignedUninstaller=yes", content);
-        Assert.Contains("AppVersion \"0.12.5\"", content);
-        Assert.Contains("VersionInfoVersion=0.12.5.0", content);
+        Assert.Matches(@"#define\s+MyAppVersion\s+""\d+\.\d+\.\d+""", content);
+        Assert.Matches(@"VersionInfoVersion=\d+\.\d+\.\d+\.\d+", content);
     }
 
     [Fact]
@@ -123,6 +123,73 @@ public sealed class QaSeedAndInstallerTests : IDisposable
 
         Assert.Contains("<Folder Name=\"/tools/\">", content);
         Assert.Contains("<Project Path=\"tools/TBDMovies.QaSeed/TBDMovies.QaSeed.csproj\" />", content);
+    }
+
+    [Fact]
+    public void LocalizationService_DictionaryKeys_ZeroDuplicatesAndFullParity()
+    {
+        var solutionRoot = FindSolutionRoot();
+        var locPath = Path.Combine(solutionRoot, "src", "TBDMovies.UI", "Services", "LocalizationService.cs");
+        Assert.True(File.Exists(locPath), $"LocalizationService.cs not found at {locPath}");
+
+        var lines = File.ReadAllLines(locPath);
+        var inEnglish = false;
+        var inArabic = false;
+        var englishKeys = new List<string>();
+        var arabicKeys = new List<string>();
+
+        var keyRegex = new System.Text.RegularExpressions.Regex(@"^\s*\[""([^""]+)""\]\s*=");
+
+        foreach (var line in lines)
+        {
+            if (line.Contains("English = new Dictionary<string, string>"))
+            {
+                inEnglish = true;
+                inArabic = false;
+                continue;
+            }
+            if (line.Contains("Arabic = new Dictionary<string, string>"))
+            {
+                inEnglish = false;
+                inArabic = true;
+                continue;
+            }
+            if (line.Trim() == "};")
+            {
+                inEnglish = false;
+                inArabic = false;
+                continue;
+            }
+
+            var match = keyRegex.Match(line);
+            if (match.Success)
+            {
+                var key = match.Groups[1].Value;
+                if (inEnglish) englishKeys.Add(key);
+                if (inArabic) arabicKeys.Add(key);
+            }
+        }
+
+        Assert.NotEmpty(englishKeys);
+        Assert.NotEmpty(arabicKeys);
+
+        // 1. Zero duplicate keys within English
+        var duplicateEnglish = englishKeys.GroupBy(k => k).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        Assert.Empty(duplicateEnglish);
+
+        // 2. Zero duplicate keys within Arabic
+        var duplicateArabic = arabicKeys.GroupBy(k => k).Where(g => g.Count() > 1).Select(g => g.Key).ToList();
+        Assert.Empty(duplicateArabic);
+
+        // 3. Parity between English and Arabic
+        var enSet = new HashSet<string>(englishKeys);
+        var arSet = new HashSet<string>(arabicKeys);
+
+        var missingInArabic = enSet.Except(arSet).ToList();
+        Assert.Empty(missingInArabic);
+
+        var missingInEnglish = arSet.Except(enSet).ToList();
+        Assert.Empty(missingInEnglish);
     }
 
     private static string FindSolutionRoot()

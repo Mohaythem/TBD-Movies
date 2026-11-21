@@ -1199,6 +1199,23 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         return ids;
     }
 
+    public IReadOnlyDictionary<int, int> GetWatchedEpisodeCountsByShow()
+    {
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = Command(connection, null, """
+            SELECT se.show_id, COUNT(DISTINCT e.id)
+              FROM watch_events w
+              JOIN tv_episodes e ON e.id = w.episode_id
+              JOIN tv_seasons se ON se.id = e.season_id
+             WHERE w.media_kind = 'EPISODE' AND se.show_id IS NOT NULL
+             GROUP BY se.show_id;
+            """);
+        var counts = new Dictionary<int, int>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read()) counts[reader.GetInt32(0)] = reader.GetInt32(1);
+        return counts;
+    }
+
     private static IReadOnlyList<WatchHistoryEntry> ReadHistory(SqliteConnection connection, SqliteTransaction? transaction, int? eventId = null)
     {
         using var command = Command(connection, transaction, """

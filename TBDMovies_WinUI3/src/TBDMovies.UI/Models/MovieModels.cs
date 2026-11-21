@@ -262,7 +262,7 @@ public sealed record WatchHistoryDisplayRecord(WatchHistoryRecord Entry, string 
 /// only ever hold movies, but a custom list can hold either, so the card exposes one set of
 /// poster/title/badge properties backed by whichever record it wraps.
 /// </summary>
-public sealed record ListMediaItem : INotifyPropertyChanged
+public sealed record ListMediaItem : INotifyPropertyChanged, IDisposable
 {
     public MovieRecord? Movie { get; }
     public TVShowRecord? Show { get; }
@@ -303,8 +303,19 @@ public sealed record ListMediaItem : INotifyPropertyChanged
         IsLocal = isLocal;
         LocalBadgeText = localBadgeText;
         TmdbId = tmdbId;
-        LocalBadgeText = localBadgeText;
         _showCard.PropertyChanged += OnSourceChanged;
+    }
+
+    public void Dispose()
+    {
+        if (Movie is not null)
+        {
+            Movie.PropertyChanged -= OnSourceChanged;
+        }
+        if (_showCard is not null)
+        {
+            _showCard.PropertyChanged -= OnSourceChanged;
+        }
     }
 
     private void OnSourceChanged(object? sender, PropertyChangedEventArgs e)

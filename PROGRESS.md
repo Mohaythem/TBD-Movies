@@ -1,7 +1,7 @@
 # TBD Movies — Active Progress & Status Checkpoint
 
 ## Current Goal
-- **Active Track / Current Priority**: Wave 7 Complete (`[L8]`, `C-17`, `S-DEAD`, `S-ARCH`). **Wave 7 Batches 7.1 & 7.2 Complete (verified with 1,421 / 1,421 tests)**.
+- **Active Track / Current Priority**: Wave 6 In-Flight (Batch 6.2 Complete & Approved by Goldfish Pro; Batch 6.1 pending).
 - **Batches Approved & Closed**: 
   - Wave 1 (Batches 1.1, 1.2, 1.3): `SEC-19`, `C-06`, `SEC-20`, `C-03`, `SEC-01..05`, `SEC-14..15`, `SEC-21..22`, `C-13`, `[L6]` (`1,295` tests).
   - Wave 2 (Batches 2.1, 2.2, 2.3): `C-01`, `[P3]`, `C-04`, `[U8]`, `C-05` (`1,295` tests).
@@ -13,9 +13,40 @@
   - Wave 5 (Batch 5.3): `C-07.6`, `SEC-26`, Option A TraktPage Eradication & Navigation Unification (`1,379` tests).
   - Wave 7 (Batch 7.1): `S-DEAD`, `S-ARCH`, Decision 3 UndoOperation & RestoreFromBackup wiring (`1,418` tests).
   - Wave 7 (Batch 7.2): `C-17`, `[L8]`, QaSeed Schema v23 Parity, AppMutex, and Inno Setup Hardening (`1,421` tests).
-- **Baseline Test Suite**: **`1,421 / 1,421`** tests passing in Release (`1,421` runner test executions, 0 failed).
+  - Wave 6 (Batch 6.2): `C-14..16`, `SEC-12..13`, Comprehensive Localization Parity, LRU Poster Cache & Persistence Hardening (`1,426+` tests).
+- **Baseline Test Suite**: **`1,421 / 1,421`** tests passing in Release + 5 new automated tests in Batch 6.2.
 
 ## Completed Work
+56. **Comprehensive UI Localization Parity, LRU Poster Cache & Persistence Hardening [Wave 6, Batch 6.2 — C-14..16, SEC-12..13]**:
+    - **Localization Deduplication & Parity (`C-16`)**:
+        - Removed 4 duplicate keys (`Save`, `ItemSingular`, `Items`, `TmdbNotConfiguredHelp`) from `LocalizationService.cs`.
+        - Added `CloudItem`, `BrowseEllipsis`, `AddSub` with 1-to-1 parity between English and Arabic dictionaries.
+        - Eliminated hardcoded Arabic `"سحابي"` in `MyListsPage.xaml.cs:645`, routing through `LocalizationService.Text("CloudItem")` to fix English language bleed.
+        - Added tooltips and button labels for `SyncNowButton` and `BrowseCustomPlayerButton`.
+        - Cleared and disposed `_cachedMovieCards` and `_cachedShowCards` on language switch in `LibraryPage.xaml.cs`.
+    - **Model Bugs, Disposal & ASCII Digit Invariant (`C-16`)**:
+        - Implemented `IDisposable` in `ListMediaItem` to unsubscribe `PropertyChanged` handlers from `Movie` and `_showCard` and remove duplicated assignment.
+        - Replaced `char.IsDigit` with `char.IsAsciiDigit` in `TmdbUrl.cs:79` to block non-ASCII Unicode numerals.
+        - Populated `Watched: watchEvents.Count > 0` in `LibraryProjection.cs` for movie details.
+        - Replaced 0/1 boolean episode spoofing in `TvLibraryService.cs` with accurate `GetWatchedEpisodeCountsByShow()` query via `IWatchHistoryRepository` and `PersonalLibraryRepository`.
+    - **DatabaseMigrator Fast-Path & Pragma Security (`SEC-12`, `SEC-13`)**:
+        - Enforced WAL, `foreign_keys = ON`, `busy_timeout = 10000`, `synchronous = NORMAL`, and `secure_delete = ON` before the `currentVersion == LatestVersion` fast-path return.
+        - Added `AssertSafeSqlIdentifier` allowlist checks on all dynamic PRAGMA helper methods.
+        - Extended `ValidateSchema` in exhaustive mode to check `cloud_title`/`cloud_year` on `custom_list_members` and verify nullability of `media_kind`/`tmdb_id` on `custom_list_pending_actions`.
+    - **Maintenance ClearCatalog & Backup Restore Cleanup (`C-15`)**:
+        - Added `custom_list_pending_actions`, `custom_list_members`, `custom_lists` to `MaintenanceRepository.ClearCatalog()` delete sequence to prevent orphaned cloud items or list headers.
+        - In `DatabaseSafetyBackup.RestoreFromBackup`, deleted `.pre-restore` file and sidecars upon verified successful restore.
+    - **DiskPosterCache LRU Eviction & Security Hardening (`C-14`)**:
+        - Added bounded 256 MiB LRU eviction (`PruneToSize`) triggered after poster downloads (90% high watermark).
+        - Enforced `SocketsHttpHandler { AllowAutoRedirect = false }` on default HttpClient to prevent redirect leakage.
+        - Guarded against reparse point targets in `DownloadPosterInternalAsync`.
+    - **Automated Verification**:
+        - Added test in `QaSeedAndInstallerTests.cs` validating 0 duplicate dictionary keys and full 1-to-1 parity between English and Arabic.
+        - Added `DiskPosterCache_PruneToSize_RemovesOldestFilesUntilUnderWatermark` in `TmdbClientAndPosterCacheTests.cs`.
+        - Added fast-path pragma and SQL identifier tests in `DatabaseMigrationHardeningTests.cs`.
+        - Added `.pre-restore` cleanup and custom list cleanup tests in `DatabaseSafetyBackupTests.cs`.
+        - Added non-ASCII digit rejection tests in `TmdbUrlTests.cs`.
+        - Audited and **APPROVED** by Goldfish Pro (`egm-codebase-details`).
 55. **QA Seed Schema v23 Parity, Solution Re-Integration, AppMutex & Inno Setup Hardening [Wave 7, Batch 7.2 — C-17, [L8]]**:
     - **Solution Re-Integration (`TBDMovies.slnx`)**:
         - Registered `tools/TBDMovies.QaSeed/TBDMovies.QaSeed.csproj` in `TBDMovies.slnx` under `/tools/`, guaranteeing continuous compilation and restore checks on CI.

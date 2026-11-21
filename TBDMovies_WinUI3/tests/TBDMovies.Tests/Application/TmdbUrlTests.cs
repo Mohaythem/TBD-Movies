@@ -44,6 +44,8 @@ public sealed class TmdbUrlTests
     [InlineData("https://www.themoviedb.org/person/123")]      // not movie/tv
     [InlineData("https://www.themoviedb.org/movie/")]          // no id
     [InlineData("https://www.themoviedb.org/movie/dune")]      // non-numeric id
+    [InlineData("https://www.themoviedb.org/movie/١٢٣-dune")] // Non-ASCII Unicode digits rejected
+    [InlineData("https://www.themoviedb.org/tv/۱۲۳")]         // Non-ASCII Unicode digits rejected
     [InlineData("ftp://www.themoviedb.org/movie/123")]         // wrong scheme
     [InlineData("https://www.themoviedb.org/")]                // no path
     public void Invalid_or_unsupported_links_are_rejected(string url)

@@ -114,6 +114,7 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         PlayerMpvItem.Content = LocalizationService.Text("PlayerMpv");
         PlayerCustomItem.Content = LocalizationService.Text("PlayerCustom");
         CustomPlayerArgsHelpText.Text = LocalizationService.Text("PlayerCustomArgsHelp");
+        BrowseCustomPlayerButton.Content = LocalizationService.Text("BrowseEllipsis");
 
         LibraryHeadingText.Text = LocalizationService.Text("LibrarySection");
         MediaFoldersLabelText.Text = LocalizationService.Text("MediaFolders");

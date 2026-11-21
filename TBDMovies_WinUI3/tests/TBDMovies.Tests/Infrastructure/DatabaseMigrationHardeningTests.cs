@@ -341,6 +341,42 @@ public sealed class DatabaseMigrationHardeningTests : IDisposable
         return string.Join("|", values) + ":v" + Scalar(db, "PRAGMA user_version") + ":schema" + Scalar(db, "SELECT group_concat(name,',') FROM sqlite_master WHERE type='table' ORDER BY name");
     }
 
+    [Fact]
+    public void Migrator_FastPath_AppliesPragmasAndValidatesSchema()
+    {
+        var migrator = new DatabaseMigrator(_cs);
+        migrator.Migrate();
+
+        // Migrate again - this hits the fast-path!
+        migrator.Migrate();
+
+        using var db = Open();
+        Assert.Equal("wal", Scalar(db, "PRAGMA journal_mode")?.ToString()?.ToLowerInvariant());
+        Assert.Equal(DatabaseMigrator.LatestVersion, Convert.ToInt32(Scalar(db, "PRAGMA user_version")));
+    }
+
+    [Fact]
+    public void Migrator_InvalidSqlIdentifier_ThrowsArgumentException()
+    {
+        var migrator = new DatabaseMigrator(_cs);
+        migrator.Migrate();
+
+        var method = typeof(DatabaseMigrator).GetMethod("AssertSafeSqlIdentifier",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+        Assert.NotNull(method);
+
+        // Safe identifiers
+        method.Invoke(null, ["movies"]);
+        method.Invoke(null, ["custom_list_members"]);
+        method.Invoke(null, ["WAL"]);
+
+        // Malicious or invalid identifiers
+        Assert.Throws<System.Reflection.TargetInvocationException>(() => method.Invoke(null, ["movies; DROP TABLE users;"]));
+        Assert.Throws<System.Reflection.TargetInvocationException>(() => method.Invoke(null, ["table-name"]));
+        Assert.Throws<System.Reflection.TargetInvocationException>(() => method.Invoke(null, [""]));
+        Assert.Throws<System.Reflection.TargetInvocationException>(() => method.Invoke(null, ["   "]));
+    }
+
     private static void SeedMovie(SqliteConnection db, int id, string title)
         => SeedMovie(db, id, title, "tmdb", "READY");
 

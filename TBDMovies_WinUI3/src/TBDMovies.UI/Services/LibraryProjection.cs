@@ -102,7 +102,8 @@ internal static class LibraryProjection
             MediaFiles: mediaFiles,
             ReviewMatch: details.ReviewMatch,
             CustomDisplayTitle: details.CustomDisplayTitle,
-            CanonicalTitle: details.CanonicalTitle);
+            CanonicalTitle: details.CanonicalTitle,
+            Watched: watchEvents.Count > 0);
     }
 
     /// <summary>

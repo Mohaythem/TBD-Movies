@@ -172,6 +172,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         PageTitleText.Text = LocalizationService.Text("MyLists");
         NewListButtonText.Text = LocalizationService.Text("NewList");
         UpdateTraktSyncVisibility();
+        ToolTipService.SetToolTip(SyncNowButton, LocalizationService.Text("TraktSyncNow"));
         AddMoviesButtonText.Text = LocalizationService.Text("AddMedia");
         RenameListMenuItem.Text = LocalizationService.Text("Rename") ?? "Rename";
         DeleteListMenuItem.Text = LocalizationService.Text("Delete") ?? "Delete";
@@ -642,7 +643,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
     private static ListMediaItem ToListItem(CustomListItem item)
     {
         var isCloud = item.IsCloudOnly;
-        var badgeText = isCloud ? "سحابي" : LocalizationService.Text(!item.IsMissing ? "Local" : "OnlineOnly");
+        var badgeText = isCloud ? LocalizationService.Text("CloudItem") : LocalizationService.Text(!item.IsMissing ? "Local" : "OnlineOnly");
         if (item.Kind == CustomListMediaKind.Show)
         {
             var show = new TVShowRecord(
@@ -914,6 +915,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             if (targetItem is not null)
             {
                 _displayedItems.Remove(targetItem);
+                targetItem.Dispose();
             }
 
             var count = _displayedItems.Count;
