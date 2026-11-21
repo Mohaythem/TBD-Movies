@@ -1663,7 +1663,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                     {
                         throw;
                     }
-                    catch (TraktClientException tex) when (tex.FailureKind == TraktFailureKind.NotFound)
+                    catch (TraktClientException tex) when (tex.StatusCode == System.Net.HttpStatusCode.NotFound)
                     {
                         // 404 Not Found means the list is already deleted on Trakt
                         remoteDeletedSuccessfully = true;
