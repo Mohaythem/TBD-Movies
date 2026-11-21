@@ -1,101 +1,101 @@
 # TBD-Movies — Master Problem & Engineering Roadmap (BUGS.md)
 
-**المستودع (Repository)**: `https://github.com/Mohaythem/TBD-Movies`  
-**البيئة والتقنيات (Stack)**: WinUI 3 / C# 14 / .NET 10 (`net10.0-windows10.0.22621`), Windows App SDK `1.7.260224002`, SQLite WAL (`Schema v23`), نمط غير محزم (`win-x64` Unpackaged).  
-**أولويات المستخدم القصوى**: السرعة الفائقة، السلاسة المطلقة، وجمالية الواجهة السينمائية أولاً (Speed, Smoothness, and Beauty).  
-**قاعدة التعديل**: ممنوع تغيير تصميم الواجهة أو سلوك التطبيق الحالي إلا فيما يقتضيه الإصلاح المعتمد.  
-**قاعدة الفروع وأمان Git**: العمل يتم حصرياً على الفرع المعتمد محلياً، وممنوع تنفيذ `git push` أو أي أمر تدميري إلا بأمر صريح ومباشر في نفس اللحظة.
+**Repository**: `https://github.com/Mohaythem/TBD-Movies`  
+**Stack**: WinUI 3 / C# 14 / .NET 10 (`net10.0-windows10.0.22621`), Windows App SDK `1.7.260224002`, SQLite WAL (`Schema v23`), Unpackaged (`win-x64`).  
+**Core User Priorities**: Speed, Smoothness, and Cinematic Beauty first.  
+**Mutation Rule**: Absolutely no changes to existing UI design or runtime behavior unless strictly required by an approved fix.  
+**Branch & Git Safety**: All active work is strictly confined to the local designated branch (`codex`). Zero `git push` or destructive git commands (`git reset --hard`, `git clean -fd`) without explicit, real-time user authorization.
 
 ---
 
-## 🧭 بروتوكول المسارات والمناطق المحمية ومعايير القبول
+## 🧭 Path Protocol, Protected Boundaries & Acceptance Criteria
 
-### 1. بروتوكول المسارات المعتمدة (PATH NOTE)
-- جميع مسارات الملفات تبدأ من مجلد الحل: `TBDMovies_WinUI3/src/...` (مثل `TBDMovies_WinUI3/src/TBDMovies.UI/Views/MovieDetailsPage.xaml`).
-- يُحظر تخمين أسماء الملفات؛ يجب دائماً التحقق من الملف الفعلي في الكود البرمجي.
+### 1. Approved Path Protocol (`PATH NOTE`)
+- All file paths resolve from the solution root: `TBDMovies_WinUI3/src/...` (e.g. `TBDMovies_WinUI3/src/TBDMovies.UI/Views/MovieDetailsPage.xaml`).
+- Guessing file paths is strictly forbidden; always verify against physical codebase files.
 
-### 2. المناطق المحمية (Verified Good — ممنوع المساس بها نهائياً)
-- **إدارة بيانات الاعتماد**: الاعتماد الحصري على Windows Credential Manager (`TBDMovies/TMDB`, `TBDMovies/Trakt`).
-- **حماية المسارات والنقل الآمن**: سياسات `PathPolicy.cs` (حظر ADS، أسماء أجهزة DOS، الروابط المكررة)، ومحرك `SafeTransferEngine.cs` (قفل المصدر، الرابط الصلب، فحص SHA-256 قبل الحذف، والنقل الذري).
-- **الأمان الشبكي**: فرض HTTPS الصارم لجميع الاتصالات، عدم تخطي الشهادات، وإغلاق مسارات التحويل التلقائي لـ TMDB و Trakt.
-- **قواعد البيانات**: استعلامات SQLite ذات المعاملات المحصنة، وتهيئة `foreign_keys=ON; journal_mode=WAL; synchronous=NORMAL; busy_timeout=10000`، وحصر الكتابات عبر `DatabaseWriteGate`.
-- **أداء الواجهة**: التحميل المتزامن السريع بدون `Task.Run` مصطنع، كاش عناصر العرض النظيف، والتجريد الافتراضي للشبكات (UI Virtualization).
-- **الهوية البصرية والجمالية**: خلفية Mica BaseAlt، استعادة الثيم واللغة قبل `InitializeComponent`، لوحة ألوان Slate Navy، الدعم الكامل لـ RTL، وتأثير حجب البوستر (Hero Scrim).
+### 2. Protected Boundaries (Verified Good — Strictly Preserved & Untouched)
+- **Credential Storage**: Exclusive reliance on Windows Credential Manager (`TBDMovies/TMDB`, `TBDMovies/Trakt`).
+- **Path Protection & Safe Transfers**: Defensive policies in `PathPolicy.cs` (rejecting ADS, DOS device names, duplicate symlinks/reparse points), and `SafeTransferEngine.cs` (source locking, hardlink-unlink, pre-deletion SHA-256 verification, and atomic transfers).
+- **Network Security**: Strict HTTPS enforcement across all endpoints, zero certificate bypasses, and auto-redirect suppression for TMDB and Trakt.
+- **Persistence & Databases**: ACID-compliant SQLite transactions, PRAGMA baseline `foreign_keys=ON; journal_mode=WAL; synchronous=NORMAL; busy_timeout=10000`, and exclusive serialization through `DatabaseWriteGate`.
+- **UI Responsiveness**: Synchronous fast loading without artificial `Task.Run` overhead, clean view-element recycling, and native list virtualization.
+- **Visual Identity**: Mica BaseAlt backdrop, pre-`InitializeComponent` theme and language initialization, Slate Navy palette, complete RTL support, and hero poster scrim masking.
 
-### 3. معايير القبول الإلزامية لكل إصلاح (Acceptance Criteria)
-1. نجاح بناء الحل بالكامل بكود خروج `0` وبدون أي تحذيرات أو أخطاء (`0 Warning(s), 0 Error(s)`).
-2. اجتياز جميع اختبارات الوحدة الحالية بنسبة 100% مع فحص `Failed: 0` و `Passed == Total`.
-3. إضافة اختبار وحدة متخصص يفشل قبل الإصلاح وينجح بعده.
-4. عدم إدخال أي أسرار أو مفاتيح في الكود المصدري نهائياً.
-
----
-
-## أولاً: المشاكل النشطة والمفتوحة حالياً (Active & Open Issues)
-
-### [U9] [مفتوحة جزئياً — مؤجلة للموجة 5 ⚠️] توحيد قوائم Trakt مع القوائم المحلية والمزامنة الثنائية
-- **الأنظمة المتأثرة**: `TraktSyncService.cs`, `PersonalLibraryRepository.cs`, `MyListsPage.xaml.cs`.
-- **ما تم إنجازه**: الترحيل 22 و 23، حذف القوائم المحذوفة سحابياً فوراً مع صمام أمان الشبكة `userListsSuccess == false`، وعرض فوري بدون وميض في `LibraryPage`.
-- **النواقص المفتوحة المتبقية**:
-  1. سحب مفضلة المسلسلات (`Show Favorites Pull`) معطل في `TraktSyncService.cs:1934` لعدم حقن `IShowPersonalRepository`.
-  2. رفع مفضلة المسلسلات (`Show Favorites Upload`) مفقود في المزامنة الصاعدة الجماعية (`L1963-1984`).
-  3. اختبار الوحدة لحارس صمام الأمان `SyncAsync_WhenUserListsFetchFails_DoesNotDeleteLocalCustomLists` لم يُكتب بعد.
-  4. منطق دمج الطابور `hasAdd && hasRemove` يلغي العملية بالكامل حتى عند عدد فردي من التبديلات (`ADD -> REMOVE -> ADD`).
-  5. غياب تصفية القوائم المحذوفة (`is_deleted = 0`) في 3 استعلامات في `PersonalLibraryRepository.cs`.
-  6. ظهور شارة "سحابي" الزائفة على بطاقات الأفلام التي تملك ملفات محلية على القرص.
-  7. دمج شاشتي `MyListsPage` و `TraktPage` وتنظيف الكود الميت.
-
-### [L6] [مفتوحة جزئياً — فجوة VACUUM على الأسرار النصية ⚠️] بقاء أثر توكن TMDB القديم والأسرار النصية في صفحات SQLite
-- **النظام المتأثر**: `SettingsService.cs`, `AppServices.cs`, `AppSettingsStore.cs`.
-- **الفجوة المفتوحة**:
-  1. حذف المفتاح النصي القديم `'tmdb_read_access_token'` من جدول `settings` لا يستدعي `VACUUM;` مما يترك التوكن الصريح قابلاً للاسترجاع من صفحات SQLite الحرة (`freelist pages`).
-  2. مفتاح `'subdl_api_key'` ما زال يُحفظ كنص صريح في جدول `settings` بدلاً من `Windows Credential Manager`.
-- **الحل المطلوب**: تنفيذ `PRAGMA wal_checkpoint(TRUNCATE); VACUUM;` داخل `DatabaseWriteGate` وتفعيل `PRAGMA secure_delete = ON`، وترحيل مفتاح SubDL إلى Credential Manager.
-
-### [M1] [مرفوض / قيد التحليل والمعالجة الصحيحة ⚠️] إرسال توكن TMDB في مسار الرابط (Query String)
-- **النظام المتأثر**: `TmdbClient.cs` (`CreateRequest`).
-- **الموقف الفني**: مفتاح TMDB v3 (الـ 32 حرفاً) يقبله سيرفر TMDB الحقيقي حصراً في الـ Query String، وإرساله في ترويسة Bearer يعيد 401 Unauthorized، بينما Bearer مخصص فقط لتوكنات v4 JWT.
-- **الحالة**: تم الحفاظ على استقرار التطبيق بإبقاء المفاتيح السداسية في الرابط والـ JWT في ترويسة Bearer، وقيد المراجعة لحماية التوكن دون كسر الاتصال.
-
-### [L8] [مفتوحة — تصميم جاهز للتنفيذ عند توفر شهادة 📋] التوقيع الرقمي للمثبت (Inno Setup Code Signing)
-- **النظام المتأثر**: `TBDMovies_WinUI3/packaging/TBD-Movies.iss`.
-- **الحل الجاهز**: تطبيق حارس `#if SIGN_ENABLED == "1"` وتوجيه `SignTool=tbdmovies $f` مع راية `signonce` للملف الداخلي `TBD-Movies.exe`، والتجهيز لشهادة Azure Trusted Signing عند الرغبة.
-
-### [U3] [معلق للاختبار — PENDING ⏸️] محرك الترجمات (الملفات المحلية وعبر SubDL)
-- **الحالة**: معلق ومؤجل بانتظار تجربة المستخدم ومعاينته المباشرة؛ **ممنوع تعديل أو لمس كود محرك الترجمات نهائياً** حتى إشعار آخر.
-
-### [U7] [معلق للاختبار — PENDING ⏸️] مشكلة اتصال وتحقق SubDL API
-- **الحالة**: عدم ظهور نتائج ترجمات SubDL أو تسجيل الاتصال في الموقع؛ مؤجل للفحص المشترك بعد انتهاء مرحلة المشغلات.
-
-### [U6] [فحص عدم التراجع فقط — REGRESSION CHECK ONLY 🔍] زر الاختيار العشوائي
-- **الحالة**: الزر يعمل بنجاح، ومطلوب فقط فحص تأكيدي بعد إنهاء المشغلات لضمان استمرارية عمله بدون أخطاء.
+### 3. Mandatory Acceptance Criteria for Every Fix
+1. Solution builds with exit code `0` and clean compiler output (`0 Warning(s), 0 Error(s)`).
+2. 100% of the active automated test suite passes with verified `Failed: 0` and `Passed == Total`.
+3. An targeted unit test must be introduced that demonstrates reproduction before the fix and passes cleanly after.
+4. Absolutely zero plaintext API keys or credentials committed to source code.
 
 ---
 
-## ثانياً: سجل المشاكل التي تم حلها واعتمادها بالكامل (Resolved & Verified Ledger)
+## 1. Active & Open Issues
 
-| المعرف | المشكلة | النظام المتأثر | ملخص الحل المعتمد | حالة الاعتماد |
+### [U9] [Partially Open — Deferred to Wave 5 ⚠️] Unification of Trakt Custom Lists with Local Lists & Two-Way Sync
+- **Affected Subsystems**: `TraktSyncService.cs`, `PersonalLibraryRepository.cs`, `MyListsPage.xaml.cs`.
+- **Completed Work**: Database Migrations 22 & 23, immediate cascade deletion of remotely removed lists with network safety valve (`userListsSuccess == false`), and zero-flicker synchronous rendering in `LibraryPage`.
+- **Remaining Open Items**:
+  1. Show Favorites Pull: Inactive in `TraktSyncService.cs:1934` due to missing `IShowPersonalRepository` injection.
+  2. Show Favorites Upload: Omitted from bulk upward synchronization loop (`L1963-1984`).
+  3. Safety Valve Unit Test: Missing dedicated test `SyncAsync_WhenUserListsFetchFails_DoesNotDeleteLocalCustomLists`.
+  4. Queue Coalescing Logic: `hasAdd && hasRemove` cancels out entire actions even on odd-numbered toggles (`ADD -> REMOVE -> ADD`).
+  5. Deleted List Filtering: Missing `is_deleted = 0` filters in 3 queries within `PersonalLibraryRepository.cs`.
+  6. Spurious Cloud Badge: Incorrect "Cloud" badge display on movie cards that possess local media files on disk.
+  7. View Unification: Merge redundant `MyListsPage` and `TraktPage` views, pruning ~750 lines of dead code in `MyListsPage.Trakt.cs`.
+
+### [L6] [Partially Open — Secrets Sanitization & VACUUM Gap ⚠️] Residual Plaintext TMDB Tokens in SQLite Freelist Pages
+- **Affected Subsystems**: `SettingsService.cs`, `AppServices.cs`, `AppSettingsStore.cs`.
+- **Remaining Gap**:
+  1. Deletion of legacy plaintext `'tmdb_read_access_token'` from `settings` table does not execute `VACUUM;`, leaving plaintext credentials extractable from SQLite freelist pages.
+  2. SubDL API key (`'subdl_api_key'`) is currently stored as plaintext in the `settings` table rather than Windows Credential Manager.
+- **Required Resolution**: Execute `PRAGMA wal_checkpoint(TRUNCATE); VACUUM;` inside `DatabaseWriteGate`, enforce `PRAGMA secure_delete = ON`, and migrate SubDL API keys to Windows Credential Manager.
+
+### [M1] [Under Analysis ⚠️] TMDB API Key Transmission in Query String
+- **Affected Subsystem**: `TmdbClient.cs` (`CreateRequest`).
+- **Technical Context**: TMDB v3 32-character API keys are accepted exclusively via URL query string by TMDB servers; transmitting them in a `Bearer` authorization header returns `401 Unauthorized`. Bearer headers are reserved strictly for v4 JWT tokens.
+- **Status**: Maintained in stable working state (v3 keys in query string, JWT in Bearer header) pending further review.
+
+### [L8] [Open — Ready Design Pending Certificate 📋] Inno Setup Installer Code Signing
+- **Affected Subsystem**: `TBDMovies_WinUI3/packaging/TBD-Movies.iss`.
+- **Prepared Design**: Guarded via `#if SIGN_ENABLED == "1"` directive with `SignTool=tbdmovies $f` and `signonce` flag for `TBD-Movies.exe`, structured for integration with Azure Trusted Signing.
+
+### [U3] [Pending User Test ⏸️] Subtitle Download & Normalization Engine
+- **Status**: Frozen pending user verification; modification of subtitle engine code is strictly prohibited until explicitly ordered by the user.
+
+### [U7] [Pending User Test ⏸️] SubDL API Authentication and Connectivity
+- **Status**: SubDL subtitle query failures; deferred for testing alongside subtitle engine.
+
+### [U6] [Regression Check Only 🔍] Random Media Picker
+- **Status**: Verified functional; requires routine regression verification following player workflow updates.
+
+---
+
+## 2. Resolved & Verified Problem Ledger
+
+| ID | Issue Description | Affected Subsystem | Approved Resolution Summary | Verification Status |
 | :---: | :--- | :--- | :--- | :---: |
-| **`H1`** | تدمير جلسة Trakt عند خطأ شبكي مؤقت | `TraktAuthService` | إلغاء الراية الاستباقية وقصر إلغاء التوكن على أخطاء 400/401 الصريحة | **تم الحل والاعتماد ✅** (`1,066` tests) |
-| **`M2`** | تخزين أسرار DPAPI في قاعدة SQLite | `WindowsTmdb/TraktCredentialStore` | الاعتماد الحصري على Windows Credential Manager ومسح صفوف DPAPI | **تم الحل والاعتماد ✅** (`1,066` tests) |
-| **`M3`** | بقاء رابط صلب يتيم عند فشل التحقق | `SafeTransferEngine` | تحرير المقابض أولاً وحذف الملف غير المكتمل في `finally` | **تم الحل والاعتماد ✅** (`1,076` tests) |
-| **`M4`** | ضعف منطق إعادة محاولة طلبات Trakt | `TraktDataClient` | دعم أخطاء 5xx و 408 مع Backoff و Jitter وحظر التكرار على Mutations | **تم الحل والاعتماد ✅** (`1,076` tests) |
-| **`P1`** | بطء استعلام Continue Watching | `TvLibraryService`, `TvShowRepository` | معمارية ثنائية: CTE SQL Reader فائق السرعة (0.8ms) + كاش الذاكرة | **تم الحل والاعتماد ✅** (`1,079` tests) |
-| **`P2`** | غياب التحميل التدريجي للمكتبة | `LibraryPage` | إبقاء Virtualization بالذاكرة كـ By Design (استهلاك 4MB فقط لـ 10K كارت) | **محسوم هندسياً 🛡️** (By Design) |
-| **`P3`** | تأخر ظهور نافذة بدء التشغيل | `App.xaml.cs`, `MainWindow.xaml.cs` | إظهار فوري للنافذة، قراءة فورية للثيم/اللغة، وشاشة بداية مدمجة | **تم الحل والاعتماد ✅** (`1,079` tests) |
-| **`P4`** | `synchronous = FULL` في مخزن العمليات | `FileOperationStore` | توحيد النمط إلى `synchronous = NORMAL` بالتوافق مع نمط WAL | **تم الحل والاعتماد ✅** (`1,079` tests) |
-| **`P5`** | غياب تأثيرات التنقل بين الصفحات | `MainWindow.xaml.cs` | محرك انتقال 150ms Micro Fade & Slide مع احترام سهولة الوصول | **تم الحل والاعتماد ✅** (`1,079` tests) |
-| **`P5-B`** | غياب تأثيرات تبديل مواسم المسلسل | `TVShowDetailsPage.xaml.cs` | انتقال انسيابي 150ms لحاوية الحلقات مع حظر التكرار عند نفس الموسم | **تم الحل والاعتماد ✅** (`1,079` tests) |
-| **`L1`** | ثغرة SQL Injection في Savepoint | `CatalogRepositories` | فاحص أسماء محصن بدون تخصيص ذاكرة وحظر الرموز غير المصرح بها | **تم الحل والاعتماد ✅** (`1,103` tests) |
-| **`L2`** | ثغرات Binary Planting و ADS في Shell | `MediaFileActions`, `PathPolicy` | مسار Explorer المطلق، عزل CWD، وحظر تيارات NTFS ADS | **تم الحل والاعتماد ✅** (`1,105` tests) |
-| **`L3`** | قبول روابط TMDB غير المشفرة | `TmdbUrl` | قصر الروابط على HTTPS حصراً وترقية الروابط المجردة تلقائياً | **تم الحل والاعتماد ✅** (`1,107` tests) |
-| **`L4`** | فيضان القرص ببوسترات غير مقيدة | `DiskPosterCache` | سقف 10MB، فحص مبكر لـ Content-Length، وتدفق مقيد 8KB | **تم الحل والاعتماد ✅** (`1,109` tests) |
-| **`L5`** | تسريب مفاتيح TMDB عبر التحويلات 3xx | `TmdbClient` | تهيئة SocketsHttpHandler مع `AllowAutoRedirect = false` | **تم الحل والاعتماد ✅** (`1,111` tests) |
-| **`L7`** | انقسام مصدر توكن TMDB والتعقيم | `SettingsService`, `AppServices` | توحيد المرجع في SettingsService وتعقيم التوكن ضد CRLF Injection | **تم الحل والاعتماد ✅** (`1,124` tests) |
-| **`L9`** | إنهاء النسخ السابقة بالاسم فقط | `App.xaml.cs` | فلترة SessionId والمسار التنفيذي واستخدام Mutex مع فترة تهيؤ 3 ثوانٍ | **تم الحل والاعتماد ✅** (`1,124` tests) |
-| **`U1 / U2`** | عيوب واجهة الاستئناف والتتبع الأولي | صفحة التفاصيل ومحرك التشغيل | تم بناء الواجهة واستبدال التتبع المعيب بالمشكلة المفتوحة `[U10]` | **استُبدلت بـ U10 ⚠️** |
-| **`U4`** | بطاقات إحصائيات الصفحة الرئيسية | `HomePage.xaml.cs` | بناء 5 بطاقات سينمائية متوازنة مع `MaxWidth="1200"` | **تم الحل والاعتماد ✅** (`1,103` tests) |
-| **`U5`** | تكسر التخطيط المتجاوب في التفاصيل | صفحات تفاصيل الأفلام والمسلسلات | اعتماد WrapPanel للأزرار ومقاس بوستر 340x510 موحد | **تم الحل والاعتماد ✅** (`1,103` tests) |
-| **`U5-B`** | تضييق المسافات الرأسية في التفاصيل | `MovieDetailsPage`, `TVShowDetailsPage` | تخفيض Spacing و RowSpacing لمنع الفراغات المفرطة | **تم الحل والاعتماد ✅** (`1,103` tests) |
-| **`U8`** | التحديث الموضعي ومنع إعادة التحميل | المكتبة، الرئيسية، القوائم السياقية | تحديث موضعي 0ms مع رايات التحديث ومقارنة CatalogRevision | **تم الحل والاعتماد ✅** (`1,126` tests) |
-| **`U10`** | تجمد قياس موضع التشغيل عند 30s والـ Seek | `Trackers/`, `PlayerProcessLauncher` | معادلة GSMTC الحية، تفعيل MPC المزدوج، حظر وقت الحائط، و Immediate Flush | **تم الحل والاعتماد ✅** (`1,343` tests) |
-| **`C-05`** | تسريب وفقدان اشتراك `PlaybackEnded` في صفحات التفاصيل | `TVShowDetailsPage`, `MovieDetailsPage` | موازنة اشتراك `EnsurePlaybackTrackingSubscribed` في `Loaded` مع `UnsubscribePlaybackTracking` في `Unloaded/Deactivate` | **تم الحل والاعتماد ✅** (`1,364` tests) |
+| **`H1`** | Trakt session destruction on transient network failures | `TraktAuthService` | Removed proactive unlinking; confined revocation strictly to explicit HTTP 400/401 errors | **Resolved & Verified ✅** (`1,066` tests) |
+| **`M2`** | DPAPI secrets stored in SQLite database | `WindowsTmdb/TraktCredentialStore` | Exclusive reliance on Windows Credential Manager; purged legacy DPAPI rows | **Resolved & Verified ✅** (`1,066` tests) |
+| **`M3`** | Orphaned hardlinks on file transfer verification failure | `SafeTransferEngine` | Released file handles prior to cleanup; guaranteed unlinking in `finally` block | **Resolved & Verified ✅** (`1,076` tests) |
+| **`M4`** | Brittle retry logic for Trakt HTTP requests | `TraktDataClient` | Supported HTTP 5xx and 408 with exponential backoff and jitter; barred retries on mutations | **Resolved & Verified ✅** (`1,076` tests) |
+| **`P1`** | Slow Continue Watching query execution | `TvLibraryService`, `TvShowRepository` | Dual architecture: Ultra-fast CTE SQL Reader (0.8ms) + in-memory cache | **Resolved & Verified ✅** (`1,079` tests) |
+| **`P2`** | Absence of incremental library loading | `LibraryPage` | Retained UI virtualization in memory as By Design (~4MB footprint for 10K cards) | **Architecturally Settled 🛡️** (By Design) |
+| **`P3`** | Delayed display of main startup window | `App.xaml.cs`, `MainWindow.xaml.cs` | Instant window activation, synchronous theme/language load, integrated splash UI | **Resolved & Verified ✅** (`1,079` tests) |
+| **`P4`** | Suboptimal `synchronous = FULL` in operation store | `FileOperationStore` | Aligned database connection to `synchronous = NORMAL` for WAL compatibility | **Resolved & Verified ✅** (`1,079` tests) |
+| **`P5`** | Missing page transition animations | `MainWindow.xaml.cs` | Implemented 150ms Micro Fade & Slide navigation transition respecting accessibility | **Resolved & Verified ✅** (`1,079` tests) |
+| **`P5-B`** | Abrupt season switching in TV show details | `TVShowDetailsPage.xaml.cs` | Added smooth 150ms container transition; suppressed redundant reloads for identical seasons | **Resolved & Verified ✅** (`1,079` tests) |
+| **`L1`** | Potential SQL injection in savepoint names | `CatalogRepositories` | Zero-allocation name validator rejecting unauthorized punctuation and special characters | **Resolved & Verified ✅** (`1,103` tests) |
+| **`L2`** | Binary planting and NTFS ADS vulnerabilities in Shell | `MediaFileActions`, `PathPolicy` | Resolved absolute Explorer binary path, isolated CWD, and prohibited alternate data streams | **Resolved & Verified ✅** (`1,105` tests) |
+| **`L3`** | Insecure plain HTTP TMDB URLs | `TmdbUrl` | Enforced strict HTTPS; automatically upgraded legacy unencrypted URLs | **Resolved & Verified ✅** (`1,107` tests) |
+| **`L4`** | Disk flooding via unbounded poster downloads | `DiskPosterCache` | Enforced 10MB file limit, early Content-Length validation, and bounded 8KB streaming buffer | **Resolved & Verified ✅** (`1,109` tests) |
+| **`L5`** | TMDB API credential leakage across 3xx redirects | `TmdbClient` | Configured `SocketsHttpHandler` with `AllowAutoRedirect = false` | **Resolved & Verified ✅** (`1,111` tests) |
+| **`L7`** | Split TMDB token source and missing sanitization | `SettingsService`, `AppServices` | Unified token retrieval in `SettingsService` and sanitized input against CRLF injection | **Resolved & Verified ✅** (`1,124` tests) |
+| **`L9`** | Brittle process termination by executable name | `App.xaml.cs` | Filtered by SessionId and executable path; implemented single-instance named Mutex with 3s grace | **Resolved & Verified ✅** (`1,124` tests) |
+| **`U1 / U2`** | Resume UI flaws and initial tracking defects | Detail views & tracking engine | Implemented robust Resume UI; superseded flawed trackers with comprehensive `[U10]` solution | **Superseded by U10 ⚠️** |
+| **`U4`** | Distorted home page statistics cards | `HomePage.xaml.cs` | Rebuilt 5 balanced cinematic metrics cards with `MaxWidth="1200"` | **Resolved & Verified ✅** (`1,103` tests) |
+| **`U5`** | Broken responsive layout in detail pages | Movie and TV details views | Adopted responsive WrapPanel for command buttons and uniform 340x510 poster bounds | **Resolved & Verified ✅** (`1,103` tests) |
+| **`U5-B`** | Excessive vertical spacing in detail views | `MovieDetailsPage`, `TVShowDetailsPage` | Adjusted layout spacing and row gaps to eliminate vertical padding anomalies | **Resolved & Verified ✅** (`1,103` tests) |
+| **`U8`** | Redundant full-page library reloads | Library, Home, and Context Menus | Sub-millisecond in-place updates governed by `CatalogRevision` tracking | **Resolved & Verified ✅** (`1,126` tests) |
+| **`U10`** | Playback position freezing at 30s and seek loss | `Trackers/`, `PlayerProcessLauncher` | Real-time GSMTC dynamic formula, dual MPC-HC web interface, wall-clock freeze, immediate flush | **Resolved & Verified ✅** (`1,343` tests) |
+| **`C-05`** | Asymmetric `PlaybackEnded` subscription in details | `TVShowDetailsPage`, `MovieDetailsPage` | Balanced `EnsurePlaybackTrackingSubscribed` on `Loaded` with cleanup on `Unloaded/Deactivate` | **Resolved & Verified ✅** (`1,364` tests) |
