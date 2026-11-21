@@ -40,7 +40,7 @@ public sealed class NetworkHardeningTests
     public async Task Guard_uses_one_busy_slot_for_canonical_and_extended_unc_spellings()
     {
         using var release = new ManualResetEventSlim(false);
-        var guard = new NetworkReadGuard(TimeSpan.FromMilliseconds(80));
+        var guard = new NetworkReadGuard(TimeSpan.FromMilliseconds(80), maxConcurrencyPerShare: 1);
         var started = 0;
         var first = Task.Run(() => guard.Execute(
             @"\\server\share\movie.mkv",
@@ -243,7 +243,7 @@ public sealed class NetworkHardeningTests
     public async Task Busy_unc_share_returns_storage_unavailable_without_starting_discovery_io()
     {
         using var release = new ManualResetEventSlim(false);
-        var guard = new NetworkReadGuard(TimeSpan.FromMilliseconds(100));
+        var guard = new NetworkReadGuard(TimeSpan.FromMilliseconds(100), maxConcurrencyPerShare: 1);
         var started = 0;
         var holder = Task.Run(() => guard.Execute(
             @"\\server\share\held.mkv",
@@ -262,6 +262,131 @@ public sealed class NetworkHardeningTests
         Assert.False(enumerateCalled);
         release.Set();
         await holder.WaitAsync(TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public async Task Guard_Allows_Concurrent_Reads_Up_To_Max_On_Healthy_Share()
+    {
+        var guard = new NetworkReadGuard(TimeSpan.FromSeconds(2), maxConcurrencyPerShare: 4);
+        var inFlight = 0;
+        var maxObservedConcurrency = 0;
+        using var barrier = new Barrier(4);
+
+        var tasks = Enumerable.Range(1, 4).Select(i => Task.Run(() =>
+        {
+            return guard.Execute(
+                $@"\\server\share\file{i}.mkv",
+                () =>
+                {
+                    var current = Interlocked.Increment(ref inFlight);
+                    lock (barrier)
+                    {
+                        if (current > maxObservedConcurrency)
+                            maxObservedConcurrency = current;
+                    }
+                    barrier.SignalAndWait(1000);
+                    Interlocked.Decrement(ref inFlight);
+                    return i;
+                },
+                () => -1);
+        })).ToArray();
+
+        var results = await Task.WhenAll(tasks);
+
+        Assert.All(results, r => Assert.True(r > 0));
+        Assert.Equal(4, maxObservedConcurrency);
+    }
+
+    [Fact]
+    public async Task Guard_Blocks_Fifth_Concurrent_Read_When_All_Slots_Are_Busy()
+    {
+        using var release = new ManualResetEventSlim(false);
+        var guard = new NetworkReadGuard(TimeSpan.FromMilliseconds(80), maxConcurrencyPerShare: 4);
+        var started = 0;
+
+        var tasks = Enumerable.Range(1, 4).Select(i => Task.Run(() =>
+        {
+            return guard.Execute(
+                $@"\\server\share\held{i}.mkv",
+                () =>
+                {
+                    Interlocked.Increment(ref started);
+                    release.Wait();
+                    return true;
+                },
+                () => false);
+        })).ToArray();
+
+        SpinWait.SpinUntil(() => Volatile.Read(ref started) == 4, TimeSpan.FromSeconds(1));
+
+        var fifth = guard.Execute(
+            @"\\server\share\overflow.mkv",
+            () => true,
+            () => false);
+
+        Assert.False(fifth);
+
+        release.Set();
+        var results = await Task.WhenAll(tasks);
+        Assert.All(results, Assert.True);
+    }
+
+    [Fact]
+    public void Guard_Detects_Mapped_Network_Drives_Via_DriveTypeProvider()
+    {
+        var guard = new NetworkReadGuard(
+            TimeSpan.FromMilliseconds(50),
+            maxConcurrencyPerShare: 4,
+            driveTypeProvider: letter => letter == 'Z' ? DriveType.Network : DriveType.Fixed);
+
+        Assert.True(guard.CheckNetworkPath(@"Z:\Movies\file.mkv"));
+        Assert.True(guard.CheckNetworkPath(@"\\?\Z:\Movies\file.mkv"));
+        Assert.False(guard.CheckNetworkPath(@"C:\Movies\file.mkv"));
+        Assert.False(guard.CheckNetworkPath(@"D:\Media\file.mkv"));
+
+        using var release = new ManualResetEventSlim(false);
+        var started = 0;
+        var timedOut = guard.Execute(
+            @"Z:\Movies\hung.mkv",
+            () => { Interlocked.Increment(ref started); release.Wait(); return true; },
+            () => false);
+
+        Assert.False(timedOut);
+        Assert.Equal(1, started);
+        release.Set();
+    }
+
+    [Fact]
+    public async Task Guard_Hung_Tasks_Tracked_Independently_Without_Race_Condition()
+    {
+        using var release1 = new ManualResetEventSlim(false);
+        using var release2 = new ManualResetEventSlim(false);
+        var guard = new NetworkReadGuard(TimeSpan.FromMilliseconds(50), maxConcurrencyPerShare: 4);
+
+        var task1 = Task.Run(() => guard.Execute(
+            @"\\server\share\task1.mkv",
+            () => { release1.Wait(); return 1; },
+            () => -1));
+
+        var task2 = Task.Run(() => guard.Execute(
+            @"\\server\share\task2.mkv",
+            () => { release2.Wait(); return 2; },
+            () => -2));
+
+        Assert.Equal(-1, await task1);
+        Assert.Equal(-2, await task2);
+
+        // Task 1 completes in background, but Task 2 is still hung
+        release1.Set();
+        Thread.Sleep(30);
+
+        // Share must STILL be considered hung because Task 2 is not completed
+        var thirdCall = guard.Execute(@"\\server\share\task3.mkv", () => 3, () => -3);
+        Assert.Equal(-3, thirdCall);
+
+        // Now Task 2 completes in background
+        release2.Set();
+        Assert.True(SpinWait.SpinUntil(() => guard.Execute(@"\\server\share\task4.mkv", () => 4, () => -4) == 4, TimeSpan.FromSeconds(1)));
     }
 
     private sealed class FakeInspector : IAvailabilityInspector
