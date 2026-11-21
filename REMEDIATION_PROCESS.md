@@ -64,7 +64,7 @@ Each remediation batch traverses the following five formal states in strict sequ
 | **Wave 6** | `6.1` | Sanitized diagnostics logger `AppDiagnosticsLog`, clean Category A error blocks, sanitize `ex.Message` (`SEC-17..18`, `SEC-24..25`, Groups 1, 3, 4) | `AppDiagnosticsLog.cs`, `App.xaml.cs`, Target UI pages and services | `Pending` | — | — |
 | **Wave 6** | `6.2` | Remove duplicate localization keys, complete localization coverage, harden `DatabaseMigrator` and `DiskPosterCache` (`C-14..16`, `SEC-12..13`) | `LocalizationService.cs`, `DatabaseMigrator.cs`, `DatabaseSafetyBackup.cs`, `DiskPosterCache.cs` | `Pending` | — | — |
 | **Wave 7** | **`7.1`** | Prune dead packages and files, wire `UndoOperation` and `RestoreFromBackup` buttons, extract shared UI helpers (`S-DEAD`, `S-ARCH`, Decision 3) | `TBDMovies.UI.csproj`, `OperationsLogPage.*`, `SettingsPage.*`, `WinUiClipboardService.cs`, Icon resources | `Closed` | `73dc5e4` | `PASS` (CI Run `44921541530` · 1,418 tests) |
-| **Wave 7** | **`7.2`** | Re-integrate `TBDMovies.QaSeed` into solution, update to `Schema v23`, and update Inno Setup installer signing (`C-17`, `[L8]`) | `TBDMovies.slnx`, `Seed.cs`, `TBD-Movies.iss`, `App.xaml.cs`, `QaSeedAndInstallerTests.cs` | `Closed` | `b9ef024` | `PASS` (`Goldfish Auditor Approved`) |
+| **Wave 7** | **`7.2`** | Re-integrate `TBDMovies.QaSeed` into solution, update to `Schema v23`, and update Inno Setup installer signing (`C-17`, `[L8]`) | `TBDMovies.slnx`, `Seed.cs`, `TBD-Movies.iss`, `App.xaml.cs`, `QaSeedAndInstallerTests.cs` | `Closed` | `1c4a08c` | `PASS` (CI Run `44957957524` · 1,421 tests) |
 
 ---
 
