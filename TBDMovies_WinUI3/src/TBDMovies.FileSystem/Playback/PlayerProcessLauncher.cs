@@ -2,6 +2,9 @@ using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Win32;
@@ -46,8 +49,8 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
         {
             case MediaPlayerType.Vlc:
                 var vlcPath = ResolveVlcPath();
-                const int vlcPort = 8088;
-                const string vlcPassword = "tbd_internal";
+                var vlcPort = GetEphemeralPort();
+                var vlcPassword = GenerateSessionPassword(16);
                 var vlcArgs = BuildVlcTrackingArguments(mediaPath, startPositionSeconds, vlcPort, vlcPassword);
                 useShell = IsWindowsAppsPath(vlcPath);
                 startInfo = new ProcessStartInfo(vlcPath, vlcArgs) { UseShellExecute = useShell };
@@ -73,6 +76,11 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                 break;
 
             case MediaPlayerType.Custom when !string.IsNullOrWhiteSpace(customPlayerPath):
+                if (!IsPermittedCustomPlayerPath(customPlayerPath))
+                {
+                    Trace.WriteLine($"[PlayerProcessLauncher] Custom player path '{customPlayerPath}' is rejected due to unsafe script extension.");
+                    return false;
+                }
                 var customArgs = BuildArguments(mediaPath, startPositionSeconds, playerType, customArgsTemplate);
                 useShell = IsWindowsAppsPath(customPlayerPath);
                 startInfo = new ProcessStartInfo(customPlayerPath, customArgs) { UseShellExecute = useShell };
@@ -489,12 +497,61 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
     public static string BuildVlcTrackingArguments(string mediaPath, double startPositionSeconds, int port, string password)
     {
         var startArg = startPositionSeconds > 0 ? $"--start-time={Math.Floor(startPositionSeconds)} " : "";
-        return $"--extraintf=http --http-host=127.0.0.1 --http-port={port} --http-password={password} --no-one-instance {startArg}\"{mediaPath}\"";
+        return $"--extraintf=http --http-host=127.0.0.1 --http-port={port} --http-password={password} --no-one-instance {startArg}-- \"{mediaPath}\"";
     }
 
     public static string BuildMpvTrackingArguments(string mediaPath, double startPositionSeconds, string pipeName)
     {
         var startArg = startPositionSeconds > 0 ? $"--start={Math.Floor(startPositionSeconds)} " : "";
-        return $"--input-ipc-server=\\\\.\\pipe\\{pipeName} {startArg}\"{mediaPath}\"";
+        return $"--input-ipc-server=\\\\.\\pipe\\{pipeName} {startArg}-- \"{mediaPath}\"";
+    }
+
+    public static int GetEphemeralPort()
+    {
+        try
+        {
+            using var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            return port;
+        }
+        catch
+        {
+            return 8088;
+        }
+    }
+
+    public static string GenerateSessionPassword(int byteLength = 16)
+    {
+        Span<byte> bytes = stackalloc byte[byteLength];
+        RandomNumberGenerator.Fill(bytes);
+        return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    public static bool IsPermittedCustomPlayerPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        var trimmed = path.Trim().Trim('"', ' ').TrimEnd('.', ' ');
+        var ext = Path.GetExtension(trimmed);
+        if (string.IsNullOrEmpty(ext)) return true;
+
+        if (ext.Equals(".bat", StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".cmd", StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".ps1", StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".vbs", StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".js", StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".jse", StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".wsf", StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".wsh", StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".hta", StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".scr", StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".pif", StringComparison.OrdinalIgnoreCase) ||
+            ext.Equals(".com", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return true;
     }
 }

@@ -21,6 +21,9 @@ public sealed class VlcHttpTimelineTracker : IPlayerTimelineTracker
 
     public VlcHttpTimelineTracker(int port = 8088, string password = "tbd_internal")
     {
+        if (port <= 0 || port > 65535) port = 8088;
+        if (string.IsNullOrWhiteSpace(password)) password = "tbd_internal";
+
         _url = $"http://127.0.0.1:{port}/requests/status.json";
         var rawAuth = $":{password}";
         _authHeader = new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes(rawAuth)));
