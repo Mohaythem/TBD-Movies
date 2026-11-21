@@ -381,7 +381,7 @@
                                 <StackPanel Spacing="8">
                                     <TextBlock x:Name="HistoryTitleText" Style="{StaticResource BodyStrongTextBlockStyle}" Foreground="{ThemeResource FigmaTextSecondaryBrush}" />
                                     <TextBlock x:Name="NoHistoryText" Style="{StaticResource SecondaryCaptionTextStyle}" TextWrapping="Wrap" Foreground="{ThemeResource FigmaTextSecondaryBrush}" />
-                                    <ScrollViewer x:Name="HistoryScrollViewer" MaxHeight="132" VerticalScrollBarVisibility="Auto" VerticalScrollMode="Enabled" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled" IsTabStop="True" Padding="0,0,12,0" AutomationProperties.LabeledBy="{Binding ElementName=HistoryTitleText}">
+                                    <ScrollViewer x:Name="HistoryScrollViewer" MaxHeight="132" VerticalScrollBarVisibility="Auto" VerticalScrollMode="Enabled" HorizontalScrollBarVisibility="Disabled" HorizontalScrollMode="Disabled" IsTabStop="True" Padding="0,0,12,0" AutomationProperties.LabeledBy="{x:Bind HistoryTitleText, Mode=OneTime}">
                                     <ItemsRepeater x:Name="HistoryRepeater">
                                         <ItemsRepeater.ItemTemplate>
                                             <DataTemplate x:DataType="models:WatchHistoryDisplayRecord">

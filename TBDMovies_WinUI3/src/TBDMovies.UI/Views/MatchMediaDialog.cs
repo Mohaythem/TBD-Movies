@@ -614,7 +614,12 @@ public sealed class MatchMediaDialog : ContentDialog
                     Width = 52,
                     Height = 78,
                     Stretch = Stretch.UniformToFill,
-                    Source = new BitmapImage(new Uri(imageUriString)),
+                    Source = new BitmapImage
+                    {
+                        DecodePixelType = DecodePixelType.Logical,
+                        DecodePixelWidth = 52,
+                        UriSource = new Uri(imageUriString),
+                    },
                 };
                 AutomationProperties.SetName(poster, title);
                 Grid.SetColumn(poster, 0);

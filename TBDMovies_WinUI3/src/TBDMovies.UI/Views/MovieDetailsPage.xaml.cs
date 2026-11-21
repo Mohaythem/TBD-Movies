@@ -1508,7 +1508,12 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         var cachedPath = AppServices.Poster.GetCachedPosterPath("TMDB", posterRef);
         if (cachedPath != null && File.Exists(cachedPath))
         {
-            PosterImage.Source = new BitmapImage(new Uri(cachedPath));
+            PosterImage.Source = new BitmapImage
+            {
+                DecodePixelType = DecodePixelType.Logical,
+                DecodePixelWidth = 340,
+                UriSource = new Uri(cachedPath),
+            };
             PosterGlyph.Visibility = Visibility.Collapsed;
         }
         else
@@ -1528,7 +1533,12 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
                         {
                             if (request.IsCurrent && _movie.PosterReference == posterRef)
                             {
-                                PosterImage.Source = new BitmapImage(new Uri(downloadedPath));
+                                PosterImage.Source = new BitmapImage
+                                {
+                                    DecodePixelType = DecodePixelType.Logical,
+                                    DecodePixelWidth = 340,
+                                    UriSource = new Uri(downloadedPath),
+                                };
                                 PosterGlyph.Visibility = Visibility.Collapsed;
                             }
                         });
