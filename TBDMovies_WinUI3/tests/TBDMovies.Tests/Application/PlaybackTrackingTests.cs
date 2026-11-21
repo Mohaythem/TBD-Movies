@@ -503,7 +503,7 @@ public sealed class PlaybackTrackingTests
             Assert.Null(progressRepo.GetByMediaFileId(500));
 
             // Watched past 90% -> watch event recorded in personal library
-            var history = personalRepo.GetWatchHistory(50);
+            var history = personalRepo.GetWatchEvents(50);
             Assert.Single(history);
 
             // Trakt Scrobble Stop called with ~93%
@@ -570,7 +570,7 @@ public sealed class PlaybackTrackingTests
             Assert.Null(saved.TotalDurationSeconds);
 
             // No watch event recorded because percentage is 0
-            Assert.Empty(personalRepo.GetWatchHistory(60));
+            Assert.Empty(personalRepo.GetWatchEvents(60));
 
             // Scrobble is pause (not stop)
             Assert.Contains(mockTrakt.Calls, c => c.Action == "pause" && c.Progress == 0.0);
