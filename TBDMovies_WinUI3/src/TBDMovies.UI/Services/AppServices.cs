@@ -1,4 +1,5 @@
 using TBDMovies.Application.Contracts;
+using TBDMovies.Application.Diagnostics;
 using TBDMovies.Application.External;
 using TBDMovies.Application.Repositories;
 using TBDMovies.Application.Services;
@@ -661,7 +662,8 @@ internal static class AppServices
             }
             catch (Exception error)
             {
-                InitializationError = error.Message;
+                SecurityDiagnostics.Record("Startup", error, DataFolder);
+                InitializationError = LocalizationService.Text("DatabaseInitializationFailed") ?? "Failed to initialize the library database.";
                 _lastFailure = DateTimeOffset.UtcNow;
                 coordinator?.Dispose();
                 operations?.Dispose();
@@ -933,7 +935,7 @@ internal static class AppServices
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"Failed to write default Trakt config to settings: {ex.Message}");
+                        SecurityDiagnostics.Record("TraktStartupMigration", ex, DataFolder);
                     }
                 }
             }
@@ -982,8 +984,9 @@ internal static class AppServices
             _traktProjection = new TraktProjectionService();
             TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
         }
-        catch
+        catch (Exception ex)
         {
+            SecurityDiagnostics.Record("TraktStartup", ex, DataFolder);
             // Dispose locally allocated clients even if construction failed before publication.
             startupSync?.Dispose();
             startupAuth?.Dispose();

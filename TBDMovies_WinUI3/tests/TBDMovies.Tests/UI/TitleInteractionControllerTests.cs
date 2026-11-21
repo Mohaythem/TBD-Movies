@@ -387,6 +387,25 @@ public sealed class TitleInteractionControllerTests
     }
 
     [Fact]
+    public void HandleKeyEnter_WhenSaveHandlerThrows_ReportsSanitizedError_AndDoesNotExposeExceptionMessage()
+    {
+        string? errorReported = null;
+        var controller = new TitleInteractionController();
+        controller.Initialize("Gladiator", null);
+        controller.OnError = err => errorReported = err;
+        controller.SaveHandler = _ => throw new InvalidOperationException("FATAL: C:\\secret\\db.sqlite disk locked");
+        controller.ErrorMessageProvider = key => $"Localized: {key}";
+
+        controller.HandleDoubleClick();
+        var result = controller.HandleKeyEnter("Gladiator: Remastered");
+
+        Assert.False(result);
+        Assert.Equal("Localized: CustomTitleSaveFailed", errorReported);
+        Assert.DoesNotContain("secret", errorReported);
+        Assert.DoesNotContain("FATAL", errorReported);
+    }
+
+    [Fact]
     public void TitleExceedingMaxLength500_FailsValidation_DoesNotTruncateSilently()
     {
         string? errorReported = null;
@@ -449,7 +468,8 @@ public sealed class TitleInteractionControllerTests
 
         Assert.False(result);
         Assert.NotNull(errorReported);
-        Assert.Equal("Disk full", errorReported);
+        Assert.Equal("Failed to save custom display title.", errorReported);
+        Assert.DoesNotContain("Disk full", errorReported);
         Assert.Equal("Inception", controller.DisplayTitle);
     }
 

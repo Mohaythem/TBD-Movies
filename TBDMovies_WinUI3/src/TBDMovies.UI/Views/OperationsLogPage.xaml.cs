@@ -1,4 +1,5 @@
 using System.Text;
+using TBDMovies.Application.Diagnostics;
 using TBDMovies.Application.Dto;
 using TBDMovies.Domain.Core.Operations;
 using TBDMovies.UI.Models;
@@ -253,11 +254,12 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
         }
         catch (Exception error)
         {
+            SecurityDiagnostics.Record("Undo", error, AppServices.DataFolder);
             if (preview is not null)
             {
                 try { AppServices.History.DiscardUndoPreview(preview.PreviewId); } catch { }
             }
-            ShowInfo(LocalizationService.Format("UndoFailedFormat", error.Message), InfoBarSeverity.Error);
+            ShowInfo(LocalizationService.Format("UndoFailedFormat", MetadataErrorText.For(error)), InfoBarSeverity.Error);
         }
         finally
         {
@@ -310,7 +312,8 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
         }
         catch (Exception error)
         {
-            ShowInfo(LocalizationService.Format("LogSaveFailed", error.Message), InfoBarSeverity.Error);
+            SecurityDiagnostics.Record("SaveLog", error, AppServices.DataFolder);
+            ShowInfo(LocalizationService.Format("LogSaveFailed", MetadataErrorText.For(error)), InfoBarSeverity.Error);
         }
     }
 

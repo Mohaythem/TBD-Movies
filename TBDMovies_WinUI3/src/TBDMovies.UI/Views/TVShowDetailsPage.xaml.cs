@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using TBDMovies.Application.Diagnostics;
 using TBDMovies.Application.Playback;
 using TBDMovies.Application.Services;
 using TBDMovies.Application.Trakt;
@@ -1517,7 +1518,8 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         }
         catch (Exception error)
         {
-            _ = ShowMessageAsync(LocalizationService.Text("Failed"), error.Message);
+            SecurityDiagnostics.Record("Clipboard", error, AppServices.DataFolder);
+            _ = ShowMessageAsync(LocalizationService.Text("Failed"), MetadataErrorText.For(error));
         }
     }
 

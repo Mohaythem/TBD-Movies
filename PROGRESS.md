@@ -1,7 +1,7 @@
 # TBD Movies — Active Progress & Status Checkpoint
 
 ## Current Goal
-- **Active Track / Current Priority**: Wave 6 In-Flight (Batch 6.2 Complete & Approved by Goldfish Pro; Batch 6.1 pending).
+- **Active Track / Current Priority**: Wave 6 Complete (Batches 6.2 and 6.1 Complete & Approved by Goldfish Pro; all 7 remediation waves fully closed!).
 - **Batches Approved & Closed**: 
   - Wave 1 (Batches 1.1, 1.2, 1.3): `SEC-19`, `C-06`, `SEC-20`, `C-03`, `SEC-01..05`, `SEC-14..15`, `SEC-21..22`, `C-13`, `[L6]` (`1,295` tests).
   - Wave 2 (Batches 2.1, 2.2, 2.3): `C-01`, `[P3]`, `C-04`, `[U8]`, `C-05` (`1,295` tests).
@@ -13,10 +13,32 @@
   - Wave 5 (Batch 5.3): `C-07.6`, `SEC-26`, Option A TraktPage Eradication & Navigation Unification (`1,379` tests).
   - Wave 7 (Batch 7.1): `S-DEAD`, `S-ARCH`, Decision 3 UndoOperation & RestoreFromBackup wiring (`1,418` tests).
   - Wave 7 (Batch 7.2): `C-17`, `[L8]`, QaSeed Schema v23 Parity, AppMutex, and Inno Setup Hardening (`1,421` tests).
-  - Wave 6 (Batch 6.2): `C-14..16`, `SEC-12..13`, Comprehensive Localization Parity, LRU Poster Cache & Persistence Hardening (`1,426+` tests).
-- **Baseline Test Suite**: **`1,421 / 1,421`** tests passing in Release + 5 new automated tests in Batch 6.2.
+  - Wave 6 (Batch 6.2): `C-14..16`, `SEC-12..13`, Comprehensive Localization Parity, LRU Poster Cache & Persistence Hardening (`1,429` tests).
+  - Wave 6 (Batch 6.1): `SEC-17..18`, `SEC-24..25`, UI Crash Relocation, AppDiagnosticsLog, UI Error Sanitization & Startup Telemetry (`1,434+` tests).
+- **Baseline Test Suite**: **`1,429 / 1,429`** tests passing in Release + 5 new automated tests in Batch 6.1.
 
 ## Completed Work
+57. **Crash Log Relocation, Error Sanitization & Startup Diagnostics [Wave 6, Batch 6.1 — SEC-17..18, SEC-24..25]**:
+    - **Crash Log Relocation & Multi-Line Diagnostics (`SEC-24`)**:
+        - Created `AppDiagnosticsLog.cs` in `TBDMovies.Application.Diagnostics` relocating crash logs from `%TEMP%` to `%LOCALAPPDATA%\TBD Movies\logs\ui_crash.log`.
+        - Enforced strict reparse point / symlink defenses across root, log directory, primary log, and `.1` archive files.
+        - Preserved multi-line formatted exception stack traces in `RecordCrash` while scrubbing credentials/tokens via `SecurityDiagnostics.Redact`.
+        - Enforced 1 MiB bounded log file with single-generation rotation to `ui_crash.log.1`.
+        - Updated `App.xaml.cs` unhandled exception handler to route to `AppDiagnosticsLog.RecordCrash(e.Exception, AppServices.DataFolder)`.
+    - **Startup & Database Initialization Telemetry (`SEC-17`, `SEC-18`)**:
+        - In `AppServices.cs`, sanitized `InitializationError` from raw `error.Message` to localized `DatabaseInitializationFailed`, recording underlying error in `SecurityDiagnostics.Record("Startup", error, DataFolder)`.
+        - Recorded Trakt startup migration and service graph restoration errors in `SecurityDiagnostics.Record("TraktStartup", ex, DataFolder)`.
+    - **UI Error Surface Sanitization (`SEC-25`)**:
+        - In `SettingsPage.xaml.cs`: sanitized all 4 Trakt error handlers (Connect, Verification URL, Sync, Disconnect), replacing raw `ex.Message` with localized keys and logging to `SecurityDiagnostics`.
+        - In `OperationsLogPage.xaml.cs`: sanitized Undo and Save Log errors via `MetadataErrorText.For(error)` and logged to `SecurityDiagnostics`.
+        - In `TVShowDetailsPage.xaml.cs`: sanitized clipboard failure in `CopyPathToClipboard` via `MetadataErrorText.For(error)` and logged to `SecurityDiagnostics`.
+        - In `TitleInteractionController.cs`: sanitized title saving failure to localized `CustomTitleSaveFailed` instead of leaking `ex.Message`, and logged to `SecurityDiagnostics.Record("CustomTitle", ex)`.
+    - **Localization Parity**:
+        - Added `DatabaseInitializationFailed`, `TraktAuthFailed`, `TraktSyncFailed`, `TraktDisconnectFailed` with 100% 1-to-1 parity in English and Arabic.
+    - **Automated Verification**:
+        - Added `AppDiagnosticsLogTests.cs` (5 facts) validating multi-line crash dump preservation, secret scrubbing, single-line flattening for messages, safe null handling, and 1 MiB rotation.
+        - Added fact in `TitleInteractionControllerTests.cs` validating sanitized error reporting when `SaveHandler` throws.
+        - Audited and **APPROVED** by Goldfish Pro (`egm-codebase-details`).
 56. **Comprehensive UI Localization Parity, LRU Poster Cache & Persistence Hardening [Wave 6, Batch 6.2 — C-14..16, SEC-12..13]**:
     - **Localization Deduplication & Parity (`C-16`)**:
         - Removed 4 duplicate keys (`Save`, `ItemSingular`, `Items`, `TmdbNotConfiguredHelp`) from `LocalizationService.cs`.

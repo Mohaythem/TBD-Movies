@@ -114,7 +114,7 @@ public static partial class SecurityDiagnostics
         }
     }
 
-    private static bool IsReparsePoint(string path)
+    internal static bool IsReparsePoint(string path)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
@@ -149,7 +149,7 @@ public static partial class SecurityDiagnostics
         }
     }
 
-    private static void ClearReadOnlyIfSafe(string path)
+    internal static void ClearReadOnlyIfSafe(string path)
     {
         if (string.IsNullOrWhiteSpace(path) || IsReparsePoint(path))
         {
@@ -173,7 +173,7 @@ public static partial class SecurityDiagnostics
         }
     }
 
-    private static string? ResolveDataFolder(string? explicitDataFolder)
+    internal static string? ResolveDataFolder(string? explicitDataFolder)
     {
         if (!string.IsNullOrWhiteSpace(explicitDataFolder) && Path.IsPathFullyQualified(explicitDataFolder))
         {

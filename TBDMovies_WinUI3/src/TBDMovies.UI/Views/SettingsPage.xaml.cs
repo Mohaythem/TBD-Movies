@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using System.Text;
+using TBDMovies.Application.Diagnostics;
 using TBDMovies.UI.Models;
 using TBDMovies.Application.External;
 using TBDMovies.Application.Trakt;
@@ -1243,10 +1244,11 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         }
         catch (Exception ex)
         {
+            SecurityDiagnostics.Record("TraktAuth", ex, AppServices.DataFolder);
             if (generation == _traktGeneration)
             {
                 TraktDeviceAuthPanel.Visibility = Visibility.Collapsed;
-                ShowTraktFeedback(ex.Message, InfoBarSeverity.Error);
+                ShowTraktFeedback(LocalizationService.Text("TraktAuthFailed"), InfoBarSeverity.Error);
             }
         }
         finally
@@ -1279,8 +1281,8 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         }
         catch (Exception ex)
         {
-            var msg = LocalizationService.Text("TraktLaunchUrlError");
-            ShowTraktFeedback(msg == "TraktLaunchUrlError" ? ex.Message : msg, InfoBarSeverity.Error);
+            SecurityDiagnostics.Record("TraktUrl", ex, AppServices.DataFolder);
+            ShowTraktFeedback(LocalizationService.Text("TraktLaunchUrlError"), InfoBarSeverity.Error);
         }
     }
 
@@ -1335,9 +1337,10 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         }
         catch (Exception ex)
         {
+            SecurityDiagnostics.Record("TraktSync", ex, AppServices.DataFolder);
             if (generation == _traktGeneration)
             {
-                ShowTraktFeedback(ex.Message, InfoBarSeverity.Error);
+                ShowTraktFeedback(LocalizationService.Text("TraktSyncFailed"), InfoBarSeverity.Error);
             }
         }
         finally
@@ -1387,9 +1390,10 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         }
         catch (Exception ex)
         {
+            SecurityDiagnostics.Record("TraktDisconnect", ex, AppServices.DataFolder);
             if (generation == _traktGeneration)
             {
-                ShowTraktFeedback(ex.Message, InfoBarSeverity.Error);
+                ShowTraktFeedback(LocalizationService.Text("TraktDisconnectFailed"), InfoBarSeverity.Error);
             }
         }
         finally

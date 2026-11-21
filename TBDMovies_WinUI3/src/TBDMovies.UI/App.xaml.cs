@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using TBDMovies.Application.Diagnostics;
 using TBDMovies.UI.Services;
 using Microsoft.UI.Xaml;
 
@@ -333,16 +334,15 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     /// <summary>
     /// XAML load failures surface as a stowed exception with no message in the event log, so the
-    /// real exception is written to %TEMP% before the process dies.
+    /// real exception is written to the private diagnostics log in AppData before the process dies.
     /// </summary>
     private static void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
     {
         try
         {
-            var path = Path.Combine(Path.GetTempPath(), "tbd_movies_ui_crash.log");
-            File.WriteAllText(path, DateTimeOffset.Now.ToString("O") + Environment.NewLine + e.Exception);
+            AppDiagnosticsLog.RecordCrash(e.Exception, AppServices.DataFolder);
         }
-        catch (IOException)
+        catch
         {
             // Diagnostics are best effort: never mask the original failure.
         }

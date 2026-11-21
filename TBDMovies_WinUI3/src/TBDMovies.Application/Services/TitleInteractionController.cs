@@ -2,6 +2,7 @@
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using TBDMovies.Application.Diagnostics;
 
 namespace TBDMovies.Application.Services;
 
@@ -225,7 +226,9 @@ public sealed class TitleInteractionController : IDisposable
         }
         catch (Exception ex)
         {
-            RunOnUi(() => OnError?.Invoke(ex.Message));
+            SecurityDiagnostics.Record("CustomTitle", ex);
+            var errMsg = ErrorMessageProvider?.Invoke("CustomTitleSaveFailed") ?? "Failed to save custom display title.";
+            RunOnUi(() => OnError?.Invoke(errMsg));
             return false;
         }
     }
