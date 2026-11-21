@@ -62,11 +62,13 @@ public sealed class ImportSelectedTests : IDisposable
     [Fact]
     public async Task ManualMovieSearchAsync_InvokesProviderSearchAsync_AndReturnsCandidates()
     {
-        var provider = new CountingProvider();
-        provider.MovieCandidates = [
-            new MovieCandidate("tmdb", "100", "Inception", 2010),
-            new MovieCandidate("tmdb", "101", "Inception 2", 2025)
-        ];
+        var provider = new CountingProvider
+        {
+            MovieCandidates = [
+                new MovieCandidate("tmdb", "100", "Inception", null, 2010, null, null, null),
+                new MovieCandidate("tmdb", "101", "Inception 2", null, 2025, null, null, null)
+            ]
+        };
         var service = CreateService(provider);
 
         var result = await service.ManualMovieSearchAsync("Inception", "2010");
