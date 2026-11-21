@@ -38,6 +38,47 @@ public sealed class PlaybackProgressRepository(string connectionString, ILibrary
         return reader.Read() ? ReadRecord(reader) : null;
     }
 
+    public IReadOnlyDictionary<int, PlaybackProgress> GetForMovies(IEnumerable<int> movieIds)
+    {
+        ArgumentNullException.ThrowIfNull(movieIds);
+        var idList = movieIds.Where(id => id > 0).Distinct().ToList();
+        if (idList.Count == 0) return new Dictionary<int, PlaybackProgress>();
+
+        var result = new Dictionary<int, PlaybackProgress>();
+        using var connection = SqliteConnections.Open(connectionString);
+        using var cmd = connection.CreateCommand();
+
+        var parameters = new List<string>();
+        for (var i = 0; i < idList.Count; i++)
+        {
+            var pName = $"$m{i}";
+            parameters.Add(pName);
+            cmd.Parameters.AddWithValue(pName, idList[i]);
+        }
+
+        cmd.CommandText = $"""
+            SELECT mf.movie_id, p.media_file_id, p.position_seconds, p.total_duration_seconds, p.last_watched_at
+              FROM playback_progress p
+              JOIN media_files mf ON mf.id = p.media_file_id
+             WHERE mf.movie_id IN ({string.Join(",", parameters)})
+             ORDER BY julianday(p.last_watched_at) ASC;
+            """;
+
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            var movieId = reader.GetInt32(0);
+            var record = new PlaybackProgress(
+                reader.GetInt32(1),
+                reader.GetDouble(2),
+                reader.IsDBNull(3) ? null : reader.GetDouble(3),
+                DateTimeOffset.Parse(reader.GetString(4)));
+            result[movieId] = record;
+        }
+
+        return result;
+    }
+
     public PlaybackProgress? GetForEpisode(int episodeId)
     {
         if (episodeId <= 0) return null;

@@ -148,6 +148,34 @@ public sealed class DriveAwareAvailabilityTests : IDisposable
         Assert.Equal(MediaFileStatus.Present, Media().GetById(1)!.Status);
     }
 
+    [Fact]
+    public void PruneDeadMissingFiles_DoesNotPrune_PresentFilesOnDisconnectedDrive()
+    {
+        var offline = FreeDriveRoot();
+        SeedMedia(1, offline + @"movies\a.mkv");
+
+        using (var connection = new SqliteConnection(_connectionString))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO media_files(id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at)
+                VALUES (2, 1, 'C:\temp\dead.mkv', 'C:\TEMP\DEAD.MKV', 2048, 'MISSING', '2026-01-01', '2026-01-01');
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        var reconciliation = new ReconciliationService(Media(), new FakeInspector(unavailableRoots: [offline]));
+        var pruned = reconciliation.PruneDeadMissingFiles();
+
+        Assert.Equal(1, pruned);
+        Assert.Null(Media().GetById(2));
+
+        var remaining = Media().GetById(1);
+        Assert.NotNull(remaining);
+        Assert.Equal(MediaFileStatus.Present, remaining.Status);
+    }
+
     private IMediaFileRepository Media() => new PerCallMediaFileRepository(_factory);
 
     private void SeedMedia(int id, string path)

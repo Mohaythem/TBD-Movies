@@ -1113,7 +1113,7 @@ public class ImportService : IImportUiActions
         var currentMovieFiles = uow.MediaFiles.GetByMovieId(movie.Id);
         foreach (var oldFile in currentMovieFiles)
         {
-            if (oldFile.Id != mediaFile.Id && (oldFile.Status == MediaFileStatus.Missing || (File.Exists(mediaFile.CurrentPath) && !File.Exists(oldFile.CurrentPath))))
+            if (oldFile.Id != mediaFile.Id && oldFile.Status == MediaFileStatus.Missing)
             {
                 uow.MediaFiles.Delete(oldFile.Id);
             }
@@ -1325,7 +1325,7 @@ public class ImportService : IImportUiActions
         var currentEpisodeFiles = uow.TvEpisodes.ListMediaFiles(episode.Id);
         foreach (var oldFile in currentEpisodeFiles)
         {
-            if (oldFile.Id != mediaFile.Id && (oldFile.Status == MediaFileStatus.Missing || (File.Exists(mediaFile.CurrentPath) && !File.Exists(oldFile.CurrentPath))))
+            if (oldFile.Id != mediaFile.Id && oldFile.Status == MediaFileStatus.Missing)
             {
                 uow.TvEpisodes.UnlinkMediaFile(oldFile.Id);
                 uow.MediaFiles.Delete(oldFile.Id);

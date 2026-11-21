@@ -187,7 +187,7 @@ public sealed class ReconciliationService : IReconciliationUiActions
             if (tvEpisodes != null && tvEpisodes.GetEpisodeIdForMediaFile(missingFile.Id) is int episodeId)
             {
                 var epFiles = tvEpisodes.ListMediaFiles(episodeId);
-                if (epFiles.Any(f => f.Id != missingFile.Id && (f.Status == MediaFileStatus.Present || File.Exists(f.CurrentPath))))
+                if (epFiles.Any(f => f.Id != missingFile.Id && f.Status == MediaFileStatus.Present))
                 {
                     tvEpisodes.UnlinkMediaFile(missingFile.Id);
                     mediaFiles.Delete(missingFile.Id);
@@ -197,7 +197,7 @@ public sealed class ReconciliationService : IReconciliationUiActions
             else if (missingFile.MovieId is int movieId)
             {
                 var movieFiles = mediaFiles.GetByMovieId(movieId);
-                if (movieFiles.Any(f => f.Id != missingFile.Id && (f.Status == MediaFileStatus.Present || File.Exists(f.CurrentPath))))
+                if (movieFiles.Any(f => f.Id != missingFile.Id && f.Status == MediaFileStatus.Present))
                 {
                     mediaFiles.Delete(missingFile.Id);
                     pruned++;

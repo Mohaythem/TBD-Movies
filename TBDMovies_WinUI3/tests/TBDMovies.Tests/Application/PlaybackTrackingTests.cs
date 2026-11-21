@@ -357,4 +357,55 @@ public sealed class PlaybackTrackingTests
         public Task<JsonElement> AddHistoryAsync(TraktSyncHistoryPayload payload, string clientId, string accessToken, CancellationToken cancellationToken = default) => Task.FromResult(default(JsonElement));
         public Task<JsonElement> RemoveHistoryAsync(TraktSyncHistoryPayload payload, string clientId, string accessToken, CancellationToken cancellationToken = default) => Task.FromResult(default(JsonElement));
     }
+
+    [Fact]
+    public void PlaybackProgressRepository_GetForMovies_BatchQuery()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_batch_progress_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+
+            using (var conn = new SqliteConnection(connStr))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (1, 'Movie 1', 2021, datetime('now'), datetime('now'), datetime('now'));
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (2, 'Movie 2', 2022, datetime('now'), datetime('now'), datetime('now'));
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (3, 'Movie 3', 2023, datetime('now'), datetime('now'), datetime('now'));
+
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (10, 1, 'C:\m1.mkv', 'c:\m1.mkv', 100, 'PRESENT', datetime('now'), datetime('now'));
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (20, 2, 'C:\m2.mkv', 'c:\m2.mkv', 200, 'PRESENT', datetime('now'), datetime('now'));
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (30, 3, 'C:\m3.mkv', 'c:\m3.mkv', 300, 'PRESENT', datetime('now'), datetime('now'));
+                ";
+                cmd.ExecuteNonQuery();
+            }
+
+            var repo = new PlaybackProgressRepository(connStr);
+
+            // Empty list returns empty dictionary
+            var emptyResult = repo.GetForMovies([]);
+            Assert.Empty(emptyResult);
+
+            // Save progress for Movie 1 and Movie 2, but not Movie 3
+            repo.SaveProgress(10, 120, 3600, DateTimeOffset.UtcNow);
+            repo.SaveProgress(20, 240, 7200, DateTimeOffset.UtcNow);
+
+            var batch = repo.GetForMovies([1, 2, 3]);
+            Assert.Equal(2, batch.Count);
+            Assert.True(batch.ContainsKey(1));
+            Assert.True(batch.ContainsKey(2));
+            Assert.False(batch.ContainsKey(3));
+
+            Assert.Equal(120, batch[1].PositionSeconds);
+            Assert.Equal(240, batch[2].PositionSeconds);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
+        }
+    }
 }

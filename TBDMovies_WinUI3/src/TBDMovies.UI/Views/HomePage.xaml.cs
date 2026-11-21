@@ -207,23 +207,41 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         try
         {
             var items = AppServices.ViewingActivity.ListActive(20);
+            if (items.Count == 0) return [];
+
+            IReadOnlyDictionary<int, PlaybackProgress> epProgress = new Dictionary<int, PlaybackProgress>();
+            IReadOnlyDictionary<int, PlaybackProgress> movieProgress = new Dictionary<int, PlaybackProgress>();
+
+            if (AppServices.IsAvailable)
+            {
+                try
+                {
+                    var epIds = items.Where(i => i.EpisodeId.HasValue).Select(i => i.EpisodeId!.Value).Distinct().ToList();
+                    var movieIds = items.Where(i => i.MovieId.HasValue).Select(i => i.MovieId!.Value).Distinct().ToList();
+
+                    if (epIds.Count > 0)
+                    {
+                        epProgress = AppServices.PlaybackProgress.GetForEpisodes(epIds);
+                    }
+
+                    if (movieIds.Count > 0)
+                    {
+                        movieProgress = AppServices.PlaybackProgress.GetForMovies(movieIds);
+                    }
+                }
+                catch { }
+            }
+
             return [.. items.Select(item =>
             {
                 PlaybackProgress? progress = null;
-                if (AppServices.IsAvailable)
+                if (item.EpisodeId is int epId && epProgress.TryGetValue(epId, out var epProg))
                 {
-                    try
-                    {
-                        if (item.EpisodeId is int epId)
-                        {
-                            progress = AppServices.PlaybackProgress.GetForEpisode(epId);
-                        }
-                        else if (item.MovieId is int movieId)
-                        {
-                            progress = AppServices.PlaybackProgress.GetForMovie(movieId);
-                        }
-                    }
-                    catch { }
+                    progress = epProg;
+                }
+                else if (item.MovieId is int movieId && movieProgress.TryGetValue(movieId, out var mProg))
+                {
+                    progress = mProg;
                 }
 
                 return new HomeActivityCard(item, progress);

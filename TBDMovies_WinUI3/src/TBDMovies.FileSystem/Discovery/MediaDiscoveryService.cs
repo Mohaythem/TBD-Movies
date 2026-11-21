@@ -378,7 +378,7 @@ public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
 
         // If stem contains an explicit episode keyword (Episode, Ep, الحلقة, حلقة), it is not a sequel
         var hasEpisodeKeyword = fullStem.Contains("episode", StringComparison.OrdinalIgnoreCase)
-            || fullStem.Contains("ep", StringComparison.OrdinalIgnoreCase)
+            || EpKeywordPattern().IsMatch(fullStem)
             || fullStem.Contains("الحلقة", StringComparison.Ordinal)
             || fullStem.Contains("حلقة", StringComparison.Ordinal);
 
@@ -621,6 +621,9 @@ public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
     /// </summary>
     [GeneratedRegex(@"(?i)(?:\bepisode|\bep|(?:ال)?حلق[ةه])[\s._\-:]*(?<episode>[0-9٠-٩۰-۹]{1,3})(?![0-9٠-٩۰-۹])")]
     private static partial Regex WordEpisodePattern();
+
+    [GeneratedRegex(@"(?i)(?:\b|[._\-\(\[])ep(?:\b|[._\-\]\d]|$)")]
+    private static partial Regex EpKeywordPattern();
 
     [GeneratedRegex(@"(?<!\d)(?:19|20)\d{2}(?!\d)")]
     private static partial Regex YearPattern();

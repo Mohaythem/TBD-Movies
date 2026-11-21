@@ -83,4 +83,29 @@ public sealed class TvClassificationTrustTests : IDisposable
         var item = DiscoverOne(fileName);
         Assert.Equal(DiscoveryClassification.MovieCandidate, item.Classification);
     }
+
+    [Theory]
+    [InlineData("Step Up 2 (2008).mkv")]
+    [InlineData("Creep 2 (2017).mkv")]
+    [InlineData("Deep Blue Sea 2 (2018).mkv")]
+    [InlineData("Keep 3.mkv")]
+    [InlineData("Sleepy Hollow 2.mkv")]
+    [InlineData("Epic 2.mkv")]
+    public void Movie_sequels_with_ep_substring_stay_movies(string fileName)
+    {
+        var item = DiscoverOne(fileName);
+        Assert.Equal(DiscoveryClassification.MovieCandidate, item.Classification);
+    }
+
+    [Theory]
+    [InlineData("Show.ep01.mkv")]
+    [InlineData("Show ep 2.mkv")]
+    [InlineData("Show - ep3.mkv")]
+    [InlineData("Show_ep4.mkv")]
+    [InlineData("Show [ep 05].mkv")]
+    public void Legitimate_ep_keyword_markers_are_classified_as_episodes(string fileName)
+    {
+        var item = DiscoverOne(fileName);
+        Assert.Equal(DiscoveryClassification.TvEpisodeCandidate, item.Classification);
+    }
 }

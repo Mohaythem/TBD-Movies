@@ -284,12 +284,12 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
                 if (EpisodeForFile(file.Id) is int episodeId)
                 {
                     var epFiles = AppServices.Tv.ListEpisodeFiles(episodeId);
-                    return !epFiles.Any(f => f.Id != file.Id && (f.Status == MediaFileStatus.Present || File.Exists(f.CurrentPath)));
+                    return !epFiles.Any(f => f.Id != file.Id && f.Status == MediaFileStatus.Present);
                 }
                 else if (file.MovieId is int movieId)
                 {
                     var movieFiles = AppServices.MediaFilesForMovie(movieId);
-                    return !movieFiles.Any(f => f.Id != file.Id && (f.Status == MediaFileStatus.Present || File.Exists(f.CurrentPath)));
+                    return !movieFiles.Any(f => f.Id != file.Id && f.Status == MediaFileStatus.Present);
                 }
                 return true;
             }).ToList();
@@ -338,11 +338,19 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
             _staleTemps = await Task.Run(() => AppServices.DetectStaleTempFiles(token: token), token);
             token.ThrowIfCancellationRequested();
             _result = result;
-            _missing = MissingFiles();
-            _missingEpisodeFiles = [.. _missing
-                .Select(file => (File: file, Episode: EpisodeForFile(file.Id)))
-                .Where(pair => pair.Episode is not null)
-                .Select(pair => pair.File.Id)];
+            var (missing, missingEpFiles) = await Task.Run(() =>
+            {
+                var m = MissingFiles();
+                HashSet<int> epFiles = [.. m
+                    .Select(file => (File: file, Episode: EpisodeForFile(file.Id)))
+                    .Where(pair => pair.Episode is not null)
+                    .Select(pair => pair.File.Id)];
+                return (m, epFiles);
+            }, token);
+
+            token.ThrowIfCancellationRequested();
+            _missing = missing;
+            _missingEpisodeFiles = missingEpFiles;
             _state = LibraryCheckState.Complete;
         }
         catch (OperationCanceledException)
