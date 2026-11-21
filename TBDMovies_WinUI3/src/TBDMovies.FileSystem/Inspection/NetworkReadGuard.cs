@@ -48,7 +48,7 @@ public sealed class NetworkReadGuard
         _driveTypeProvider = driveTypeProvider;
     }
 
-    public T Execute<T>(string path, Func<T> read, Func<T> unavailable, Func<bool>? isCancelled = null)
+    public T Execute<T>(string path, Func<T> read, Func<T> unavailable, Func<bool>? isCancelled = null, TimeSpan? timeoutOverride = null)
     {
         ArgumentNullException.ThrowIfNull(read);
         ArgumentNullException.ThrowIfNull(unavailable);
@@ -70,8 +70,9 @@ public sealed class NetworkReadGuard
             return unavailable();
         }
 
+        var effectiveTimeout = timeoutOverride ?? _timeout;
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
-        var timeoutTicks = (long)(_timeout.TotalSeconds * System.Diagnostics.Stopwatch.Frequency);
+        var timeoutTicks = (long)(effectiveTimeout.TotalSeconds * System.Diagnostics.Stopwatch.Frequency);
 
         var acquired = false;
         while (!acquired)
@@ -196,6 +197,18 @@ public sealed class NetworkReadGuard
 
     private static bool IsNetworkDrive(char driveLetter, Func<char, DriveType>? provider)
     {
+        if (provider is not null)
+        {
+            try
+            {
+                return provider(driveLetter) == DriveType.Network;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         var now = System.Diagnostics.Stopwatch.GetTimestamp();
         if (_driveTypeCache.TryGetValue(driveLetter, out var cached) && now < cached.ExpiryTicks)
         {
@@ -205,11 +218,7 @@ public sealed class NetworkReadGuard
         var isNetwork = false;
         try
         {
-            if (provider is not null)
-            {
-                isNetwork = provider(driveLetter) == DriveType.Network;
-            }
-            else if (OperatingSystem.IsWindows())
+            if (OperatingSystem.IsWindows())
             {
                 var drive = new DriveInfo(driveLetter.ToString());
                 isNetwork = drive.DriveType == DriveType.Network;

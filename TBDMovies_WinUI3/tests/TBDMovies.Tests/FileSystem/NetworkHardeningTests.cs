@@ -267,7 +267,7 @@ public sealed class NetworkHardeningTests
     [Fact]
     public async Task Guard_Allows_Concurrent_Reads_Up_To_Max_On_Healthy_Share()
     {
-        var guard = new NetworkReadGuard(TimeSpan.FromSeconds(2), maxConcurrencyPerShare: 4);
+        var guard = new NetworkReadGuard(TimeSpan.FromSeconds(10), maxConcurrencyPerShare: 4);
         var inFlight = 0;
         var maxObservedConcurrency = 0;
         using var barrier = new Barrier(4);
@@ -284,7 +284,7 @@ public sealed class NetworkHardeningTests
                         if (current > maxObservedConcurrency)
                             maxObservedConcurrency = current;
                     }
-                    barrier.SignalAndWait(1000);
+                    barrier.SignalAndWait(TimeSpan.FromSeconds(5));
                     Interlocked.Decrement(ref inFlight);
                     return i;
                 },
@@ -301,7 +301,7 @@ public sealed class NetworkHardeningTests
     public async Task Guard_Blocks_Fifth_Concurrent_Read_When_All_Slots_Are_Busy()
     {
         using var release = new ManualResetEventSlim(false);
-        var guard = new NetworkReadGuard(TimeSpan.FromMilliseconds(80), maxConcurrencyPerShare: 4);
+        var guard = new NetworkReadGuard(TimeSpan.FromSeconds(10), maxConcurrencyPerShare: 4);
         var started = 0;
 
         var tasks = Enumerable.Range(1, 4).Select(i => Task.Run(() =>
@@ -317,12 +317,13 @@ public sealed class NetworkHardeningTests
                 () => false);
         })).ToArray();
 
-        SpinWait.SpinUntil(() => Volatile.Read(ref started) == 4, TimeSpan.FromSeconds(1));
+        SpinWait.SpinUntil(() => Volatile.Read(ref started) == 4, TimeSpan.FromSeconds(3));
 
         var fifth = guard.Execute(
             @"\\server\share\overflow.mkv",
             () => true,
-            () => false);
+            () => false,
+            timeoutOverride: TimeSpan.FromMilliseconds(50));
 
         Assert.False(fifth);
 

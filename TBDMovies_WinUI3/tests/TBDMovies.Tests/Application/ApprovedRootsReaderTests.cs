@@ -133,7 +133,7 @@ public sealed class ApprovedRootsReaderTests : IDisposable
     public void Invokes_OnError_When_Encountering_Malformed_Data()
     {
         var settings = new MemorySettingsRepository();
-        settings.Set("ui_media_folders", "[malformed_json_not_array", DateTimeOffset.UtcNow);
+        settings.Set("ui_media_folders", "[not,valid,json]", DateTimeOffset.UtcNow);
 
         var errors = new List<Exception>();
         var roots = ApprovedRootsReader.ResolveApprovedRoots(

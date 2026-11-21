@@ -619,7 +619,7 @@ public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
     /// Arabic-Indic digits. Series named this way are flat single-season shows, so the caller assigns
     /// season 1. The trailing guard stops it from reading only part of a longer number.
     /// </summary>
-    [GeneratedRegex(@"(?i)(?:\bepisode|\bep|(?:ال)?حلق[ةه])[\s._\-:]*(?<episode>[0-9٠-٩۰-۹]{1,3})(?![0-9٠-٩۰-۹])")]
+    [GeneratedRegex(@"(?i)(?:\bepisode|(?<=\b|_)ep|(?:ال)?حلق[ةه])[\s._\-:]*(?<episode>[0-9٠-٩۰-۹]{1,3})(?![0-9٠-٩۰-۹])")]
     private static partial Regex WordEpisodePattern();
 
     [GeneratedRegex(@"(?i)(?:\b|[._\-\(\[])ep(?:\b|[._\-\]\d]|$)")]
