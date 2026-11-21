@@ -98,3 +98,4 @@
 | **`U5-B`** | تضييق المسافات الرأسية في التفاصيل | `MovieDetailsPage`, `TVShowDetailsPage` | تخفيض Spacing و RowSpacing لمنع الفراغات المفرطة | **تم الحل والاعتماد ✅** (`1,103` tests) |
 | **`U8`** | التحديث الموضعي ومنع إعادة التحميل | المكتبة، الرئيسية، القوائم السياقية | تحديث موضعي 0ms مع رايات التحديث ومقارنة CatalogRevision | **تم الحل والاعتماد ✅** (`1,126` tests) |
 | **`U10`** | تجمد قياس موضع التشغيل عند 30s والـ Seek | `Trackers/`, `PlayerProcessLauncher` | معادلة GSMTC الحية، تفعيل MPC المزدوج، حظر وقت الحائط، و Immediate Flush | **تم الحل والاعتماد ✅** (`1,343` tests) |
+| **`C-05`** | تسريب وفقدان اشتراك `PlaybackEnded` في صفحات التفاصيل | `TVShowDetailsPage`, `MovieDetailsPage` | موازنة اشتراك `EnsurePlaybackTrackingSubscribed` في `Loaded` مع `UnsubscribePlaybackTracking` في `Unloaded/Deactivate` | **تم الحل والاعتماد ✅** (`1,364` tests) |

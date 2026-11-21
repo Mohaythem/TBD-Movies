@@ -60,6 +60,23 @@ public sealed class ImportSelectedTests : IDisposable
     }
 
     [Fact]
+    public async Task ManualMovieSearchAsync_InvokesProviderSearchAsync_AndReturnsCandidates()
+    {
+        var provider = new CountingProvider();
+        provider.MovieCandidates = [
+            new MovieCandidate("tmdb", "100", "Inception", 2010),
+            new MovieCandidate("tmdb", "101", "Inception 2", 2025)
+        ];
+        var service = CreateService(provider);
+
+        var result = await service.ManualMovieSearchAsync("Inception", "2010");
+
+        Assert.NotNull(result);
+        Assert.Equal(2, result.Candidates.Count);
+        Assert.Equal("100", result.Candidates[0].ExternalId);
+    }
+
+    [Fact]
     public async Task ImportSelected_ReportsRealProcessedOfTotalProgress()
     {
         var provider = new CountingProvider();

@@ -1157,10 +1157,10 @@ public class ImportService : IImportUiActions
         && string.Equals(movie.Provider, candidate.Provider?.Trim(), StringComparison.Ordinal)
         && string.Equals(movie.ExternalId, candidate.ExternalId?.Trim(), StringComparison.Ordinal);
 
-    public ManualMovieSearchResult ManualMovieSearch(string title, string? year = null)
+    public async Task<ManualMovieSearchResult> ManualMovieSearchAsync(string title, string? year = null, CancellationToken cancellationToken = default)
     {
         int? parsedYear = int.TryParse(year, out var y) ? y : null;
-        var results = _metadataProvider.Search(new MovieSearchQuery(title, parsedYear));
+        var results = await _metadataProvider.SearchMoviesAsync(new MovieSearchQuery(title, parsedYear), cancellationToken).ConfigureAwait(false);
         return new ManualMovieSearchResult(results);
     }
 

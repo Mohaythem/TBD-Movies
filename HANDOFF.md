@@ -5,8 +5,8 @@
 **الفرع الحالي**: `codex` (محدث ومرفوع بالكامل لـ GitHub Actions CI — **100% Green**)  
 **بيئة العمل والتقنيات**: WinUI 3 / **C# 14** / .NET 10 (`net10.0-windows10.0.22621`) / Windows App SDK `1.7.260224002` / SQLite WAL (`library.db` — **`DatabaseMigrator.LatestVersion = 23`**) / نمط غير محزم (`win-x64` Unpackaged).  
 **حالة البناء المرجعية على ويندوز**: بناء `Release` نظيف (`0 Warning(s), 0 Error(s)`).  
-**خط الأساس المرجعي للاختبارات**: **`1,343 / 1,343`** حالة اختبار (اجتياز 100% دون أي فشل أو تراجع: `Failed: 0, Passed: 1,343, Skipped: 0`).  
-**حالة التطوير العامة**: **الدفعتان 4.1 و 4.2 مكتملتان بنجاح (Batch 4.1 & 4.2)**. الجاهزية لبدء **الموجة 5 (Wave 5: [U9] توحيد قوائم Trakt مع القوائم المحلية)**.
+**خط الأساس المرجعي للاختبارات**: **`1,364 / 1,364`** حالة اختبار (اجتياز 100% دون أي فشل أو تراجع: `Failed: 0, Passed: 1,364, Skipped: 0`).  
+**حالة التطوير العامة**: **دفعات الإصلاح الهندسي والأمني (Batches R-1 إلى R-4) مكتملتان بنجاح**. الجاهزية لبدء **الموجة 5 (Wave 5: [U9] توحيد قوائم Trakt مع القوائم المحلية)**.
 
 ---
 
@@ -27,7 +27,7 @@
 
 ---
 
-## 🛠️ ملخص الإنجازات المعمارية الأخيرة (حتى `Schema v23` و `1,143` اختباراً)
+## 🛠️ ملخص الإنجازات المعمارية الأخيرة (حتى `Schema v23` و `1,364` اختباراً)
 
 ### أولاً: الترحيل `Migration 23` وإصلاح قيد طابور القوائم المخصصة (`DatabaseMigrator.cs:718-733`)
 • **المشكلة**: في `v22` كان جدول `custom_list_pending_actions` يفرض `NOT NULL` على `media_kind` و `tmdb_id`، مما كان يُفشل تسجيل إجراء إنشاء قائمة مخصصة جديدة (`CREATE_LIST`) غير مرتبطة بعنصر وسائط.
@@ -59,7 +59,11 @@
   - بعد اختبارات `UnifiedTraktListsTests` الأولية لـ `[U9]`: `1,131` ثم `1,132` اختباراً.
   - بعد اختبارات متتبعات `[U2]`: `1,135` اختباراً.
   - بعد `Migration 23`: `1,136` اختباراً.
-  - بعد اختبارات تحصين Trakt وطابور المفضلة أوفلاين: **`1,143 / 1,143` اختباراً**.
+  - بعد اختبارات تحصين Trakt وطابور المفضلة أوفلاين: `1,143` اختباراً.
+  - بعد دفعات الموجة 1 والموجة 2 (Batch 2.3): `1,295` اختباراً.
+  - بعد دفعات الموجة 3 (Batches 3.1..3.3): `1,328` اختباراً.
+  - بعد دفعات الموجة 4 (Batches 4.1..4.2): `1,343` اختباراً.
+  - بعد حزم الإصلاح الهندسي والأمني (Batches R-1..R-4): **`1,364 / 1,364` اختباراً**.
 • **أمر التحقق القياسي على ويندوز**:
 ```powershell
 dotnet test "TBDMovies_WinUI3\TBDMovies.slnx" -c Release
@@ -80,8 +84,8 @@ dotnet test "TBDMovies_WinUI3\TBDMovies.slnx" -c Release
   - **اختبار الوحدة لحارس صمام الأمان**: كتابة اختبار `SyncAsync_WhenUserListsFetchFails_DoesNotDeleteLocalCustomLists` لحارس `if (!userListsSuccess)` (`L1666`).
   - **ثغرات إضافية موثقة من التدقيق**: منطق دمج الطابور `if (hasAdd && hasRemove)` (`TraktSyncService.cs:1564`) يلغي آخر إجراء في التبديلات الفردية (`ADD -> REMOVE -> ADD`)، وغياب تصفية القوائم الموسومة بالحذف (`custom_lists.is_deleted = 0`) في `PersonalLibraryRepository.cs` داخل `GetCustomListIdsForMovie` (`L415-426` عبر `JOIN custom_lists cl ... AND cl.is_deleted = 0`) و`GetCustomListIdsForShow` (`L484-495` عبر `JOIN custom_lists cl ... AND cl.is_deleted = 0`) و`RequireCustomList` (`L983-988` عبر `AND is_deleted = 0`)، وبقاء صفحة `TraktPage` المنفصلة والأسطر الميتة في `MyListsPage.Trakt.cs`.
 
-• **ثانياً — `[U10]` تجمد قياس موضع التشغيل عند 30 ثانية وتجاهل التقديم والسرعة (تحل محل `[U1]` / `[U2]`)**:
-  - **الأسباب الجذرية الأربعة في الكود**: (أ) قراءة `GSMTC Position` الساكن في `WindowsMediaTimelineTracker.cs:37-55` بدون `(UtcNow - LastUpdatedTime) * PlaybackRate` وبدون تصفية `SourceAppUserModelId`، (ب) كتابة `WebServer=1` بدلاً من `EnableWebServer` لـ MPC-HC في `MpcWebTimelineTracker.cs:102-108, 152` والسقوط في حلقة وقت الحائط العمياء `startPositionSeconds + elapsed` في `PlayerProcessLauncher.cs:211-216` التي تجهل الإيقاف والتقديم وسرعة التشغيل، (ج) إهدار `DurationSeconds` المجلوبة من المشغل في `PlayerProcessLauncher.cs:184` (تحديث المتغير المحلي `totalDurationSeconds` دون تمريره إلى `PlaybackTrackingService.cs:116-127`)، (د) استثناء `ArgumentOutOfRangeException` عند `MediaFileId <= 0` في `PlaybackTrackingService.cs:143`.
+• **ثانياً — `[U10]` تجمد قياس موضع التشغيل عند 30 ثانية (تم الحل والاعتماد بالكامل في Batch 4.2 بنجاح ✅)**:
+  - تم حل المشكلة بجدارة عبر معادلة GSMTC الحية، تفعيل خادم MPC-HC المزدوج، منع وقت الحائط الأعمى، والتسجيل الفوري عند التقديم والإيقاف المؤقت (بإجمالي `1,343` ثم `1,364` اختباراً).
 
 • **ثالثاً — `[L6]` فجوة `VACUUM` على الأسرار النصية في SQLite**:
   - يعمل `VACUUM` حالياً فقط في مسار تطهير `DPAPI` (`[M2]`، وهو يعمل خارج `DatabaseWriteGate` في `AppServices.cs:1080-1085`)، بينما حذف `'tmdb_read_access_token'` النصي في `SettingsService.MigrateLegacyCredential()` (`SettingsService.cs:222-237` عند `L230, 236`) و`SaveTmdbCredentialAsync()` (`L153`) و`RemoveTmdbCredentialAsync()` (`L195`) لا يستدعي `VACUUM;` إطلاقاً؛ كما يُحفظ `'subdl_api_key'` كنص صريح في جدول `settings` عبر `AppSettingsStore.cs:27-31, 174` (`SettingsPage.xaml.cs:1257`، ويُقرأ في `AppServices.cs:670` و`SettingsPage.xaml.cs:1251`).

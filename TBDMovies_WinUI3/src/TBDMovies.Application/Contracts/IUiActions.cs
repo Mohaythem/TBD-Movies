@@ -149,7 +149,7 @@ public interface IImportUiActions
         IReadOnlyList<ImportSelection> selections,
         CancellationToken cancellationToken = default,
         Action<ImportProgress>? progress = null);
-    ManualMovieSearchResult ManualMovieSearch(string title, string? year = null);
+    Task<ManualMovieSearchResult> ManualMovieSearchAsync(string title, string? year = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Registers one local episode file into the show / season / episode hierarchy, creating only the

@@ -1,15 +1,32 @@
 # TBD Movies — Active Progress & Status Checkpoint
 
 ## Current Goal
-- **Active Track / Current Priority**: Wave 4 completed and verified with **1,343 / 1,343** tests (Batches 4.1 & 4.2). Next priority: Wave 5 (`[U9]` Trakt custom lists & local lists unification).
+- **Active Track / Current Priority**: Engineering & Security Remediation (Batches R-1 to R-4) completed and verified with **1,364 / 1,364** tests. Next priority: Wave 5 (`[U9]` Trakt custom lists & local lists unification).
 - **Batches Approved & Closed**: 
   - Wave 1 (Batches 1.1, 1.2, 1.3): `SEC-19`, `C-06`, `SEC-20`, `C-03`, `SEC-01..05`, `SEC-14..15`, `SEC-21..22`, `C-13`, `[L6]` (`1,295` tests).
   - Wave 2 (Batches 2.1, 2.2, 2.3): `C-01`, `[P3]`, `C-04`, `[U8]`, `C-05` (`1,295` tests).
   - Wave 3 (Batches 3.1, 3.2, 3.3): `SEC-16`, `C-09`, `C-10`, `C-11`, `C-12` (`1,328` tests).
   - Wave 4 (Batches 4.1, 4.2): `SEC-23`, `C-02`, `[U10]` (`1,343` tests).
-- **Baseline Test Suite**: **`1,343 / 1,343`** tests passing in Release.
+  - Remediation Wave R (Batches R-1, R-2, R-3, R-4): `ENG-NEW-01..07`, `SEC-NEW-01..02`, `C-05` closure (`1,364` tests).
+- **Baseline Test Suite**: **`1,364 / 1,364`** tests passing in Release.
 
 ## Completed Work
+50. **Comprehensive Engineering, Architectural & Security Remediation [Batches R-1, R-2, R-3, R-4]**:
+    - **Batch R-1 (`ENG-NEW-01`, `ENG-NEW-02`)**:
+        - Centralized network path and mapped drive classification in `NetworkPathClassifier.cs` with a 15-second TTL cache for drive letter queries using `Stopwatch.Frequency`.
+        - Handled UNC paths (forward and backward slashes), extended DOS prefixes (`\\?\`, `//?/`), mapped drives (`DriveType.Network`), and disconnected mapped drives (`DriveType.NoRootDirectory`).
+        - Eliminated duplicate path and drive classification in `ApprovedRootsReader.cs`, `ReconciliationService.cs`, and `NetworkReadGuard.cs`.
+        - Removed synchronous `File.Exists(f.CurrentPath)` from the UI thread in `TVShowDetailsPage.xaml.cs` (`UpdateShowSummary` and `RelinkEpisodeAsync`), preserving SQLite database state without freezing.
+    - **Batch R-2 (`ENG-NEW-03`, `ENG-NEW-06`)**:
+        - Set `DecodePixelType = DecodePixelType.Logical` and `DecodePixelWidth` (52 in `MatchMediaDialog.cs`, 340 in `TVShowDetailsPage.xaml.cs` and `MovieDetailsPage.xaml.cs`) BEFORE `UriSource`, optimizing memory by >90% while keeping posters crisp on high-DPI displays.
+        - Converted legacy reflection binding `{Binding ElementName=HistoryTitleText}` to compiled `{x:Bind HistoryTitleText, Mode=OneTime}` in `MovieDetailsPage.xaml`.
+    - **Batch R-3 (`ENG-NEW-07`, `SEC-NEW-01`)**:
+        - Replaced static VLC port 8088 and static password with ephemeral loopback port (`GetEphemeralPort`) and 16-byte cryptographically secure random session password (`GenerateSessionPassword`), enforcing `--http-host=127.0.0.1`.
+        - Added argument option terminator `-- ` before media paths in `BuildVlcTrackingArguments` and `BuildMpvTrackingArguments` to prevent option injection.
+        - Hardened custom player launching in `IsPermittedCustomPlayerPath`, rejecting all dangerous script extensions (`.bat`, `.cmd`, `.ps1`, `.vbs`, `.js`, etc.) and returning `false` gracefully without throwing uncaught exceptions.
+    - **Batch R-4 (`ENG-NEW-04`, `C-05` Closure)**:
+        - Replaced synchronous `ManualMovieSearch` with clean async `Task<ManualMovieSearchResult> ManualMovieSearchAsync` on `IImportUiActions` and `ImportService.cs` without `[Obsolete]` warnings.
+        - Updated test baseline to 1,364 automated tests across all test suites.
 49. **Live Player Timeline Tracking Engine, GSMTC Dynamic Formula & Flush Architecture [Batch 4.2 — [U10], C-02]**:
     - **Live GSMTC Position & Session Filtering (`WindowsMediaTimelineTracker.cs`)**:
         - Applied dynamic live formula `Position + (UtcNow - LastUpdatedTime) * Rate` with sanity guards against uninitialized/future timestamps and `EndTime` clamping.
