@@ -267,6 +267,7 @@ public sealed class NetworkHardeningTests
     [Fact]
     public async Task Guard_Allows_Concurrent_Reads_Up_To_Max_On_Healthy_Share()
     {
+        ThreadPool.SetMinThreads(16, 16);
         var guard = new NetworkReadGuard(TimeSpan.FromSeconds(10), maxConcurrencyPerShare: 4);
         var inFlight = 0;
         var maxObservedConcurrency = 0;
@@ -300,9 +301,10 @@ public sealed class NetworkHardeningTests
     [Fact]
     public async Task Guard_Blocks_Fifth_Concurrent_Read_When_All_Slots_Are_Busy()
     {
+        ThreadPool.SetMinThreads(16, 16);
         using var release = new ManualResetEventSlim(false);
+        using var allStarted = new CountdownEvent(4);
         var guard = new NetworkReadGuard(TimeSpan.FromSeconds(10), maxConcurrencyPerShare: 4);
-        var started = 0;
 
         var tasks = Enumerable.Range(1, 4).Select(i => Task.Run(() =>
         {
@@ -310,14 +312,14 @@ public sealed class NetworkHardeningTests
                 $@"\\server\share\held{i}.mkv",
                 () =>
                 {
-                    Interlocked.Increment(ref started);
+                    allStarted.Signal();
                     release.Wait();
                     return true;
                 },
                 () => false);
         })).ToArray();
 
-        SpinWait.SpinUntil(() => Volatile.Read(ref started) == 4, TimeSpan.FromSeconds(3));
+        Assert.True(allStarted.Wait(TimeSpan.FromSeconds(10)), "Expected all 4 slots to be acquired within 10 seconds.");
 
         var fifth = guard.Execute(
             @"\\server\share\overflow.mkv",
