@@ -27,7 +27,7 @@ Each remediation batch traverses the following five formal states in strict sequ
 
 1. **`Pending`**: Work has not yet begun; files in its scope are strictly frozen and read-only.
 2. **`In Progress`**: The single active batch currently under implementation and verification.
-3. **`Goldfish Reviewed`**: Implementation and automated unit tests are complete; passed independent zero-context review by an isolated reviewer subagent (`Model: "inherit"`, zero prior bias, immediate termination upon report delivery).
+3. **`Goldfish Reviewed`**: Implementation and automated unit tests are complete; passed independent zero-context review by an isolated reviewer subagent (`Model: "pro"`, zero prior bias, immediate termination upon report delivery).
 4. **`Approved`**: Explicitly reviewed, verified, and signed off by the user.
 5. **`Closed`**: Formally sealed, recorded in this ledger, with baseline tests updated and pointer advanced to the next batch.
 

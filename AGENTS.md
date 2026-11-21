@@ -26,6 +26,7 @@
 - **Subagent Discipline & Sequential Execution**:
   - Uncoordinated or massive swarms of subagents are strictly forbidden without upfront explanation of each agent's dedicated scope and objective.
   - Address problems, investigations, and reviews **sequentially one by one**. Terminate (`kill`) each subagent immediately upon completion of its task to maintain a pristine, zero-overhead workspace.
+  - **Pro Model Mandate for Goldfish Subagents**: All spawned reviewer and auditor subagents (Goldfish) must explicitly be pinned to `Model: "pro"` rather than `inherit`, ensuring maximum reasoning depth, pedantic validation of invariants, and zero context bias.
 
 ---
 
