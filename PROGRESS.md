@@ -109,7 +109,7 @@
     - **Never-Collapse Flyout Architecture (`MovieDetailsPage.xaml.cs` & `TVShowDetailsPage.xaml.cs`)**:
         - Flyout items ("Play from beginning" & "Clear resume point") remain permanently visible (`Visibility.Visible`), controlled via `IsEnabled`.
     - **Unified 3-Second Resume Threshold (`PlaybackModels.cs:27`)**:
-        - Lowered `HasResumePosition` threshold from `15.0s` to `PositionSeconds >= 3.0` to align 1:1 with the persistence filter (`[U1-متابعة]`).
+        - Lowered `HasResumePosition` threshold from `15.0s` to `PositionSeconds >= 3.0` to align 1:1 with the persistence filter (`[U1-Followup]`).
     - **Dual-Query Fallback, Live Event Subscription & Thin Poster Progress Bar (`4px`)**:
         - Queries progress by `MediaFileId` then `movieId` / `episodeId`; added `PosterProgressBar` (`CornerRadius="0,0,8,8"`) and decoupled `StartPlaybackAsync` (`CancellationToken.None`).
     - **Unit Tests at Checkpoint**: 1,131 / 1,131 passed (`0 Warning(s), 0 Error(s)`).
@@ -414,7 +414,7 @@
         - Root cause: `PlayButton` on `MovieDetailsPage.xaml` referenced `Style="{StaticResource AccentSplitButtonStyle}"`, which was undeclared in XAML resources.
         - Added `<Style TargetType="SplitButton" x:Key="AccentSplitButtonStyle">` to `MovieDetailsPage.xaml` and globally to `Styles.xaml`.
     - **Reverted Unified Activity Shelf to Dedicated Shelves**:
-        - Restored separate "Continue Watching" (`ContinueRowGrid`, `ContinueRepeater`, `ContinueEmptyState`) and "Watch History" (`HistoryRowGrid`, `HistoryRepeater`, `HistoryEmptyState`) sections per user directive ("رجع اكمال المشاهدة وتاريخ المشاهدة كله لوحده").
+        - Restored separate "Continue Watching" (`ContinueRowGrid`, `ContinueRepeater`, `ContinueEmptyState`) and "Watch History" (`HistoryRowGrid`, `HistoryRepeater`, `HistoryEmptyState`) sections per user directive ("restore continue watching and watch history separately").
         - Preserved the new resume progress bar (`ProgressBar` with `ProgressPercentage` and `HasResumeVisibility`) and dynamic `ResumeFrom` / `Play` action on Continue Watching cards.
         - Maintained rich cinematic stats (5 metrics with watch time, episodes on disk, completion/monthly rate).
     - **Verification**: 1,065 / 1,065 unit tests passing (100% Pass) with 0 errors and 0 warnings.
@@ -477,7 +477,7 @@
     - **Deployment Sync**: Synced to `D:\TBD-Movies\portable\` and compiled `TBDMoviesSetup.exe`.
 15. **High-Contrast Palette Evaluation & Revert Track**:
     - **Experimentation**: Evaluated Carbon Black & Modern Blue high-contrast palette (Window background `#070709`, surface cards `#111217` with `#222530` border, primary text `#FFFFFF`, accent `#2F71E3` with hover `#4B8BF5`, pressed `#1E5DC8`, and selection tint `#262F71E3`).
-    - **Revert**: Restored previous Slate Navy (`#18222D`) with Windows 11 Fluent Blue unified palette per user directive ("الالوان اللى فاتت كانت احسن تراجع عن التعديل ده").
+    - **Revert**: Restored previous Slate Navy (`#18222D`) with Windows 11 Fluent Blue unified palette per user directive ("the previous colors were better, revert this change").
     - **Test Integrity**: Maintained 1,029 / 1,029 tests passing (100% Pass).
 
 ---

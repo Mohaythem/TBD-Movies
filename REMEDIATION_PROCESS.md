@@ -1,86 +1,83 @@
-# TBD Movies — سجل وبروتوكول المعالجة الهندسية المتدرجة (`REMEDIATION_PROCESS.md`)
+# TBD Movies — Progressive Engineering Remediation Protocol & Ledger (`REMEDIATION_PROCESS.md`)
 
-> **الإصدار المستهدف:** `v0.12.5` ⬅ `v0.12.6`
-> **مساحة العمل المعزولة:** `/home/antigravity/TBD-Movies-Audit` (مستودع `Git` محلي معزول بالكامل بدون `remote`؛ مستودع `/home/antigravity/Mohaythem/TBD-Movies` نظيف 100% وغير ملموس)
-> **النسخة السحابية الحية على Google Drive:** مجلد `TBD-Movies-Remediation` (`1zM9qFoMmVLiMSdg_bJi1y78LRthjGrUz`)
-> - حزمة مستودع `Git` الكامل بالتاريخ: `TBD-Movies-Audit.bundle` (`1z8lhmQlUlEkACTH_wyLPqcPnjLMbJvAP`)
-> - أرشيف شجرة العمل الجاهزة للبناء والاختبار: `TBD-Movies-Audit-Worktree.zip` (`1VSpcGCfbpVi7riFs3Gb0j_Nw0XAx2150`)
+> **Target Version:** `v0.12.5` ⬅ `v0.12.6`  
+> **Active Branch:** `codex` (monitored and verified 100% green on GitHub Actions CI)  
+> **Continuous Verification:** Remote Windows .NET 10 runner (`windows-latest`) executes full solution build, WinUI desktop packaging, and 100% test execution on every pushed commit.
 
 ---
 
-## 1. القرارات المعمارية والتنظيمية المعتمدة نهائياً
+## 1. Finalized Architectural & Operational Decisions
 
-1. **القرار الأول — مكان التنفيذ (`الخيار أ`):**
-   التنفيذ حصرياً داخل النسخة المعزولة `/home/antigravity/TBD-Movies-Audit` مع `Commit` مستقل لكل دفعة ومزامنة فورية لملفَي `TBD-Movies-Audit.bundle` و `TBD-Movies-Audit-Worktree.zip` على Google Drive، وإبقاء `/home/antigravity/Mohaythem/TBD-Movies` نظيفاً تماماً بدون أي `git push` إلى GitHub إلا بأمر صريح بعد التحقق على Windows.
-2. **القرار الثاني — مصير `TraktPage` في الموجة الخامسة (`الخيار أ`):**
-   دمج إعدادات الاتصال وحالة المزامنة في `SettingsPage`، ودمج كافة القوائم في `MyListsPage`، وإلغاء تبويب `Trakt` المنفصل من `MainWindow.xaml`، وحذف الكود المكرر الميت (`~750` سطراً في `MyListsPage.Trakt.cs`) لإتمام هدف `[U9]` الأصلي.
-3. **القرار الثالث — التراجع واستعادة النسخة الاحتياطية في الموجة السابعة (`الخيار أ`):**
-   توصيل `IOperationHistoryUiActions.UndoOperation` و `DatabaseSafetyBackup.RestoreFromBackup` بأزرار واضحة ومحمية برسالة تأكيد داخل `OperationsLogPage` و `SettingsPage`.
-4. **القرار الرابع — المزامنة التلقائية مع Google Drive (`الخيار أ`):**
-   تحديث كلٍّ من `TBD-Movies-Audit.bundle` (`git bundle create --all`) و `TBD-Movies-Audit-Worktree.zip` في مكانهما (`gdrive mutate update`) داخل مجلد `TBD-Movies-Remediation` بعد إغلاق كل دفعة.
-5. **القرار الخامس — التحقق المستمر عبر GitHub Actions CI على فرع `codex` فقط (`الخيار أ`):**
-   دفع كل دفعة مختومة تلقائياً إلى فرع `refs/heads/codex` على GitHub (`git push origin HEAD:refs/heads/codex`) لتشغيل `.github/workflows/test.yml` على بيئة `windows-latest` الحقيقية (بناء الحل + بناء `TBDMovies.UI` `win-x64` + تشغيل كافة الاختبارات)، مع إبقاء فرع `main` ومستودع `/home/antigravity/Mohaythem/TBD-Movies` نظيفَين 100% دون أي مساس.
-
----
-
-## 2. دورة حياة كل دفعة وقواعد الانضباط الصارمة
-
-تمر كل دفعة من الدفعات الـ `18` بالمراحل الخمس التالية بالترتيب الحرفي دون تجاوز أي مرحلة:
-
-1. **`معلّقة`**: لم يبدأ العمل البرمجي عليها بعد (ممنوع لمس أي ملف يخصها).
-2. **`جارية`**: الدفعة الوحيدة المفتوحة حالياً قيد التنفيذ والتدقيق.
-3. **`اتراجعت بـ Goldfish`**: اكتمل كود الدفعة واختباراتها، واجتازت مراجعة سمكة `Goldfish` معزولة (`Model: "inherit"`, سياق صفري، وإغلاق فوري للسمكة بحيث يبقى عدد الوكلاء النشطين = `0`)، وتم عمل `Commit` محلي وتحديث نسخة Google Drive، وهي الآن **متوقفة بانتظار ختم واعتماد المستخدم**.
-4. **`اعتمدتها أنا`**: راجعها المستخدم واعتمدها صراحةً.
-5. **`خلصت`**: أُغلقت الدفعة رسمياً وانتقل المؤشر إلى الدفعة التالية.
-
-### القواعد الحديدية للتنفيذ:
-- **دفعة واحدة فقط في كل مرة:** يُمنع منعاً باتاً فتح أو تعديل أي كود يخص الدفعة `N+1` قبل أن تصل الدفعة `N` إلى `اعتمدتها أنا` ثم `خلصت`.
-- **انضباط الوكلاء الفرعيين:** لا يعمل أكثر من وكيل فرعي واحد (`Goldfish`) في اللحظة الواحدة، بوضع `Model: "inherit"`، ويُقتل (`kill`) فور تسليم تقريره.
-- **تحديث هذا السجل:** يُحدَّث هذا الملف بعد كل انتقال في حالة أي دفعة ويُسجَّل فيه رقم الـ `Commit` ونتيجة `Goldfish`.
+1. **Decision 1 — Execution Environment:**
+   Development and remediation proceed commit-by-commit with atomic scopes. All work is verified locally and executed against the `codex` branch. Production branch `main` remains untouched and pristine until final formal release.
+2. **Decision 2 — Unification of `TraktPage` in Wave 5:**
+   Consolidate Trakt connection settings and synchronization status into `SettingsPage`; merge all custom and cloud lists into `MyListsPage`; retire the separate `Trakt` tab from `MainWindow.xaml`; and eliminate redundant dead code (~750 lines in `MyListsPage.Trakt.cs`) to fulfill the core objective of `[U9]`.
+3. **Decision 3 — Rollback and Backup Restoration in Wave 7:**
+   Wire `IOperationHistoryUiActions.UndoOperation` and `DatabaseSafetyBackup.RestoreFromBackup` to dedicated, confirmation-protected UI action triggers in `OperationsLogPage` and `SettingsPage`.
+4. **Decision 4 — Automated Artifact & Bundle Archiving:**
+   Maintain reproducible bundles (`git bundle create --all`) and standalone worktrees for historical provenance and external offline testing.
+5. **Decision 5 — Continuous Verification via GitHub Actions CI (`codex` branch):**
+   Every completed batch is pushed directly to `refs/heads/codex` on GitHub to trigger `.github/workflows/test.yml` on a real `windows-latest` environment (Solution Build + `TBDMovies.UI` `win-x64` Desktop Payload + Complete Test Suite), ensuring 0 Warnings, 0 Errors, and 100% passing tests.
 
 ---
 
-## 3. جدول تتبع الموجات الـ 7 والدفعات الـ 18
+## 2. Batch Lifecycle & Governance Invariants
 
-| الموجة | رقم الدفعة | عنوان الدفعة والبنود المعالجة | الملفات الأساسية المستهدفة | حالة الدفعة | Commit | مراجعة Goldfish |
+Each remediation batch traverses the following five formal states in strict sequence:
+
+1. **`Pending`**: Work has not yet begun; files in its scope are strictly frozen and read-only.
+2. **`In Progress`**: The single active batch currently under implementation and verification.
+3. **`Goldfish Reviewed`**: Implementation and automated unit tests are complete; passed independent zero-context review by an isolated reviewer subagent (`Model: "inherit"`, zero prior bias, immediate termination upon report delivery).
+4. **`Approved`**: Explicitly reviewed, verified, and signed off by the user.
+5. **`Closed`**: Formally sealed, recorded in this ledger, with baseline tests updated and pointer advanced to the next batch.
+
+### Binding Execution Rules:
+- **Single Active Batch Invariant:** Under no circumstances may code belonging to batch `N+1` be touched or modified before batch `N` has reached `Approved` and `Closed`.
+- **Subagent Discipline:** At most one subagent (`Goldfish`) may run concurrently; it operates in zero-context review mode and is terminated (`kill`) immediately after delivering its verdict.
+- **Ledger Synchronization:** This tracking document is updated synchronously alongside each batch transition, capturing the exact Git commit SHA and test results.
+
+---
+
+## 3. Seven-Wave Tracking Ledger & Remediation History
+
+| Wave | Batch | Scope & Addressed Findings | Primary Target Files | Status | Commit SHA | Review / CI Verdict |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **خط الأساس** | `0.0` | لقطة `2026-11-17` المرممة + إعادة هيكلة التوثيق وتقارير التدقيق المعتمدة | شجرة المشروع + `EGM.md` + تقارير التدقيق | `خلصت` | `5bf1da0` | `PASS` (`Goldfish 1..4`) |
-| **الموجة 1** | **`1.1`** | إزالة سباق الخيوط على اتصال `SqliteConnection` المشترك في `FileOperationStore` وإظهار خطأ القراءة في `OperationsLogPage` (`SEC-19`, `C-06`, `#474`) | `FileOperationStore.cs`, `AppServices.cs`, `OperationsLogPage.xaml`, `OperationsLogPage.xaml.cs`, `WriteCoordinationTests.cs` | `خلصت` | `faed17e` | `PASS` (`Goldfish 1.1`) |
-| **الموجة 1** | **`1.2`** | تأمين استخراج الترجمات وإصلاح بحث `SubDL` وتجمد نافذتها (`SEC-20`, `C-03`, `[U7]`, `#265`) | `SubtitleDownloadService.cs`, `SubDlClient.cs`, `SubtitleDialog.cs`, الاختبارات | `خلصت` | `c558260` | `PASS` (`Goldfish 1.2`) |
-| **الموجة 1** | **`1.3`** | توحيد خزنة الأسرار `WindowsCredentialVault`، نقل مفتاح `SubDL`، والـ `VACUUM` المحكوم وتطهير النسخ الاحتياطية (`SEC-01..05`, `SEC-14..15`, `SEC-21..22`, `C-13`, `[L6]`) | `WindowsCredentialVault.cs`, `Windows*CredentialStore.cs`, `SqliteConnections.cs`, `DatabaseSafetyBackup.cs`, `SettingsService.cs`, `DiskPosterCache.cs`, `AppSettingsStore.cs`, `SettingsPage.xaml.cs`, `AppServices.cs` | `خلصت` | `bd23544` | `PASS` (`Goldfish 1.3`) |
-| **الموجة 2** | **`2.1`** | إصلاح انحدار حفظ الثيم واللغة عبر إعادة التشغيل (`C-01`, `[P3]`) | `StartupPreferences.cs`, `AppServices.cs`, `SettingsService.cs`, `StartupPreferencesTests.cs` | `خلصت` | `8054690` | `PASS` (`Goldfish 2.1`) |
-| **الموجة 2** | **`2.2`** | إصلاح عدّاد تحديث الحالة `LibraryRevisionTracker` وتطبيق قاعدة Mo بعدم الوميض أو فقدان موضع السكرول (`C-04`) | `IRepositories.cs`, `LibraryRevisionTracker.cs`, المستودعات السبعة, `AppServices.cs`, `MainWindow.xaml.cs`, `LibraryPage.xaml.cs`, `HomePage.xaml.cs`, `MyListsPage.xaml.cs`, `LibraryRevisionTrackerTests.cs` | `خلصت` | `85914ea` | `PASS` (`Goldfish 2.2` + تجربة حية) |
-| **الموجة 2** | **`2.3`** | إصلاح اشتراك `PlaybackEnded` المتماثل في صفحات التفاصيل (`C-05`) | `TVShowDetailsPage.xaml.cs`, `MovieDetailsPage.xaml.cs`, الاختبارات | `خلصت` | `5d4eefd` | `PASS` (`Goldfish 2.3` + CI Run #9) |
-| **الموجة 3** | **`3.1`** | إصلاح استرداد العمليات المتقطعة ومنع الموافقة الذاتية على المسارات (`SEC-16`, `C-09`, `#325..#327`) | `FileOperationCoordinator.cs`, `ApprovedRootsReader.cs`, `OperationHistoryService.cs`, `AppServices.cs`, الاختبارات | `خلصت` | `5be4291` | `PASS` (`Goldfish 3.1 Pro` + CI Run #12) |
-| **الموجة 3** | **`3.2`** | إصلاح `NetworkReadGuard` ودعم الأقراص الشبكية المربوطة `DriveType.Network` (`C-10`) | `NetworkReadGuard.cs`, `NetworkHardeningTests.cs` | `خلصت` | `b4dce10` | `PASS` (`Goldfish 3.2`) |
-| **الموجة 3** | **`3.3`** | إخراج `File.Exists` من قفل SQLite وخيط الواجهة + تجميع استعلام `HomePage` + إصلاح تصنيف `"ep"` (`C-11`, `C-12`) | `ImportService.cs`, `ReconciliationService.cs`, `PlaybackProgressRepository.cs`, `MediaDiscoveryService.cs`, `HomePage.xaml.cs`, `CheckLibraryPage.xaml.cs` | `خلصت` | `ef7d5f0` | `PASS` (`Goldfish 3.3`) |
-| **الموجة 4** | **`4.1`** | تأمين تشغيل المشغلات الخارجية وتمرير `DurationSeconds` وحماية `MediaFileId <= 0` (`SEC-23`, `C-02` الأساسي, `#2, #167, #168`) | `PlayerProcessLauncher.cs`, `PlaybackTrackingService.cs`, `PathPolicy.cs`, الاختبارات | `خلصت` | `23a102c` | `PASS` (`Goldfish Pro v2 + Neon`) |
-| **الموجة 4** | `4.2` | إعادة ضبط المتتبعات الأربعة الأصلية `GSMTC` / `MPC-HC` / `VLC` / `mpv` (`[U10]`, `[U1]/[U2]`, `C-02`) | `WindowsMediaTimelineTracker.cs`, `MpcWebTimelineTracker.cs`, `VlcHttpTimelineTracker.cs`, `MpvPipeTimelineTracker.cs`, الاختبارات | `معلّقة` | — | — |
-| **الموجة 5** | `5.1` | توحيد `ClientId` المخصص وإصلاح أخطاء استجابة `TraktDataClient` (`C-08`, `SEC-11`, `#290, #293`) | `TraktDataClient.cs`, `TraktDataClient.FavoritesAndCollection.cs`, `TraktDataClient.Watchlist.cs`, `TraktDataClient.Scrobble.cs` | `معلّقة` | — | — |
-| **الموجة 5** | `5.2` | تحصين صمام الكاش ضد JSON التالف وإصلاح طوابير المزامنة ومفضلة المسلسلات (`SEC-06..10`, `C-07.1..5`) | `TraktSyncService.cs`, `PersonalLibraryRepository.cs`, `UnifiedTraktListsTests.cs` | `معلّقة` | — | — |
-| **الموجة 5** | `5.3` | دمج إعدادات Trakt في `SettingsPage` والقوائم في `MyListsPage`، حذف تبويب `TraktPage` والكود الميت، وإصلاح زر الإزالة (`C-07.6`, `SEC-26`, القرار الثاني `أ`) | `MainWindow.xaml`, `MainWindow.xaml.cs`, `SettingsPage.*`, `MyListsPage.*`, `MediaCardContextMenu.cs`, `MovieDetailsPage.xaml.cs` | `معلّقة` | — | — |
-| **الموجة 6** | `6.1` | السجل التشخيصي الآمن `AppDiagnosticsLog` وتطهير بقية بلوكات الفئة `(أ)` وتنقيح `ex.Message` (`SEC-17..18`, `SEC-24..25`, `Groups 1, 3, 4`) | `AppDiagnosticsLog.cs`, `App.xaml.cs`, صفحات الواجهة والخدمات المستهدفة | `معلّقة` | — | — |
-| **الموجة 6** | `6.2` | إزالة المفاتيح المكررة في `LocalizationService`، استكمال التعريب، وتحصين `DatabaseMigrator` و `DiskPosterCache` (`C-14..16`, `SEC-12..13`) | `LocalizationService.cs`, `DatabaseMigrator.cs`, `DatabaseSafetyBackup.cs`, `DiskPosterCache.cs` | `معلّقة` | — | — |
-| **الموجة 7** | `7.1` | إزالة الحزم والملفات الميتة، توصيل أزرار `UndoOperation` و `RestoreFromBackup`، واستخراج المساعدات المشتركة (`S-DEAD`, `S-ARCH`, القرار الثالث `أ`) | `TBDMovies.UI.csproj`, `OperationsLogPage.*`, `SettingsPage.*`, `WinUiClipboardService.cs`, موارد الأيقونات | `معلّقة` | — | — |
-| **الموجة 7** | `7.2` | ضم `TBDMovies.QaSeed` إلى الحل وتحديثه لـ `Schema v23` وتحديث توقيع مثبّت Inno Setup (`C-17`, `[L8]`) | `TBDMovies.slnx`, `Seed.cs`, `TBD-Movies.iss` | `معلّقة` | — | — |
+| **Baseline** | `0.0` | Restored November 17 baseline snapshot + documentation restructuring | Project tree + `EGM.md` + Audit Reports | `Closed` | `5bf1da0` | `PASS` (`Goldfish 1..4`) |
+| **Wave 1** | **`1.1`** | Eliminate race condition on shared `SqliteConnection` in `FileOperationStore` & surface read errors in `OperationsLogPage` (`SEC-19`, `C-06`, `#474`) | `FileOperationStore.cs`, `AppServices.cs`, `OperationsLogPage.xaml`, `OperationsLogPage.xaml.cs`, `WriteCoordinationTests.cs` | `Closed` | `faed17e` | `PASS` (`Goldfish 1.1`) |
+| **Wave 1** | **`1.2`** | Secure subtitle extraction, fix SubDL search queries and dialog hang (`SEC-20`, `C-03`, `[U7]`, `#265`) | `SubtitleDownloadService.cs`, `SubDlClient.cs`, `SubtitleDialog.cs`, Tests | `Closed` | `c558260` | `PASS` (`Goldfish 1.2`) |
+| **Wave 1** | **`1.3`** | Unified `WindowsCredentialVault`, migrate SubDL API key, bounded `VACUUM` & backup sanitization (`SEC-01..05`, `SEC-14..15`, `SEC-21..22`, `C-13`, `[L6]`) | `WindowsCredentialVault.cs`, `Windows*CredentialStore.cs`, `SqliteConnections.cs`, `DatabaseSafetyBackup.cs`, `SettingsService.cs`, `DiskPosterCache.cs`, `AppSettingsStore.cs`, `SettingsPage.xaml.cs`, `AppServices.cs` | `Closed` | `bd23544` | `PASS` (`Goldfish 1.3`) |
+| **Wave 2** | **`2.1`** | Fix theme and language persistence regression across app restarts (`C-01`, `[P3]`) | `StartupPreferences.cs`, `AppServices.cs`, `SettingsService.cs`, `StartupPreferencesTests.cs` | `Closed` | `8054690` | `PASS` (`Goldfish 2.1`) |
+| **Wave 2** | **`2.2`** | Fix `LibraryRevisionTracker` state counter, enforcing zero-flicker and scroll-position retention (`C-04`) | `IRepositories.cs`, `LibraryRevisionTracker.cs`, 7 Repositories, `AppServices.cs`, `MainWindow.xaml.cs`, `LibraryPage.xaml.cs`, `HomePage.xaml.cs`, `MyListsPage.xaml.cs`, `LibraryRevisionTrackerTests.cs` | `Closed` | `85914ea` | `PASS` (`Goldfish 2.2` + Live Test) |
+| **Wave 2** | **`2.3`** | Symmetric `PlaybackEnded` subscription in details pages (`C-05`) | `TVShowDetailsPage.xaml.cs`, `MovieDetailsPage.xaml.cs`, Tests | `Closed` | `5d4eefd` | `PASS` (`Goldfish 2.3` + CI Run #9) |
+| **Wave 3** | **`3.1`** | Interrupted operation recovery and prevent root self-approval (`SEC-16`, `C-09`, `#325..#327`) | `FileOperationCoordinator.cs`, `ApprovedRootsReader.cs`, `OperationHistoryService.cs`, `AppServices.cs`, Tests | `Closed` | `5be4291` | `PASS` (`Goldfish 3.1 Pro` + CI Run #12) |
+| **Wave 3** | **`3.2`** | Harden `NetworkReadGuard` and support mapped network drives (`DriveType.Network`) (`C-10`) | `NetworkReadGuard.cs`, `NetworkHardeningTests.cs` | `Closed` | `b4dce10` | `PASS` (`Goldfish 3.2`) |
+| **Wave 3** | **`3.3`** | Decouple `File.Exists` from SQLite write gate and UI thread; aggregate `HomePage` query; fix `"ep"` classification (`C-11`, `C-12`) | `ImportService.cs`, `ReconciliationService.cs`, `PlaybackProgressRepository.cs`, `MediaDiscoveryService.cs`, `HomePage.xaml.cs`, `CheckLibraryPage.xaml.cs` | `Closed` | `ef7d5f0` | `PASS` (`Goldfish 3.3`) |
+| **Wave 4** | **`4.1`** | Secure external player launching, pass `DurationSeconds`, and guard `MediaFileId <= 0` (`SEC-23`, `C-02` Core, `#2, #167, #168`) | `PlayerProcessLauncher.cs`, `PlaybackTrackingService.cs`, `PathPolicy.cs`, Tests | `Closed` | `23a102c` | `PASS` (`Goldfish Pro v2 + Neon`) |
+| **Wave 4** | **`4.2`** | Real-time GSMTC dynamic position tracking, dual MPC-HC web interface, wall-clock freeze, immediate flush on seek/pause (`[U10]`, `C-02`) | `WindowsMediaTimelineTracker.cs`, `MpcWebTimelineTracker.cs`, `PlayerProcessLauncher.cs`, `PlaybackTrackingService.cs`, Tests | `Closed` | `eece034` | `PASS` (CI Run `44901991875`) |
+| **Wave R** | **`R-1`** | Unify network path classifier with 15s TTL; eliminate synchronous `File.Exists` from UI thread (`ENG-NEW-01`, `ENG-NEW-02`) | `NetworkPathClassifier.cs`, `ApprovedRootsReader.cs`, `ReconciliationService.cs`, `NetworkReadGuard.cs`, `TVShowDetailsPage.xaml.cs` | `Closed` | `52cc0bd` | `PASS` (CI Run `44903244130`) |
+| **Wave R** | **`R-2`** | Optimize poster bitmap logical decode width (<90% memory) and convert reflection binding to compiled `x:Bind` (`ENG-NEW-03`, `ENG-NEW-06`) | `MatchMediaDialog.cs`, `TVShowDetailsPage.xaml.cs`, `MovieDetailsPage.xaml.cs`, `MovieDetailsPage.xaml` | `Closed` | `720188e` | `PASS` (CI Run `44903551954`) |
+| **Wave R** | **`R-3`** | Ephemeral port & cryptographically random password for VLC tracking; option injection terminator `-- `; reject script player extensions (`ENG-NEW-07`, `SEC-NEW-01`) | `VlcWebTimelineTracker.cs`, `PlayerProcessLauncher.cs`, `PlayerLaunchArgumentTests.cs` | `Closed` | `e908fbb` | `PASS` (CI Run `44903916082`) |
+| **Wave R** | **`R-4`** | Upgrade `ManualMovieSearch` to clean async contract `Task<ManualMovieSearchResult>`, close `C-05`, update test baseline to 1,364 (`ENG-NEW-04`) | `IUiActions.cs`, `ImportService.cs`, `ImportSelectedTests.cs`, `AGENTS.md` | `Closed` | `118eb00` / `65eb60f` | `PASS` (CI Run `44904661760`) |
+| **Wave 5** | `5.1` | Unify dedicated `ClientId` & harden `TraktDataClient` response error handling (`C-08`, `SEC-11`, `#290, #293`) | `TraktDataClient.cs`, `TraktDataClient.FavoritesAndCollection.cs`, `TraktDataClient.Watchlist.cs`, `TraktDataClient.Scrobble.cs` | `Pending` | — | — |
+| **Wave 5** | `5.2` | Cache valve hardening against malformed JSON, fix sync queues and show favorites pull/upload (`SEC-06..10`, `C-07.1..5`) | `TraktSyncService.cs`, `PersonalLibraryRepository.cs`, `UnifiedTraktListsTests.cs` | `Pending` | — | — |
+| **Wave 5** | `5.3` | Consolidate Trakt settings in `SettingsPage`, merge lists in `MyListsPage`, delete `TraktPage` tab and dead code (`C-07.6`, `SEC-26`, Decision 2) | `MainWindow.xaml`, `MainWindow.xaml.cs`, `SettingsPage.*`, `MyListsPage.*`, `MediaCardContextMenu.cs`, `MovieDetailsPage.xaml.cs` | `Pending` | — | — |
+| **Wave 6** | `6.1` | Sanitized diagnostics logger `AppDiagnosticsLog`, clean Category A error blocks, sanitize `ex.Message` (`SEC-17..18`, `SEC-24..25`, Groups 1, 3, 4) | `AppDiagnosticsLog.cs`, `App.xaml.cs`, Target UI pages and services | `Pending` | — | — |
+| **Wave 6** | `6.2` | Remove duplicate localization keys, complete localization coverage, harden `DatabaseMigrator` and `DiskPosterCache` (`C-14..16`, `SEC-12..13`) | `LocalizationService.cs`, `DatabaseMigrator.cs`, `DatabaseSafetyBackup.cs`, `DiskPosterCache.cs` | `Pending` | — | — |
+| **Wave 7** | `7.1` | Prune dead packages and files, wire `UndoOperation` and `RestoreFromBackup` buttons, extract shared UI helpers (`S-DEAD`, `S-ARCH`, Decision 3) | `TBDMovies.UI.csproj`, `OperationsLogPage.*`, `SettingsPage.*`, `WinUiClipboardService.cs`, Icon resources | `Pending` | — | — |
+| **Wave 7** | `7.2` | Re-integrate `TBDMovies.QaSeed` into solution, update to `Schema v23`, and update Inno Setup installer signing (`C-17`, `[L8]`) | `TBDMovies.slnx`, `Seed.cs`, `TBD-Movies.iss` | `Pending` | — | — |
 
 ---
 
-## 4. طريقة استخدام النسخة المرفوعة على Google Drive على جهازك (Windows)
+## 4. Local Execution & Verification Commands (Windows 10/11)
 
-### لاستنساخ أو تحديث مستودع `Git` الكامل محلياً من حزمة الـ Bundle:
-```powershell
-# أول مرة فقط (إنشاء مجلد مستودع Git كامل بالتاريخ والـ Commits):
-git clone .\TBD-Movies-Audit.bundle TBD-Movies-Audit
-
-# عند نزول أي دفعة جديدة (سحب أحدث الـ Commits من الملف المحدَّث):
-cd .\TBD-Movies-Audit
-git pull ..\TBD-Movies-Audit.bundle main
-```
-
-### لتشغيل البناء والاختبارات في بيئة معزولة آمنة:
+### To build and execute the automated test suite locally:
 ```powershell
 $env:TBDMOVIES_TEST_DATA_ROOT = "D:\TBDMovies_QA_Sandbox"
 dotnet build .\TBDMovies_WinUI3\TBDMovies.slnx -c Release
 dotnet test .\TBDMovies_WinUI3\TBDMovies.slnx -c Release --no-build
+```
+
+### To publish the Unpackaged desktop executable (`win-x64`):
+```powershell
+dotnet publish .\TBDMovies_WinUI3\src\TBDMovies.UI\TBDMovies.UI.csproj -c Release -r win-x64 --no-self-contained -o .\artifacts\publish\win-x64
 ```
