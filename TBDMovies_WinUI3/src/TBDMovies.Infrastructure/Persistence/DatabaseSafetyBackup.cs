@@ -14,6 +14,14 @@ public sealed class DatabaseBackupException : Exception
     public DatabaseBackupException(string message, Exception inner) : base(message, inner) { }
 }
 
+/// <summary>Summary facts for a verified, restorable database backup file on disk.</summary>
+public sealed record DatabaseBackupSummary(
+    string FilePath,
+    string FileName,
+    DateTimeOffset CreatedAt,
+    long SizeBytes,
+    int SchemaVersion);
+
 /// <summary>
 /// Automatic pre-operation safety backups for the local library database. Before a risky database
 /// mutation (a forward schema migration of an existing database, a destructive catalog clear) TBDMovies
@@ -41,6 +49,31 @@ public static class DatabaseSafetyBackup
         var directory = Path.GetDirectoryName(Path.GetFullPath(dataSource))
             ?? throw new DatabaseBackupException("Cannot resolve the database directory.");
         return Path.Combine(directory, "backups");
+    }
+
+    /// <summary>
+    /// Creates and verifies a snapshot of the database at <paramref name="connectionString" />.
+    /// Opens the source connection, resolves its schema version, and delegates to the main backup implementation.
+    /// </summary>
+    public static string CreateVerifiedBackup(string connectionString, string label = "manual", bool pruneOldBackups = true)
+    {
+        var target = new SqliteConnectionStringBuilder(connectionString).DataSource;
+        if (string.IsNullOrWhiteSpace(target) || !File.Exists(target))
+            throw new DatabaseBackupException("The database file does not exist.");
+
+        if (!VerifyBackup(target, out var version))
+            throw new DatabaseBackupException("The source database failed verification.");
+
+        var sourceConnStr = new SqliteConnectionStringBuilder
+        {
+            DataSource = target,
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false
+        }.ToString();
+
+        using var source = new SqliteConnection(sourceConnStr);
+        source.Open();
+        return CreateVerifiedBackup(source, connectionString, version, label, pruneOldBackups);
     }
 
     /// <summary>
@@ -218,6 +251,7 @@ public static class DatabaseSafetyBackup
         if (IsReparsePoint(target) || HasReparseSidecar(target))
             throw new DatabaseBackupException($"Refusing to restore over reparse-point target or sidecar '{target}'.");
 
+        using var gate = DatabaseWriteGate.Enter(connectionString);
         SqliteConnection.ClearAllPools();
 
         // Preserve the current database with a WAL-safe snapshot, not a raw main-file copy, so committed
@@ -308,6 +342,8 @@ public static class DatabaseSafetyBackup
 
             if (!IsRestorableDatabase(target, out _))
                 throw new DatabaseBackupException("The restored database failed verification.");
+
+            SqliteConnection.ClearAllPools();
         }
         catch
         {
@@ -319,6 +355,42 @@ public static class DatabaseSafetyBackup
             }
             throw;
         }
+    }
+
+    /// <summary>
+    /// Lists all verified, restorable database backups in the database's dedicated backup directory,
+    /// ordered newest first.
+    /// </summary>
+    public static IReadOnlyList<DatabaseBackupSummary> ListBackups(string connectionString)
+    {
+        var backupDir = BackupDirectoryFor(connectionString);
+        if (!Directory.Exists(backupDir))
+            return Array.Empty<DatabaseBackupSummary>();
+
+        var list = new List<DatabaseBackupSummary>();
+        var files = Directory.GetFiles(backupDir, "*.db");
+        foreach (var file in files)
+        {
+            try
+            {
+                if (IsRestorableDatabase(file, out var schemaVersion))
+                {
+                    var info = new FileInfo(file);
+                    list.Add(new DatabaseBackupSummary(
+                        info.FullName,
+                        info.Name,
+                        info.LastWriteTimeUtc,
+                        info.Length,
+                        schemaVersion));
+                }
+            }
+            catch
+            {
+                // Ignore inaccessible or locked files during listing
+            }
+        }
+
+        return list.OrderByDescending(b => b.CreatedAt).ToArray();
     }
 
     /// <summary>

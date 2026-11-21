@@ -525,6 +525,58 @@ public sealed class WiredFlowTests : IDisposable
         return path;
     }
 
+    [Fact]
+    public void Undo_operation_prepare_discard_and_confirm_lifecycle()
+    {
+        var source = WriteMedia("original", "fight_club.mkv");
+        var registered = NewImportService().RegisterMovieImport(Command(source));
+
+        var destinationRoot = Path.Combine(_workspace, "organized");
+        Directory.CreateDirectory(destinationRoot);
+        using var store = new FileOperationStore(_connectionString);
+        using var coordinator = new FileOperationCoordinator(store);
+        var organization = new OrganizationService(MediaFiles(), coordinator);
+        var preview = organization.PrepareOrganization(registered.MediaFile.Id, destinationRoot, "Fight Club (1999).mkv");
+        var organizeResult = organization.ConfirmOrganization(preview.PreviewId);
+
+        Assert.Equal(TBDMovies.Domain.Core.Operations.OperationState.Committed, organizeResult.Record.State);
+        Assert.False(File.Exists(source));
+        Assert.True(File.Exists(preview.Plan.Destination));
+
+        var historyService = new OperationHistoryService(store, coordinator, MediaFiles(), Movies());
+
+        // 1. Prepare and Discard
+        var undoPreview1 = historyService.PrepareUndo(organizeResult.Record.Id);
+        Assert.NotNull(undoPreview1);
+        Assert.Equal(preview.Plan.Destination, undoPreview1.ReversePlan.Source);
+        Assert.Equal(source, undoPreview1.ReversePlan.Destination);
+
+        historyService.DiscardUndoPreview(undoPreview1.PreviewId);
+        Assert.Throws<KeyNotFoundException>(() => historyService.ConfirmUndo(undoPreview1.PreviewId));
+
+        // Files still in organized state
+        Assert.False(File.Exists(source));
+        Assert.True(File.Exists(preview.Plan.Destination));
+
+        // 2. Prepare and Confirm
+        var undoPreview2 = historyService.PrepareUndo(organizeResult.Record.Id);
+        var undoResult = historyService.ConfirmUndo(undoPreview2.PreviewId);
+
+        Assert.NotNull(undoResult.Record);
+        Assert.Equal(TBDMovies.Domain.Core.Operations.OperationState.Committed, undoResult.Record.State);
+        Assert.Equal(organizeResult.Record.Id, undoResult.Record.ReversesOperationId);
+
+        // Files reversed back to source
+        Assert.True(File.Exists(source));
+        Assert.False(File.Exists(preview.Plan.Destination));
+
+        var media = MediaFiles().GetById(registered.MediaFile.Id)!;
+        Assert.Equal(source, media.CurrentPath);
+
+        // Cannot undo an already reversed operation
+        Assert.Throws<InvalidOperationException>(() => historyService.PrepareUndo(organizeResult.Record.Id));
+    }
+
     private static ConfirmMovieImportCommand Command(string path) => new(
         path,
         new FileInfo(path).Length,

@@ -124,6 +124,7 @@
                                             <ColumnDefinition Width="24" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
 
                                         <Grid
@@ -174,6 +175,23 @@
                                             VerticalAlignment="Center"
                                             Style="{StaticResource TertiaryCaptionTextStyle}"
                                             Text="{x:Bind Time}" />
+
+                                        <Button
+                                            Grid.Column="3"
+                                            x:Name="UndoButton"
+                                            Click="UndoButton_Click"
+                                            Tag="{x:Bind Id}"
+                                            Visibility="{x:Bind UndoButtonVisibility}"
+                                            IsEnabled="{x:Bind CanUndo}"
+                                            ToolTipService.ToolTip="{x:Bind UndoToolTip}"
+                                            Style="{StaticResource SubtleControlButtonStyle}"
+                                            VerticalAlignment="Center"
+                                            Padding="6">
+                                            <FontIcon
+                                                FontFamily="{StaticResource SymbolThemeFontFamily}"
+                                                FontSize="14"
+                                                Glyph="&#xE7A7;" />
+                                        </Button>
                                     </Grid>
                                 </Border>
                             </DataTemplate>

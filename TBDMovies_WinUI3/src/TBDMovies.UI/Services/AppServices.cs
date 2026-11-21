@@ -465,11 +465,23 @@ internal static class AppServices
     /// a failed attempt can never leave a partial stack behind.
     /// </para>
     /// </summary>
-    private static string LibraryConnectionString() =>
+    public static string LibraryConnectionString() =>
         new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
         {
             DataSource = Path.Combine(DataFolder, "library.db")
         }.ToString();
+
+    public static string CreateDatabaseBackup(string label = "manual") =>
+        TBDMovies.Infrastructure.Persistence.DatabaseSafetyBackup.CreateVerifiedBackup(LibraryConnectionString(), label);
+
+    public static void RestoreDatabaseBackup(string backupPath)
+    {
+        TBDMovies.Infrastructure.Persistence.DatabaseSafetyBackup.RestoreFromBackup(backupPath, LibraryConnectionString());
+        _revisionTracker?.IncrementAll();
+    }
+
+    public static IReadOnlyList<TBDMovies.Infrastructure.Persistence.DatabaseBackupSummary> ListDatabaseBackups() =>
+        TBDMovies.Infrastructure.Persistence.DatabaseSafetyBackup.ListBackups(LibraryConnectionString());
 
     /// <summary>
     /// Claims process-wide ownership of the library before any window is shown. Returns false when

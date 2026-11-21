@@ -170,4 +170,33 @@ public sealed class PostHandoffPresentationTests
         Assert.Contains("EnsurePlaybackTrackingSubscribed();", movieLoadedBlock, StringComparison.Ordinal);
         Assert.DoesNotContain("PlaybackTracking.PlaybackEnded +=", movieLoadedBlock, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void OperationsLogPage_Enforces_Undo_Double_Click_Guard_And_Preview_Discard_On_Non_Primary()
+    {
+        var code = File.ReadAllText(Path.Combine(UiRoot, "Views", "OperationsLogPage.xaml.cs"));
+        Assert.Contains("button.IsEnabled = false;", code);
+        Assert.Contains("AppServices.History.DiscardUndoPreview(preview.PreviewId);", code);
+        Assert.Contains("LibraryDataChanged?.Invoke(this, EventArgs.Empty);", code);
+        Assert.Contains("button.IsEnabled = true;", code);
+
+        var xaml = File.ReadAllText(Path.Combine(UiRoot, "Views", "OperationsLogPage.xaml"));
+        Assert.Contains("x:Name=\"UndoButton\"", xaml);
+        Assert.Contains("Click=\"UndoButton_Click\"", xaml);
+    }
+
+    [Fact]
+    public void SettingsPage_Wires_CreateBackup_And_RestoreFromBackup_With_Full_UI_Refresh()
+    {
+        var code = File.ReadAllText(Path.Combine(UiRoot, "Views", "SettingsPage.xaml.cs"));
+        Assert.Contains("AppServices.CreateDatabaseBackup()", code);
+        Assert.Contains("AppServices.RestoreDatabaseBackup(backupPath)", code);
+        Assert.Contains("AppServices.ListDatabaseBackups()", code);
+        Assert.Contains("LibraryDataChanged?.Invoke(this, EventArgs.Empty);", code);
+
+        var xaml = File.ReadAllText(Path.Combine(UiRoot, "Views", "SettingsPage.xaml"));
+        Assert.Contains("x:Name=\"CreateBackupButton\"", xaml);
+        Assert.Contains("x:Name=\"RestoreBackupButton\"", xaml);
+        Assert.Contains("x:Name=\"AvailableBackupsFlyout\"", xaml);
+    }
 }

@@ -158,10 +158,3 @@ for ($i = 0; $i -lt $count; $i++) {
 foreach ($png in $pngs) { $bw.Write($png) }
 $bw.Flush(); $bw.Close(); $fs.Close()
 Write-Host ("Wrote {0} ({1} frames)" -f $OutPath, $count)
-
-# Also ensure packaging/TBD-Movies.ico is kept in sync
-$pkgIconPath = "$PSScriptRoot/TBD-Movies.ico"
-if ($OutPath -ne $pkgIconPath) {
-    Copy-Item -Path $targetFile -Destination $pkgIconPath -Force
-    Write-Host ("Synced to {0}" -f $pkgIconPath)
-}

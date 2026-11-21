@@ -42,8 +42,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.11" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.260224002" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" />
   </ItemGroup>
@@ -52,11 +50,5 @@
     <ProjectReference Include="..\TBDMovies.Application\TBDMovies.Application.csproj" />
     <ProjectReference Include="..\TBDMovies.Infrastructure\TBDMovies.Infrastructure.csproj" />
     <ProjectReference Include="..\TBDMovies.FileSystem\TBDMovies.FileSystem.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Content Include="Assets\MovieDetails\*.svg">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
 </Project>

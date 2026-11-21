@@ -160,6 +160,14 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         HistoryHelpText.Text = LocalizationService.Text("OperationsLogHelp");
         ViewLogButton.Content = LocalizationService.Text("ViewOperationsLog");
 
+        DatabaseBackupsHeadingText.Text = LocalizationService.Text("DatabaseBackups");
+        CreateBackupLabelText.Text = LocalizationService.Text("CreateBackup");
+        CreateBackupHelpText.Text = LocalizationService.Text("CreateBackupHelp");
+        CreateBackupButtonText.Text = LocalizationService.Text("CreateBackupButton");
+        RestoreBackupLabelText.Text = LocalizationService.Text("RestoreBackup");
+        RestoreBackupHelpText.Text = LocalizationService.Text("RestoreBackupHelp");
+        RestoreBackupButtonText.Text = LocalizationService.Text("RestoreBackupButton");
+
         DangerHeadingText.Text = LocalizationService.Text("DangerZone");
         ClearHistoryLabelText.Text = LocalizationService.Text("ClearHistory");
         ClearHistoryHelpText.Text = LocalizationService.Text("ClearHistoryHelp");
@@ -743,6 +751,130 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         catch (Exception error)
         {
             await ShowMessageAsync(LocalizationService.Text("Failed"), MetadataErrorText.For(error));
+        }
+    }
+
+    private async void CreateBackupButton_Click(object sender, RoutedEventArgs e)
+    {
+        CreateBackupButton.IsEnabled = false;
+        try
+        {
+            var backupPath = await Task.Run(() => AppServices.CreateDatabaseBackup());
+            var fileName = Path.GetFileName(backupPath);
+            await ShowMessageAsync(
+                LocalizationService.Text("CreateBackup"),
+                LocalizationService.Format("BackupCreatedFormat", fileName));
+        }
+        catch (Exception error)
+        {
+            await ShowMessageAsync(LocalizationService.Text("Failed"), MetadataErrorText.For(error));
+        }
+        finally
+        {
+            CreateBackupButton.IsEnabled = true;
+        }
+    }
+
+    private void AvailableBackupsFlyout_Opening(object sender, object e)
+    {
+        AvailableBackupsFlyout.Items.Clear();
+
+        IReadOnlyList<TBDMovies.Infrastructure.Persistence.DatabaseBackupSummary> backups;
+        try
+        {
+            backups = AppServices.ListDatabaseBackups();
+        }
+        catch
+        {
+            backups = Array.Empty<TBDMovies.Infrastructure.Persistence.DatabaseBackupSummary>();
+        }
+
+        if (backups.Count > 0)
+        {
+            foreach (var backup in backups)
+            {
+                var localTime = backup.CreatedAt.ToLocalTime();
+                var sizeMb = (backup.SizeBytes / 1024.0 / 1024.0).ToString("F1", CultureInfo.InvariantCulture);
+                var label = $"{backup.FileName} ({LocalizationService.Digits(localTime.ToString("yyyy-MM-dd HH:mm", LocalizationService.Culture))}, {sizeMb} MB)";
+                var item = new MenuFlyoutItem
+                {
+                    Text = label,
+                    Icon = new FontIcon { Glyph = "\uE74E", FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["SymbolThemeFontFamily"] }
+                };
+                var path = backup.FilePath;
+                item.Click += async (_, _) => await ExecuteRestoreAsync(path);
+                AvailableBackupsFlyout.Items.Add(item);
+            }
+
+            AvailableBackupsFlyout.Items.Add(new MenuFlyoutSeparator());
+        }
+        else
+        {
+            var emptyItem = new MenuFlyoutItem
+            {
+                Text = LocalizationService.Text("NoBackupsFound"),
+                IsEnabled = false
+            };
+            AvailableBackupsFlyout.Items.Add(emptyItem);
+            AvailableBackupsFlyout.Items.Add(new MenuFlyoutSeparator());
+        }
+
+        var browseItem = new MenuFlyoutItem
+        {
+            Text = LocalizationService.Text("BrowseBackupFile"),
+            Icon = new FontIcon { Glyph = "\uE838", FontFamily = (Microsoft.UI.Xaml.Media.FontFamily)Application.Current.Resources["SymbolThemeFontFamily"] }
+        };
+        browseItem.Click += async (_, _) => await BrowseAndRestoreAsync();
+        AvailableBackupsFlyout.Items.Add(browseItem);
+    }
+
+    private async Task BrowseAndRestoreAsync()
+    {
+        var picker = new Windows.Storage.Pickers.FileOpenPicker();
+        picker.FileTypeFilter.Add(".db");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, MainWindow.WindowHandle);
+        var file = await picker.PickSingleFileAsync();
+        if (file is not null)
+        {
+            await ExecuteRestoreAsync(file.Path);
+        }
+    }
+
+    private async Task ExecuteRestoreAsync(string backupPath)
+    {
+        if (!TBDMovies.Infrastructure.Persistence.DatabaseSafetyBackup.IsRestorableDatabase(backupPath, out _))
+        {
+            await ShowMessageAsync(
+                LocalizationService.Text("Failed"),
+                LocalizationService.Text("InvalidBackupFile"));
+            return;
+        }
+
+        if (!await ConfirmAsync("RestoreBackupConfirmTitle", "RestoreBackupConfirmHelp"))
+        {
+            return;
+        }
+
+        RestoreBackupButton.IsEnabled = false;
+        try
+        {
+            await Task.Run(() => AppServices.RestoreDatabaseBackup(backupPath));
+            LibraryDataChanged?.Invoke(this, EventArgs.Empty);
+            RefreshFolders();
+            RefreshTmdbStatus();
+            RefreshTraktStatus();
+            RefreshSubDlStatus();
+            await ShowMessageAsync(
+                LocalizationService.Text("RestoreBackup"),
+                LocalizationService.Text("BackupRestoreSuccess"));
+        }
+        catch (Exception error)
+        {
+            await ShowMessageAsync(LocalizationService.Text("Failed"), MetadataErrorText.For(error));
+        }
+        finally
+        {
+            RestoreBackupButton.IsEnabled = true;
         }
     }
 

@@ -629,6 +629,33 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
         }
     }
 
+    [Fact]
+    public void ListBackups_ReturnsOnlyVerifiedBackupsSortedNewestFirst()
+    {
+        new DatabaseMigrator(_connectionString).Migrate();
+        var backup1 = DatabaseSafetyBackup.CreateVerifiedBackup(_connectionString);
+        var backup2 = DatabaseSafetyBackup.CreateVerifiedBackup(_connectionString);
+
+        // Put a fake non-db file in the backup directory
+        var backupDir = DatabaseSafetyBackup.BackupDirectoryFor(_connectionString);
+        File.WriteAllText(Path.Combine(backupDir, "corrupt.db"), "not a sqlite database");
+        File.WriteAllText(Path.Combine(backupDir, "ignore.txt"), "some text");
+
+        var backups = DatabaseSafetyBackup.ListBackups(_connectionString);
+
+        Assert.NotNull(backups);
+        Assert.True(backups.Count >= 2);
+        Assert.Contains(backups, b => b.FilePath == backup1);
+        Assert.Contains(backups, b => b.FilePath == backup2);
+        Assert.DoesNotContain(backups, b => b.FileName == "corrupt.db");
+        Assert.DoesNotContain(backups, b => b.FileName == "ignore.txt");
+
+        for (var i = 1; i < backups.Count; i++)
+        {
+            Assert.True(backups[i - 1].CreatedAt >= backups[i].CreatedAt);
+        }
+    }
+
     private static int CountMovies(string dbPath)
     {
         var connString = new SqliteConnectionStringBuilder

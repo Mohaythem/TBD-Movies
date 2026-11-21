@@ -342,6 +342,19 @@ public sealed partial class MainWindow : Window
         {
             _operationsLogPage = new OperationsLogPage();
             _operationsLogPage.BackRequested += (_, _) => Navigate("settings");
+            _operationsLogPage.LibraryDataChanged += (_, _) =>
+            {
+                _libraryPage?.InvalidateCatalog();
+                if (ReferenceEquals(_currentPage, _libraryPage))
+                {
+                    _libraryPage?.Activate();
+                }
+                _homePage.Activate();
+                if (ReferenceEquals(_currentPage, _myListsPage))
+                {
+                    _myListsPage?.Activate();
+                }
+            };
             HostLazyPage(_operationsLogPage);
         }
         return _operationsLogPage;

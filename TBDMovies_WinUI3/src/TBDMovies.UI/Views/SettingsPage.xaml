@@ -511,6 +511,76 @@
                     </Border>
                 </StackPanel>
 
+                <!--  Database & Safety Backups  -->
+                <StackPanel Spacing="12">
+                    <TextBlock x:Name="DatabaseBackupsHeadingText" Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <StackPanel Spacing="16">
+                            <!-- Create verified backup row -->
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock x:Name="CreateBackupLabelText" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock
+                                        x:Name="CreateBackupHelpText"
+                                        Style="{StaticResource SecondaryCaptionTextStyle}"
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
+                                <Button
+                                    x:Name="CreateBackupButton"
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Click="CreateBackupButton_Click"
+                                    Style="{StaticResource SubtleControlButtonStyle}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon
+                                            FontFamily="{StaticResource SymbolThemeFontFamily}"
+                                            FontSize="14"
+                                            Glyph="&#xE74E;" />
+                                        <TextBlock x:Name="CreateBackupButtonText" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+
+                            <MenuFlyoutSeparator />
+
+                            <!-- Restore backup row -->
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center" Spacing="2">
+                                    <TextBlock x:Name="RestoreBackupLabelText" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock
+                                        x:Name="RestoreBackupHelpText"
+                                        Style="{StaticResource SecondaryCaptionTextStyle}"
+                                        TextWrapping="Wrap" />
+                                </StackPanel>
+                                <Button
+                                    x:Name="RestoreBackupButton"
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Style="{StaticResource SubtleControlButtonStyle}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon
+                                            FontFamily="{StaticResource SymbolThemeFontFamily}"
+                                            FontSize="14"
+                                            Glyph="&#xE777;" />
+                                        <TextBlock x:Name="RestoreBackupButtonText" />
+                                    </StackPanel>
+                                    <Button.Flyout>
+                                        <MenuFlyout x:Name="AvailableBackupsFlyout" Opening="AvailableBackupsFlyout_Opening" />
+                                    </Button.Flyout>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
                 <!--  Danger zone  -->
                 <StackPanel Spacing="12">
                     <TextBlock

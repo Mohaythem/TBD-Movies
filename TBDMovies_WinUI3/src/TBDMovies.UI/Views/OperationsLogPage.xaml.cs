@@ -36,6 +36,7 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
     }
 
     public event EventHandler? BackRequested;
+    public event EventHandler? LibraryDataChanged;
 
     public void Activate()
     {
@@ -191,13 +192,75 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
             ? (item.SourcePath ?? string.Empty) + " -> " + destination
             : item.SourcePath ?? string.Empty;
 
+        bool canUndo = item.State == OperationState.Committed
+            && item.MediaFileId.HasValue
+            && string.IsNullOrEmpty(item.ReversesOperationId);
+
         return new OperationLogRecord(
+            item.Id,
             LocalizationService.Digits(local.ToString("yyyy-MM-dd HH:mm:ss", LocalizationService.Culture)),
             LocalizationService.Digits(local.ToString("HH:mm", LocalizationService.Culture)),
             LocalizationService.Text(item.Type == OperationType.Move ? "OperationMove" : "OperationRename"),
             string.IsNullOrWhiteSpace(item.MovieTitle) ? Path.GetFileName(item.SourcePath ?? string.Empty) : item.MovieTitle,
             status,
-            detail);
+            detail,
+            canUndo);
+    }
+
+    private async void UndoButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.Tag is not string operationId || string.IsNullOrWhiteSpace(operationId))
+        {
+            return;
+        }
+
+        button.IsEnabled = false;
+        UndoPreview? preview = null;
+        try
+        {
+            preview = AppServices.History.PrepareUndo(operationId);
+            var dialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                FlowDirection = LocalizationService.FlowDirection,
+                RequestedTheme = ThemeService.ElementTheme,
+                Title = LocalizationService.Text("UndoOperationTitle"),
+                Content = LocalizationService.Format(
+                    "UndoOperationConfirmMessage",
+                    preview.ReversePlan.Source,
+                    preview.ReversePlan.Destination),
+                PrimaryButtonText = LocalizationService.Text("Confirm"),
+                CloseButtonText = LocalizationService.Text("Cancel"),
+                DefaultButton = ContentDialogButton.Primary
+            };
+
+            var dialogResult = await ContentDialogCoordinator.ShowAsync(dialog);
+            if (dialogResult == ContentDialogResult.Primary)
+            {
+                await Task.Run(() => AppServices.History.ConfirmUndo(preview.PreviewId));
+                preview = null;
+                LibraryDataChanged?.Invoke(this, EventArgs.Empty);
+                ShowInfo(LocalizationService.Text("UndoSuccess"), InfoBarSeverity.Success);
+                Refresh();
+            }
+            else
+            {
+                AppServices.History.DiscardUndoPreview(preview.PreviewId);
+                preview = null;
+            }
+        }
+        catch (Exception error)
+        {
+            if (preview is not null)
+            {
+                try { AppServices.History.DiscardUndoPreview(preview.PreviewId); } catch { }
+            }
+            ShowInfo(LocalizationService.Format("UndoFailedFormat", error.Message), InfoBarSeverity.Error);
+        }
+        finally
+        {
+            button.IsEnabled = true;
+        }
     }
 
     private void StatusTab_Checked(object sender, RoutedEventArgs e)

@@ -401,14 +401,20 @@ public sealed record LibraryIssueDisplayRecord(
 }
 
 public sealed record OperationLogRecord(
+    string Id,
     string Timestamp,
     string Time,
     string Operation,
     string Target,
     string Status,
-    string Detail)
+    string Detail,
+    bool CanUndo = false)
 {
     public bool IsSuccess => string.Equals(Status, "success", StringComparison.OrdinalIgnoreCase);
 
     public bool NeedsAttention => !IsSuccess;
+
+    public Visibility UndoButtonVisibility => CanUndo ? Visibility.Visible : Visibility.Collapsed;
+
+    public string UndoToolTip => LocalizationService.Text("UndoOperation");
 }
