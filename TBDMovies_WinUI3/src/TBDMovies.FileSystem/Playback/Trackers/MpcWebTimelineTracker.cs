@@ -79,6 +79,8 @@ public sealed partial class MpcWebTimelineTracker : IPlayerTimelineTracker
     public static int ConfigureWebInterface(string exePath)
     {
         var targetPort = 13579;
+
+        // 1. Check and configure INI files (isolated in try-catch to prevent Program Files permission errors from stopping Registry write)
         try
         {
             var exeDir = Path.GetDirectoryName(exePath);
@@ -97,8 +99,19 @@ public sealed partial class MpcWebTimelineTracker : IPlayerTimelineTracker
                             targetPort = parsedPort;
                         }
 
-                        // Ensure WebServer=1 and WebServerLocalhostOnly=1
                         var updated = content;
+                        // Ensure EnableWebServer=1
+                        if (!Regex.IsMatch(updated, @"EnableWebServer\s*=\s*1", RegexOptions.IgnoreCase))
+                        {
+                            if (Regex.IsMatch(updated, @"EnableWebServer\s*=\s*\d+", RegexOptions.IgnoreCase))
+                                updated = Regex.Replace(updated, @"EnableWebServer\s*=\s*\d+", "EnableWebServer=1", RegexOptions.IgnoreCase);
+                            else if (Regex.IsMatch(updated, @"\[Settings\]", RegexOptions.IgnoreCase))
+                                updated = Regex.Replace(updated, @"\[Settings\]", "[Settings]\nEnableWebServer=1", RegexOptions.IgnoreCase);
+                            else
+                                updated += "\n[Settings]\nEnableWebServer=1";
+                        }
+
+                        // Ensure WebServer=1 (compatibility with older/custom builds)
                         if (!Regex.IsMatch(updated, @"WebServer\s*=\s*1", RegexOptions.IgnoreCase))
                         {
                             if (Regex.IsMatch(updated, @"WebServer\s*=\s*\d+", RegexOptions.IgnoreCase))
@@ -106,6 +119,8 @@ public sealed partial class MpcWebTimelineTracker : IPlayerTimelineTracker
                             else
                                 updated += "\nWebServer=1";
                         }
+
+                        // Ensure WebServerLocalhostOnly=1
                         if (!Regex.IsMatch(updated, @"WebServerLocalhostOnly\s*=\s*1", RegexOptions.IgnoreCase))
                         {
                             if (Regex.IsMatch(updated, @"WebServerLocalhostOnly\s*=\s*\d+", RegexOptions.IgnoreCase))
@@ -113,6 +128,8 @@ public sealed partial class MpcWebTimelineTracker : IPlayerTimelineTracker
                             else
                                 updated += "\nWebServerLocalhostOnly=1";
                         }
+
+                        // Ensure WebServerPort
                         if (!Regex.IsMatch(updated, @"WebServerPort\s*=", RegexOptions.IgnoreCase))
                         {
                             updated += $"\nWebServerPort={targetPort}";
@@ -122,12 +139,19 @@ public sealed partial class MpcWebTimelineTracker : IPlayerTimelineTracker
                         {
                             File.WriteAllText(iniPath, updated);
                         }
-                        return targetPort;
+                        break;
                     }
                 }
             }
+        }
+        catch (Exception ex)
+        {
+            Trace.WriteLine($"[MpcWebTimelineTracker] INI file configuration skipped (permissions/path): {ex.Message}");
+        }
 
-            // Fallback to Windows Registry (HKCU)
+        // 2. Windows Registry Configuration (HKCU - user writable without admin rights)
+        try
+        {
             var regKeyPath = exePath.Contains("mpc-be", StringComparison.OrdinalIgnoreCase)
                 ? @"Software\MPC-BE\Settings"
                 : @"Software\MPC-HC\MPC-HC\Settings";
@@ -144,18 +168,36 @@ public sealed partial class MpcWebTimelineTracker : IPlayerTimelineTracker
                 {
                     targetPort = sp;
                 }
-                else
+
+                // Check-before-write to avoid redundant disk writes and file lock contention
+                var curEnable = key.GetValue("EnableWebServer");
+                if (curEnable is not int ce || ce != 1)
+                {
+                    key.SetValue("EnableWebServer", 1, RegistryValueKind.DWord);
+                }
+
+                var curWeb = key.GetValue("WebServer");
+                if (curWeb is not int cw || cw != 1)
+                {
+                    key.SetValue("WebServer", 1, RegistryValueKind.DWord);
+                }
+
+                var curLocal = key.GetValue("WebServerLocalhostOnly");
+                if (curLocal is not int cl || cl != 1)
+                {
+                    key.SetValue("WebServerLocalhostOnly", 1, RegistryValueKind.DWord);
+                }
+
+                var curPort = key.GetValue("WebServerPort");
+                if (curPort is not int cp || cp != targetPort)
                 {
                     key.SetValue("WebServerPort", targetPort, RegistryValueKind.DWord);
                 }
-
-                key.SetValue("WebServer", 1, RegistryValueKind.DWord);
-                key.SetValue("WebServerLocalhostOnly", 1, RegistryValueKind.DWord);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Non-fatal; if registry write fails (permissions), tracker falls back to elapsed time
+            Trace.WriteLine($"[MpcWebTimelineTracker] Registry configuration error: {ex.Message}");
         }
 
         return targetPort;

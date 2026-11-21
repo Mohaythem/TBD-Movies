@@ -1,15 +1,36 @@
 # TBD Movies — Active Progress & Status Checkpoint
 
 ## Current Goal
-- **Active Track / Current Priority**: Wave 4 (Playback & Media Player Launch Architecture). Batch 4.1 completed and verified with **1,335 / 1,335** tests. Next priority: Batch 4.2 (`[U10]` live timeline trackers GSMTC / MPC-HC / VLC / mpv).
+- **Active Track / Current Priority**: Wave 4 completed and verified with **1,343 / 1,343** tests (Batches 4.1 & 4.2). Next priority: Wave 5 (`[U9]` Trakt custom lists & local lists unification).
 - **Batches Approved & Closed**: 
   - Wave 1 (Batches 1.1, 1.2, 1.3): `SEC-19`, `C-06`, `SEC-20`, `C-03`, `SEC-01..05`, `SEC-14..15`, `SEC-21..22`, `C-13`, `[L6]` (`1,295` tests).
   - Wave 2 (Batches 2.1, 2.2, 2.3): `C-01`, `[P3]`, `C-04`, `[U8]`, `C-05` (`1,295` tests).
   - Wave 3 (Batches 3.1, 3.2, 3.3): `SEC-16`, `C-09`, `C-10`, `C-11`, `C-12` (`1,328` tests).
-  - Wave 4 (Batch 4.1): `SEC-23`, `C-02` Primary (`1,335` tests).
-- **Baseline Test Suite**: **`1,335 / 1,335`** tests passing in Release (`846 [Fact]` + `101 [Theory]` with `489 [InlineData]`).
+  - Wave 4 (Batches 4.1, 4.2): `SEC-23`, `C-02`, `[U10]` (`1,343` tests).
+- **Baseline Test Suite**: **`1,343 / 1,343`** tests passing in Release.
 
 ## Completed Work
+49. **Live Player Timeline Tracking Engine, GSMTC Dynamic Formula & Flush Architecture [Batch 4.2 — [U10], C-02]**:
+    - **Live GSMTC Position & Session Filtering (`WindowsMediaTimelineTracker.cs`)**:
+        - Applied dynamic live formula `Position + (UtcNow - LastUpdatedTime) * Rate` with sanity guards against uninitialized/future timestamps and `EndTime` clamping.
+        - Added dual-pass session filtering prioritizing video apps (`Microsoft.Media.Player`, `ZuneVideo`, `wmp`, `wmplayer`) and excluding web browsers and audio apps (`chrome`, `msedge`, `spotify`, `discord`).
+        - Wrapped each session query in per-session `try-catch` to prevent COM `RPC_E_DISCONNECTED` crashes on dead background sessions.
+    - **MPC-HC Web Interface Hardening (`MpcWebTimelineTracker.cs`)**:
+        - Isolated INI file writes in independent `try-catch` so permission errors in `C:\Program Files` never abort registry writes in `HKCU`.
+        - Enforced dual configuration of both `EnableWebServer = 1` and `WebServer = 1` under `[Settings]` and `HKCU\Software\MPC-HC\MPC-HC\Settings`.
+        - Added check-before-write to eliminate redundant disk writes and file lock contention (`FileShare`) with MPC-HC.
+    - **Tracking Loop & Flush Architecture (`PlayerProcessLauncher.cs`)**:
+        - Eliminated premature Shell mode exit by introducing a 4-consecutive-null tolerance window before declaring player closed.
+        - Eliminated blind wall-clock overwrite on null poll snapshots, keeping position frozen at last confirmed player checkpoint.
+        - Removed legacy line 327 `finalPos <= startPosition && elapsed >= 3s` overwrite, protecting pause and reverse seeks.
+        - Unified progress persistence through `FlushProgressAsync`, immediately flushing on pause transitions and seek jumps (`>= 5s`) while resetting `lastSavedTime` to prevent duplicate periodic saves.
+        - Changed `finalPos >= 3.0 || totalElapsed >= 3.0` to strictly `finalPos >= 3.0`.
+    - **Application Layer Protection (`PlaybackTrackingService.cs`)**:
+        - Removed `isPaused` guard from `onProgressTick` so immediate flushes on pause persist to SQLite.
+        - Added strict threshold `currentPosition >= 3.0` in `onProgressTick` and `finalPosition >= 3.0` in `HandlePlaybackExitAsync`.
+        - Cleaned up stale progress and suppressed Trakt pause scrobbles for exits under 3 seconds.
+    - **Unit Tests Added**:
+        - 8 new comprehensive unit tests in `PlaybackTrackingTests.cs`, bringing total test count to **1,343 / 1,343** passing tests.
 48. **External Player Launch Hardening & Duration Telemetry [Batch 4.1 — C-02, SEC-23]**:
     - **Contract Upgrade (`IPlayerProcessLauncher`)**:
         - Updated `onPlaybackEnded` to receive `(double finalPos, double? discoveredDuration)` and `onProgressTick` to receive `(double currentPos, double? discoveredDuration, bool isPaused)`.

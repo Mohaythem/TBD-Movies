@@ -32,7 +32,7 @@ public sealed class MpvPipeTimelineTracker : IPlayerTimelineTracker
             _pipe = new NamedPipeClientStream(".", _pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
 
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            cts.CancelAfter(TimeSpan.FromMilliseconds(500));
+            cts.CancelAfter(TimeSpan.FromMilliseconds(1500));
 
             await _pipe.ConnectAsync(cts.Token).ConfigureAwait(false);
             _reader = new StreamReader(_pipe, Encoding.UTF8);

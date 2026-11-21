@@ -638,6 +638,71 @@ public sealed class PlaybackTrackingTests
     }
 
     [Fact]
+    public async Task PlaybackTrackingService_WhenPlaybackExitsUnder3Seconds_CleansUpStaleProgress_AndDoesNotSendScrobble()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_under_3s_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+
+            using (var conn = new SqliteConnection(connStr))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (80, 'Quick Exit Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (800, 80, 'C:\quick.mkv', 'c:\quick.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
+                    INSERT INTO playback_progress (media_file_id, position_seconds, total_duration_seconds, last_watched_at) VALUES (800, 200, 1000, datetime('now'));
+                ";
+                cmd.ExecuteNonQuery();
+            }
+
+            var progressRepo = new PlaybackProgressRepository(connStr);
+            var mockLauncher = new FakePlayerLauncher
+            {
+                SimulatedDiscoveredDuration = 1000,
+                SimulatedExitPosition = 1.5 // Under 3.0 seconds!
+            };
+            var mockTrakt = new FakeTraktClient();
+
+            var service = new PlaybackTrackingService(
+                progressRepo,
+                mockLauncher,
+                traktDataClient: mockTrakt,
+                traktAuthService: new FakeTraktAuthService(),
+                traktClientId: "dummy_client_id");
+
+            var target = new PlaybackMediaTarget(
+                MediaFileId: 800,
+                FilePath: @"C:\quick.mkv",
+                TotalDurationSeconds: 1000,
+                IsMovie: true,
+                MovieId: 80,
+                MovieTitle: "Quick Exit Movie");
+
+            var endedFired = false;
+            service.PlaybackEnded += (_, id) => endedFired = (id == 800);
+
+            await service.StartPlaybackAsync(target, resume: false);
+
+            // Stale progress must be deleted
+            Assert.Null(progressRepo.GetByMediaFileId(800));
+
+            // No pause or stop scrobble should be sent for under 3s exit
+            Assert.DoesNotContain(mockTrakt.Calls, c => c.Action is "pause" or "stop");
+
+            // PlaybackEnded must still be invoked to refresh UI
+            Assert.True(endedFired);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
+        }
+    }
+
+    [Fact]
     public void PlayerProcessLauncher_CustomArgs_SafelyQuotesAndEscapesMediaPath_WithoutDoubleQuoting()
     {
         // Case 1: Template already has quotes around {path} -> exactly one pair of quotes in output
@@ -679,4 +744,171 @@ public sealed class PlaybackTrackingTests
         Assert.True(PathPolicy.HasAlternateDataStream(@"\\?\C:\Movies\movie.mkv:stream.ps1"));
         Assert.True(PathPolicy.HasAlternateDataStream(@"\\server\share\movie.mkv:ads"));
     }
+
+    [Fact]
+    public void WindowsMediaTimelineTracker_CalculateLivePosition_AddsElapsedTimesRate_WhenPlaying()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var lastUpdated = now.AddSeconds(-10);
+
+        // 100s base + (10s elapsed * 1.5 rate) = 115s
+        var pos = WindowsMediaTimelineTracker.CalculateLivePosition(
+            basePositionSeconds: 100,
+            lastUpdatedTime: lastUpdated,
+            playbackRate: 1.5,
+            isPlaying: true,
+            durationSeconds: 500,
+            utcNow: now);
+
+        Assert.Equal(115.0, pos, 2);
+    }
+
+    [Fact]
+    public void WindowsMediaTimelineTracker_CalculateLivePosition_ReturnsStaticPosition_WhenPaused()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var lastUpdated = now.AddSeconds(-10);
+
+        // When paused, position does not advance regardless of elapsed time
+        var pos = WindowsMediaTimelineTracker.CalculateLivePosition(
+            basePositionSeconds: 100,
+            lastUpdatedTime: lastUpdated,
+            playbackRate: 1.0,
+            isPlaying: false,
+            durationSeconds: 500,
+            utcNow: now);
+
+        Assert.Equal(100.0, pos);
+    }
+
+    [Fact]
+    public void WindowsMediaTimelineTracker_CalculateLivePosition_CapsAtDuration_WhenExceedsEndTime()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var lastUpdated = now.AddSeconds(-20);
+
+        // 490s base + (20s elapsed * 1.0) = 510s -> capped at duration 500s
+        var pos = WindowsMediaTimelineTracker.CalculateLivePosition(
+            basePositionSeconds: 490,
+            lastUpdatedTime: lastUpdated,
+            playbackRate: 1.0,
+            isPlaying: true,
+            durationSeconds: 500,
+            utcNow: now);
+
+        Assert.Equal(500.0, pos);
+    }
+
+    [Fact]
+    public void WindowsMediaTimelineTracker_CalculateLivePosition_IgnoresCorruptedLastUpdatedTime()
+    {
+        var now = DateTimeOffset.UtcNow;
+
+        // Uninitialized (Year 1)
+        var pos1 = WindowsMediaTimelineTracker.CalculateLivePosition(100, DateTimeOffset.MinValue, 1.0, true, 500, now);
+        Assert.Equal(100.0, pos1);
+
+        // Future timestamp
+        var pos2 = WindowsMediaTimelineTracker.CalculateLivePosition(100, now.AddSeconds(60), 1.0, true, 500, now);
+        Assert.Equal(100.0, pos2);
+
+        // Over 2 hours stale (> 7200s)
+        var pos3 = WindowsMediaTimelineTracker.CalculateLivePosition(100, now.AddHours(-3), 1.0, true, 500, now);
+        Assert.Equal(100.0, pos3);
+
+        // Zero or negative playback rate
+        var pos4 = WindowsMediaTimelineTracker.CalculateLivePosition(100, now.AddSeconds(-10), 0.0, true, 500, now);
+        Assert.Equal(100.0, pos4);
+    }
+
+    [Fact]
+    public void WindowsMediaTimelineTracker_SessionFilter_PrefersKnownVideoPlayers_AndIgnoresBrowsers()
+    {
+        Assert.True(WindowsMediaTimelineTracker.IsPreferredVideoApp("Microsoft.Media.Player_8wekyb3d8bbwe!App"));
+        Assert.True(WindowsMediaTimelineTracker.IsPreferredVideoApp("Microsoft.ZuneVideo_8wekyb3d8bbwe!Microsoft.ZuneVideo"));
+        Assert.True(WindowsMediaTimelineTracker.IsPreferredVideoApp("C:\\Windows\\system32\\wmplayer.exe"));
+        Assert.True(WindowsMediaTimelineTracker.IsPreferredVideoApp("Microsoft.WindowsMediaPlayer"));
+        Assert.False(WindowsMediaTimelineTracker.IsPreferredVideoApp("chrome.exe"));
+
+        Assert.True(WindowsMediaTimelineTracker.IsBlacklistedAudioOrBrowserApp("chrome.exe"));
+        Assert.True(WindowsMediaTimelineTracker.IsBlacklistedAudioOrBrowserApp("msedge.exe"));
+        Assert.True(WindowsMediaTimelineTracker.IsBlacklistedAudioOrBrowserApp("spotify.exe"));
+        Assert.False(WindowsMediaTimelineTracker.IsBlacklistedAudioOrBrowserApp("Microsoft.Media.Player"));
+    }
+
+    [Fact]
+    public void MpcWebTimelineTracker_ConfigureWebInterface_ReturnsValidPort_WithoutThrowing()
+    {
+        // Must return default port and not throw even if path doesn't have an INI file
+        var port = MpcWebTimelineTracker.ConfigureWebInterface(@"C:\NonExistentDir\mpc-hc64.exe");
+        Assert.True(port > 0);
+    }
+
+    [Fact]
+    public async Task PlayerProcessLauncher_RunTrackingLoop_TriggersImmediateFlush_OnPauseAndSeek()
+    {
+        var snapshots = new List<PlayerTimelineSnapshot?>
+        {
+            new PlayerTimelineSnapshot(10.0, 1000.0, IsPaused: false),
+            new PlayerTimelineSnapshot(50.0, 1000.0, IsPaused: false), // Seek Jump (from 10 to 50 >= 5s)
+            new PlayerTimelineSnapshot(50.0, 1000.0, IsPaused: true)   // Pause Transition
+        };
+
+        var tracker = new FakeTimelineTracker(snapshots);
+        var flushes = new List<(double Pos, double? Dur, bool Paused)>();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        var trackingTask = PlayerProcessLauncher.RunTrackingLoopAsync(
+            process: null,
+            tracker: tracker,
+            mediaPath: @"C:\film.mkv",
+            startPositionSeconds: 10.0,
+            totalDurationSeconds: 1000.0,
+            startTime: DateTimeOffset.UtcNow,
+            useShell: false,
+            onPlaybackEnded: null,
+            onProgressTick: (pos, dur, paused) =>
+            {
+                flushes.Add((pos, dur, paused));
+                if (flushes.Count >= 2)
+                {
+                    cts.Cancel(); // Stop loop once both immediate flushes are verified
+                }
+                return Task.CompletedTask;
+            },
+            cancellationToken: cts.Token,
+            pollIntervalMs: 1); // 1ms for ultra-fast CI execution
+
+        try
+        {
+            await trackingTask;
+        }
+        catch (OperationCanceledException) { }
+
+        // Must capture the seek jump and the pause transition immediately
+        Assert.NotEmpty(flushes);
+        Assert.Contains(flushes, f => f.Pos == 50.0 && !f.Paused); // Seek jump flushed
+        Assert.Contains(flushes, f => f.Pos == 50.0 && f.Paused);  // Pause transition flushed
+    }
+}
+
+file sealed class FakeTimelineTracker : IPlayerTimelineTracker
+{
+    private readonly Queue<PlayerTimelineSnapshot?> _snapshots;
+
+    public FakeTimelineTracker(IEnumerable<PlayerTimelineSnapshot?> snapshots)
+    {
+        _snapshots = new Queue<PlayerTimelineSnapshot?>(snapshots);
+    }
+
+    public Task<PlayerTimelineSnapshot?> PollAsync(CancellationToken cancellationToken = default)
+    {
+        if (_snapshots.Count > 0)
+        {
+            return Task.FromResult(_snapshots.Dequeue());
+        }
+        return Task.FromResult<PlayerTimelineSnapshot?>(null);
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }

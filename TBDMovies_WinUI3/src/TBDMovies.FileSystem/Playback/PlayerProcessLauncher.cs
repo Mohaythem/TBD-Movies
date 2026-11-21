@@ -184,7 +184,7 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
 
     private static bool SafeHasExited(Process? process)
     {
-        if (process is null) return true;
+        if (process is null) return false;
         try
         {
             return process.HasExited;
@@ -195,7 +195,7 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
         }
     }
 
-    private static async Task RunTrackingLoopAsync(
+    public static async Task RunTrackingLoopAsync(
         Process? process,
         IPlayerTimelineTracker? tracker,
         string mediaPath,
@@ -205,15 +205,38 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
         bool useShell,
         Func<double, double?, Task>? onPlaybackEnded,
         Func<double, double?, bool, Task>? onProgressTick,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int pollIntervalMs = 1000)
     {
         using (process)
         {
-            var lastReportedPosition = startPositionSeconds;
-            var lastSavedPosition = startPositionSeconds;
+            var lastReportedPosition = Math.Max(0.0, startPositionSeconds);
+            var lastSavedPosition = lastReportedPosition;
             var lastSavedTime = DateTimeOffset.UtcNow;
-            var isPaused = false;
+            var wasPaused = false;
             var hadActiveSession = false;
+            var consecutiveNulls = 0;
+
+            async Task FlushProgressAsync(double position, double? duration, bool isPaused)
+            {
+                if (onProgressTick != null)
+                {
+                    try
+                    {
+                        await onProgressTick(position, duration, isPaused).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        Trace.WriteLine($"[PlayerProcessLauncher] onProgressTick error: {ex.Message}");
+                    }
+                }
+                lastSavedPosition = position;
+                lastSavedTime = DateTimeOffset.UtcNow;
+            }
+
+            var exitTask = (process != null && (tracker == null || !useShell))
+                ? process.WaitForExitAsync(cancellationToken)
+                : null;
 
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -222,15 +245,14 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                     break;
                 }
 
-                if (SafeHasExited(process))
+                if (process != null && !useShell && SafeHasExited(process))
                 {
                     break;
                 }
 
-                var exitTask = process?.WaitForExitAsync(cancellationToken);
-                var delayTask = Task.Delay(1000, cancellationToken);
+                var delayTask = Task.Delay(pollIntervalMs > 0 ? pollIntervalMs : 1000, cancellationToken);
 
-                if (exitTask != null && (tracker == null || !useShell))
+                if (exitTask != null)
                 {
                     var completed = await Task.WhenAny(exitTask, delayTask).ConfigureAwait(false);
                     if (completed == exitTask)
@@ -249,49 +271,48 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                     if (snapshot != null)
                     {
                         hadActiveSession = true;
-                        lastReportedPosition = snapshot.PositionSeconds;
-                        isPaused = snapshot.IsPaused;
+                        consecutiveNulls = 0;
+
                         if (snapshot.DurationSeconds.HasValue && snapshot.DurationSeconds.Value > 0 && !totalDurationSeconds.HasValue)
                         {
                             totalDurationSeconds = snapshot.DurationSeconds;
                         }
 
-                        // Save progress periodically (every 5 seconds) if not paused and position changed
-                        var elapsedSinceSave = (DateTimeOffset.UtcNow - lastSavedTime).TotalSeconds;
-                        if (!isPaused && Math.Abs(lastReportedPosition - lastSavedPosition) >= 3.0 && elapsedSinceSave >= 5.0)
+                        var isSeekJump = Math.Abs(snapshot.PositionSeconds - lastReportedPosition) >= 5.0;
+                        var isPauseTransition = (!wasPaused && snapshot.IsPaused);
+                        wasPaused = snapshot.IsPaused;
+                        lastReportedPosition = snapshot.PositionSeconds;
+
+                        if (isPauseTransition || isSeekJump)
                         {
-                            if (onProgressTick != null)
+                            await FlushProgressAsync(lastReportedPosition, totalDurationSeconds, snapshot.IsPaused).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            // Periodic save (every 5 seconds) if not paused and position changed
+                            var elapsedSinceSave = (DateTimeOffset.UtcNow - lastSavedTime).TotalSeconds;
+                            if (!snapshot.IsPaused && Math.Abs(lastReportedPosition - lastSavedPosition) >= 3.0 && elapsedSinceSave >= 5.0)
                             {
-                                try
-                                {
-                                    await onProgressTick(lastReportedPosition, totalDurationSeconds, isPaused).ConfigureAwait(false);
-                                }
-                                catch (Exception ex)
-                                {
-                                    Trace.WriteLine($"[PlayerProcessLauncher] onProgressTick error: {ex.Message}");
-                                }
+                                await FlushProgressAsync(lastReportedPosition, totalDurationSeconds, snapshot.IsPaused).ConfigureAwait(false);
                             }
-                            lastSavedPosition = lastReportedPosition;
-                            lastSavedTime = DateTimeOffset.UtcNow;
                         }
                     }
-                    else if (useShell && hadActiveSession)
+                    else
                     {
-                        // In Shell mode (e.g. Windows Media Player), once media session stops, player closed
-                        break;
-                    }
-                    else if (useShell && (DateTimeOffset.UtcNow - startTime).TotalSeconds >= 10.0 && !hadActiveSession)
-                    {
-                        if (SafeHasExited(process))
+                        consecutiveNulls++;
+                        if (useShell && hadActiveSession && consecutiveNulls >= 4)
                         {
+                            // In Shell mode (e.g. Windows Media Player), 4 consecutive nulls (~4s of absence) indicates player closed
                             break;
                         }
-                    }
-                    else if (!useShell)
-                    {
-                        // Fallback to wall-clock if tracker returned null
-                        var elapsed = (DateTimeOffset.UtcNow - startTime).TotalSeconds;
-                        lastReportedPosition = startPositionSeconds + elapsed;
+                        else if (useShell && (DateTimeOffset.UtcNow - startTime).TotalSeconds >= 10.0 && !hadActiveSession)
+                        {
+                            if (process == null || SafeHasExited(process))
+                            {
+                                break;
+                            }
+                        }
+                        // Frozen at lastReportedPosition without blind wall-clock overwrite
                     }
                 }
                 else
@@ -322,30 +343,21 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                 }
             }
 
-            var totalElapsed = (DateTimeOffset.UtcNow - startTime).TotalSeconds;
             var finalPos = lastReportedPosition;
-            if (finalPos <= startPositionSeconds && totalElapsed >= 3.0)
-            {
-                finalPos = startPositionSeconds + totalElapsed;
-            }
-
             if (totalDurationSeconds.HasValue && totalDurationSeconds.Value > 0 && finalPos > totalDurationSeconds.Value)
             {
                 finalPos = totalDurationSeconds.Value;
             }
 
-            if (finalPos >= 3.0 || totalElapsed >= 3.0)
+            if (onPlaybackEnded != null)
             {
-                if (onPlaybackEnded != null)
+                try
                 {
-                    try
-                    {
-                        await onPlaybackEnded(finalPos, totalDurationSeconds).ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        Trace.WriteLine($"[PlayerProcessLauncher] onPlaybackEnded error: {ex.Message}");
-                    }
+                    await onPlaybackEnded(finalPos, totalDurationSeconds).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Trace.WriteLine($"[PlayerProcessLauncher] onPlaybackEnded error: {ex.Message}");
                 }
             }
         }

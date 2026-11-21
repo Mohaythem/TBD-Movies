@@ -120,7 +120,7 @@ public sealed class PlaybackTrackingService
             cancellationToken,
             (currentPosition, discoveredDuration, isPaused) =>
             {
-                if (isPaused || target.MediaFileId <= 0) return Task.CompletedTask;
+                if (target.MediaFileId <= 0 || currentPosition < 3.0) return Task.CompletedTask;
                 var duration = (discoveredDuration is > 0) ? discoveredDuration : target.TotalDurationSeconds;
                 _progressRepository.SaveProgress(target.MediaFileId, currentPosition, duration, _clock());
                 return Task.CompletedTask;
@@ -129,6 +129,23 @@ public sealed class PlaybackTrackingService
 
     private async Task HandlePlaybackExitAsync(PlaybackMediaTarget target, double finalPosition, double? discoveredDuration)
     {
+        if (finalPosition < 3.0)
+        {
+            if (target.MediaFileId > 0)
+            {
+                _progressRepository.DeleteProgress(target.MediaFileId);
+            }
+            try
+            {
+                PlaybackEnded?.Invoke(this, target.MediaFileId);
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[PlaybackTrackingService] PlaybackEnded invocation error: {ex.Message}");
+            }
+            return;
+        }
+
         var now = _clock();
         var effectiveDuration = (discoveredDuration.HasValue && discoveredDuration.Value > 0)
             ? discoveredDuration
