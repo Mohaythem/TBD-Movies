@@ -326,7 +326,7 @@ public sealed class UnifiedTraktListsTests : IDisposable
         repo.DeleteCustomList(listId);
 
         Assert.Throws<System.Collections.Generic.KeyNotFoundException>(() => repo.AddMovieToCustomList(listId, 701, Now));
-        Assert.Throws<System.Collections.Generic.KeyNotFoundException>(() => repo.RenameCustomList(listId, "New Name"));
+        Assert.Throws<System.Collections.Generic.KeyNotFoundException>(() => repo.RenameCustomList(listId, "New Name", Now));
     }
 
     [Fact]
