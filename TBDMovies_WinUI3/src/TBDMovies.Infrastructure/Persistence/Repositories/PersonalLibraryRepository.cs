@@ -433,8 +433,12 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
     {
         ValidateId(movieId, nameof(movieId));
         using var connection = SqliteConnections.Open(_connectionString);
-        using var command = Command(connection, null,
-            "SELECT list_id FROM custom_list_members WHERE movie_id = $movie;");
+        using var command = Command(connection, null, """
+            SELECT clm.list_id
+              FROM custom_list_members clm
+              JOIN custom_lists cl ON clm.list_id = cl.id
+             WHERE clm.movie_id = $movie AND cl.is_deleted = 0;
+            """);
         command.Parameters.AddWithValue("$movie", movieId);
         var ids = new HashSet<int>();
         using var reader = command.ExecuteReader();
@@ -504,8 +508,12 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
     {
         ValidateId(showId, nameof(showId));
         using var connection = SqliteConnections.Open(_connectionString);
-        using var command = Command(connection, null,
-            "SELECT list_id FROM custom_list_members WHERE show_id = $show;");
+        using var command = Command(connection, null, """
+            SELECT clm.list_id
+              FROM custom_list_members clm
+              JOIN custom_lists cl ON clm.list_id = cl.id
+             WHERE clm.show_id = $show AND cl.is_deleted = 0;
+            """);
         command.Parameters.AddWithValue("$show", showId);
         var ids = new HashSet<int>();
         using var reader = command.ExecuteReader();
@@ -1007,9 +1015,12 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         if (command.ExecuteScalar() is null) throw new KeyNotFoundException($"TV show {showId} was not found.");
     }
 
-    private static void RequireCustomList(SqliteConnection connection, int listId, SqliteTransaction? transaction)
+    private static void RequireCustomList(SqliteConnection connection, int listId, SqliteTransaction? transaction, bool allowDeleted = false)
     {
-        using var command = Command(connection, transaction, "SELECT 1 FROM custom_lists WHERE id = $id;");
+        var sql = allowDeleted
+            ? "SELECT 1 FROM custom_lists WHERE id = $id;"
+            : "SELECT 1 FROM custom_lists WHERE id = $id AND is_deleted = 0;";
+        using var command = Command(connection, transaction, sql);
         command.Parameters.AddWithValue("$id", listId);
         if (command.ExecuteScalar() is null) throw new KeyNotFoundException($"Custom list {listId} was not found.");
     }

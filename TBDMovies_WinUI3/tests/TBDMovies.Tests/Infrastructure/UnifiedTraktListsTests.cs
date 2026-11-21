@@ -259,4 +259,166 @@ public sealed class UnifiedTraktListsTests : IDisposable
         Assert.Single(deletedLists);
         Assert.Equal("PENDING_DELETE", deletedLists[0].SyncStatus);
     }
+
+    [Fact]
+    public void GetCustomListIdsForMovie_ExcludesDeletedCustomLists()
+    {
+        var repo = Repo();
+        using (var conn = new SqliteConnection(_connectionString))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "INSERT INTO movies (id, title, year, provider, external_id, date_added, metadata_status, created_at, updated_at) VALUES (501, 'Movie 501', 2020, 'tmdb', '501', '2026-01-01', 'READY', '2026-01-01', '2026-01-01');";
+            cmd.ExecuteNonQuery();
+        }
+
+        var listId = repo.CreateCustomList("Movie List Active", Now);
+        repo.AddMovieToCustomList(listId, 501, Now);
+
+        var idsBefore = repo.GetCustomListIdsForMovie(501);
+        Assert.Contains(listId, idsBefore);
+
+        // Delete list (sets is_deleted = 1)
+        repo.DeleteCustomList(listId);
+
+        var idsAfter = repo.GetCustomListIdsForMovie(501);
+        Assert.DoesNotContain(listId, idsAfter);
+    }
+
+    [Fact]
+    public void GetCustomListIdsForShow_ExcludesDeletedCustomLists()
+    {
+        var repo = Repo();
+        using (var conn = new SqliteConnection(_connectionString))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "INSERT INTO tv_shows (id, provider, external_id, title, sort_title, date_added, created_at, updated_at, genres, metadata_status) VALUES (601, 'tmdb', 's601', 'Show 601', 'show 601', '2026-01-01', '2026-01-01', '2026-01-01', '[]', 'READY');";
+            cmd.ExecuteNonQuery();
+        }
+
+        var listId = repo.CreateCustomList("Show List Active", Now);
+        repo.AddShowToCustomList(listId, 601, Now);
+
+        var idsBefore = repo.GetCustomListIdsForShow(601);
+        Assert.Contains(listId, idsBefore);
+
+        // Delete list (sets is_deleted = 1)
+        repo.DeleteCustomList(listId);
+
+        var idsAfter = repo.GetCustomListIdsForShow(601);
+        Assert.DoesNotContain(listId, idsAfter);
+    }
+
+    [Fact]
+    public void RequireCustomList_WhenListIsDeleted_ThrowsKeyNotFoundException()
+    {
+        var repo = Repo();
+        using (var conn = new SqliteConnection(_connectionString))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "INSERT INTO movies (id, title, year, provider, external_id, date_added, metadata_status, created_at, updated_at) VALUES (701, 'Movie 701', 2021, 'tmdb', '701', '2026-01-01', 'READY', '2026-01-01', '2026-01-01');";
+            cmd.ExecuteNonQuery();
+        }
+
+        var listId = repo.CreateCustomList("Will Be Deleted", Now);
+        repo.DeleteCustomList(listId);
+
+        Assert.Throws<System.Collections.Generic.KeyNotFoundException>(() => repo.AddMovieToCustomList(listId, 701, Now));
+        Assert.Throws<System.Collections.Generic.KeyNotFoundException>(() => repo.RenameCustomList(listId, "New Name"));
+    }
+
+    [Fact]
+    public void DeleteCustomListCascade_WhenListIsDeleted_SuccessfullyPurges()
+    {
+        var repo = Repo();
+        var traktListId = 887766L;
+        var listId = repo.UpsertTraktCustomList("Tombstone List", traktListId, "tombstone-list", Now);
+
+        repo.DeleteCustomList(listId);
+        Assert.Single(repo.ListDeletedCustomLists());
+
+        // Hard cascade deletion on tombstoned list
+        repo.DeleteCustomListCascade(listId);
+
+        Assert.Empty(repo.ListDeletedCustomLists());
+        Assert.DoesNotContain(repo.ListCustomLists(), l => l.Id == listId);
+    }
+
+    [Fact]
+    public void QueueCompaction_OddAlternatingActions_ReplaysNetFinalAction()
+    {
+        var repo = Repo();
+        var listId = repo.CreateCustomList("Odd Compaction", Now);
+
+        // Item 1: ADD -> REMOVE -> ADD (Odd 3 -> net ADD)
+        repo.EnqueuePendingAction(listId, CustomListMediaKind.Movie, 101, "ADD", Now.AddMinutes(-10));
+        repo.EnqueuePendingAction(listId, CustomListMediaKind.Movie, 101, "REMOVE", Now.AddMinutes(-5));
+        repo.EnqueuePendingAction(listId, CustomListMediaKind.Movie, 101, "ADD", Now.AddMinutes(-1));
+
+        // Item 2: REMOVE -> ADD -> REMOVE (Odd 3 -> net REMOVE)
+        repo.EnqueuePendingAction(listId, CustomListMediaKind.Movie, 202, "REMOVE", Now.AddMinutes(-8));
+        repo.EnqueuePendingAction(listId, CustomListMediaKind.Movie, 202, "ADD", Now.AddMinutes(-4));
+        repo.EnqueuePendingAction(listId, CustomListMediaKind.Movie, 202, "REMOVE", Now.AddMinutes(-2));
+
+        var actions = repo.ListPendingActions(listId).Where(a => a.ActionType != "CREATE_LIST").ToList();
+        var grouped = actions.GroupBy(a => (a.ListId, a.MediaKind, a.TmdbId)).ToList();
+        var compactedToReplay = new System.Collections.Generic.List<CustomListPendingAction>();
+
+        foreach (var group in grouped)
+        {
+            var ordered = group.OrderBy(a => a.CreatedAt).ThenBy(a => a.Id).ToList();
+            var first = ordered.First();
+            var last = ordered.Last();
+
+            var isPureNoOp = ordered.Count % 2 == 0 &&
+                             string.Equals(first.ActionType, "ADD", StringComparison.OrdinalIgnoreCase) &&
+                             string.Equals(last.ActionType, "REMOVE", StringComparison.OrdinalIgnoreCase);
+
+            if (!isPureNoOp)
+            {
+                compactedToReplay.Add(last);
+            }
+        }
+
+        Assert.Equal(2, compactedToReplay.Count);
+        var act1 = compactedToReplay.First(a => a.TmdbId == 101);
+        Assert.Equal("ADD", act1.ActionType);
+        var act2 = compactedToReplay.First(a => a.TmdbId == 202);
+        Assert.Equal("REMOVE", act2.ActionType);
+    }
+
+    [Fact]
+    public void QueueCompaction_EvenAlternatingActions_CancelsOutAsNoOp()
+    {
+        var repo = Repo();
+        var listId = repo.CreateCustomList("Even Compaction", Now);
+
+        // Item 1: ADD -> REMOVE (Even 2 -> pure No-Op)
+        repo.EnqueuePendingAction(listId, CustomListMediaKind.Movie, 303, "ADD", Now.AddMinutes(-10));
+        repo.EnqueuePendingAction(listId, CustomListMediaKind.Movie, 303, "REMOVE", Now.AddMinutes(-5));
+
+        var actions = repo.ListPendingActions(listId).Where(a => a.ActionType != "CREATE_LIST").ToList();
+        var grouped = actions.GroupBy(a => (a.ListId, a.MediaKind, a.TmdbId)).ToList();
+        var compactedToReplay = new System.Collections.Generic.List<CustomListPendingAction>();
+
+        foreach (var group in grouped)
+        {
+            var ordered = group.OrderBy(a => a.CreatedAt).ThenBy(a => a.Id).ToList();
+            var first = ordered.First();
+            var last = ordered.Last();
+
+            var isPureNoOp = ordered.Count % 2 == 0 &&
+                             string.Equals(first.ActionType, "ADD", StringComparison.OrdinalIgnoreCase) &&
+                             string.Equals(last.ActionType, "REMOVE", StringComparison.OrdinalIgnoreCase);
+
+            if (!isPureNoOp)
+            {
+                compactedToReplay.Add(last);
+            }
+        }
+
+        Assert.Empty(compactedToReplay);
+    }
 }

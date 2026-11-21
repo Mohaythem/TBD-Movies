@@ -31,6 +31,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
     private readonly ITraktLocalSnapshotBuilder? _snapshotBuilder;
     private readonly IPersonalLibraryRepository? _personalLibraryRepository;
     private readonly IWatchHistoryRepository? _watchHistoryRepository;
+    private readonly IShowPersonalRepository? _showPersonalRepository;
 
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly object _ctsLock = new();
@@ -63,7 +64,8 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         TimeProvider? timeProvider = null,
         ITraktLocalSnapshotBuilder? snapshotBuilder = null,
         IPersonalLibraryRepository? personalLibraryRepository = null,
-        IWatchHistoryRepository? watchHistoryRepository = null)
+        IWatchHistoryRepository? watchHistoryRepository = null,
+        IShowPersonalRepository? showPersonalRepository = null)
     {
         _authService = authService ?? throw new ArgumentNullException(nameof(authService));
         _dataClient = dataClient ?? throw new ArgumentNullException(nameof(dataClient));
@@ -74,6 +76,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         _snapshotBuilder = snapshotBuilder;
         _personalLibraryRepository = personalLibraryRepository;
         _watchHistoryRepository = watchHistoryRepository;
+        _showPersonalRepository = showPersonalRepository;
 
         var authState = _authService.GetAuthState();
         _currentAccountId = authState.IsConnected ? authState.AccountId : null;
@@ -606,15 +609,18 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
 
                 // Step 6: Downstream & Upstream Custom Lists Reconciliation (Trakt <-> Local)
                 EnsureOperationValid(currentGen, uuid, opToken);
-                await ReconcileCustomListsAsync(uuid, userListsSuccess, opToken).ConfigureAwait(false);
+                var step6Success = await ReconcileCustomListsAsync(uuid, userListsSuccess, opToken).ConfigureAwait(false);
+                if (!step6Success) failedCount++;
 
                 // Step 7: Favorites Two-Way Full Union Reconciliation (Trakt <-> Local)
                 EnsureOperationValid(currentGen, uuid, opToken);
-                await ReconcileFavoritesAsync(uuid, opToken).ConfigureAwait(false);
+                var step7Success = await ReconcileFavoritesAsync(uuid, opToken).ConfigureAwait(false);
+                if (!step7Success) failedCount++;
 
                 // Step 8: Local Library Collection Upstream Reconciliation (Local -> Trakt Collection)
                 EnsureOperationValid(currentGen, uuid, opToken);
-                await ReconcileCollectionAsync(uuid, opToken).ConfigureAwait(false);
+                var step8Success = await ReconcileCollectionAsync(uuid, opToken).ConfigureAwait(false);
+                if (!step8Success) failedCount++;
 
                 // Blocker 8: Recheck cancel and generation before publishing success state
                 EnsureOperationValid(currentGen, uuid, opToken);
@@ -1471,11 +1477,11 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         }
     }
 
-    private async Task ReconcileCustomListsAsync(string accountId, bool userListsSuccess, CancellationToken cancellationToken)
+    private async Task<bool> ReconcileCustomListsAsync(string accountId, bool userListsSuccess, CancellationToken cancellationToken)
     {
         if (_personalLibraryRepository is null)
         {
-            return;
+            return true;
         }
 
         try
@@ -1552,26 +1558,34 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                 // Filter out any standalone CREATE_LIST actions that were already fulfilled
                 var itemActions = pendingActions.Where(a => !string.Equals(a.ActionType, "CREATE_LIST", StringComparison.OrdinalIgnoreCase)).ToList();
 
-                // Queue Compaction: cancel conflicting actions (ADD + REMOVE) for the same item in the same queue
+                // Queue Compaction: resolve net action chronologically
                 var grouped = itemActions.GroupBy(a => (a.ListId, a.MediaKind, a.TmdbId)).ToList();
                 var compactedToReplay = new List<CustomListPendingAction>();
 
                 foreach (var group in grouped)
                 {
-                    var hasAdd = group.Any(a => string.Equals(a.ActionType, "ADD", StringComparison.OrdinalIgnoreCase));
-                    var hasRemove = group.Any(a => string.Equals(a.ActionType, "REMOVE", StringComparison.OrdinalIgnoreCase));
+                    var ordered = group.OrderBy(a => a.CreatedAt).ThenBy(a => a.Id).ToList();
+                    var first = ordered.First();
+                    var last = ordered.Last();
 
-                    if (hasAdd && hasRemove)
+                    var isPureNoOp = ordered.Count % 2 == 0 &&
+                                     string.Equals(first.ActionType, "ADD", StringComparison.OrdinalIgnoreCase) &&
+                                     string.Equals(last.ActionType, "REMOVE", StringComparison.OrdinalIgnoreCase);
+
+                    if (isPureNoOp)
                     {
-                        // Conflicting pair in same offline window: delete all actions in this group (No-Op)
-                        foreach (var action in group)
+                        foreach (var action in ordered)
                         {
                             _personalLibraryRepository.DeletePendingAction(action.Id);
                         }
                     }
                     else
                     {
-                        compactedToReplay.AddRange(group);
+                        for (var i = 0; i < ordered.Count - 1; i++)
+                        {
+                            _personalLibraryRepository.DeletePendingAction(ordered[i].Id);
+                        }
+                        compactedToReplay.Add(last);
                     }
                 }
 
@@ -1645,7 +1659,11 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                         await listDeleter.DeleteCustomListAsync(del.TraktListId!.Value, _config.ClientId, token, cancellationToken);
                         remoteDeletedSuccessfully = true;
                     }
-                    catch (HttpRequestException httpEx) when (httpEx.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (TraktClientException tex) when (tex.FailureKind == TraktFailureKind.NotFound)
                     {
                         // 404 Not Found means the list is already deleted on Trakt
                         remoteDeletedSuccessfully = true;
@@ -1666,10 +1684,28 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             if (!userListsSuccess)
             {
                 System.Diagnostics.Debug.WriteLine("[TraktSyncService] Skipping downstream lists reconciliation: user lists fetch did not succeed.");
-                return;
+                return true;
             }
 
-            var remoteLists = GetLists(accountId);
+            var entry = _cacheRepository.Get(accountId, TraktCacheResourceKeys.Lists);
+            if (entry?.PayloadJson is null)
+            {
+                System.Diagnostics.Debug.WriteLine("[TraktSyncService] No lists cache payload found; skipping downstream lists reconciliation.");
+                return true;
+            }
+
+            IReadOnlyList<TraktCustomList> remoteLists;
+            try
+            {
+                using var doc = JsonDocument.Parse(entry.PayloadJson);
+                remoteLists = TraktDataProjections.ParseLists(doc.RootElement.Clone());
+            }
+            catch (JsonException ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Aborting downstream lists reconciliation due to corrupt lists cache: {ex.Message}");
+                return false;
+            }
+
             var remoteTraktIds = remoteLists.Select(l => l.TraktId).ToHashSet();
 
             // Detect remotely deleted lists: local lists with trakt_list_id that no longer exist on Trakt
@@ -1726,6 +1762,8 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
 
                 _personalLibraryRepository.SetListLastSynced(localListId, now);
             }
+
+            return true;
         }
         catch (OperationCanceledException)
         {
@@ -1734,6 +1772,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Custom lists reconciliation failed: {ex.Message}");
+            return false;
         }
     }
 
@@ -1871,7 +1910,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         }
     }
 
-    private async Task ReconcileFavoritesAsync(string accountId, CancellationToken cancellationToken)
+    private async Task<bool> ReconcileFavoritesAsync(string accountId, CancellationToken cancellationToken)
     {
         try
         {
@@ -1924,7 +1963,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to fetch remote favorites: {ex.Message}");
-                return;
+                return false;
             }
 
             var remoteFavMovies = TraktDataProjections.ParseFavorites(remoteMoviesJson);
@@ -1982,7 +2021,55 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                         }
                     }
                 }
+
+                // Downstream & Upstream TV shows favorites
+                if (_showPersonalRepository != null)
+                {
+                    // Downstream shows: mark remote favorites as IsFavorite in local DB
+                    foreach (var cand in snapshot.ForKind(TraktMediaKind.Show))
+                    {
+                        if (cand.Identity.TmdbId.HasValue && remoteFavShowTmdb.Contains(cand.Identity.TmdbId.Value))
+                        {
+                            try
+                            {
+                                var current = _showPersonalRepository.GetState(cand.LocalId);
+                                if (!current.IsFavorite)
+                                {
+                                    _showPersonalRepository.SetFavorite(cand.LocalId, true, now);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to set favorite for show {cand.LocalId}: {ex.Message}");
+                            }
+                        }
+                    }
+
+                    // Upstream shows: upload local favorites missing from Trakt
+                    var localFavShowIds = _showPersonalRepository.ListShowIds(PersonalLibrarySection.Liked);
+                    var showCandidateMap = snapshot.ForKind(TraktMediaKind.Show)
+                        .Where(c => c.Identity.TmdbId.HasValue)
+                        .ToDictionary(c => c.LocalId, c => c.Identity.TmdbId!.Value);
+
+                    foreach (var showId in localFavShowIds)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        if (showCandidateMap.TryGetValue(showId, out var tmdbId) && !remoteFavShowTmdb.Contains(tmdbId))
+                        {
+                            try
+                            {
+                                await _dataClient.AddFavoriteAsync(tmdbId, TraktMediaKind.Show, authToken, _config.ClientId, cancellationToken);
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to push local show favorite {tmdbId} to Trakt: {ex.Message}");
+                            }
+                        }
+                    }
+                }
             }
+
+            return true;
         }
         catch (OperationCanceledException)
         {
@@ -1991,14 +2078,15 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[TraktSyncService] ReconcileFavoritesAsync error: {ex.Message}");
+            return false;
         }
     }
 
-    private async Task ReconcileCollectionAsync(string accountId, CancellationToken cancellationToken)
+    private async Task<bool> ReconcileCollectionAsync(string accountId, CancellationToken cancellationToken)
     {
         try
         {
-            if (_snapshotBuilder is null) return;
+            if (_snapshotBuilder is null) return true;
             var authToken = await _authService.GetAccessTokenAsync(forceRefresh: false, cancellationToken: cancellationToken);
 
             var movieSpec = TraktResourceSpec.CollectionMovies();
@@ -2014,7 +2102,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to fetch remote collection: {ex.Message}");
-                return;
+                return false;
             }
 
             var remoteColMovies = TraktDataProjections.ParseCollection(remoteMoviesJson);
@@ -2041,6 +2129,8 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             {
                 await _dataClient.AddCollectionBatchAsync(localMoviesToPush, localShowsToPush, authToken, _config.ClientId, cancellationToken);
             }
+
+            return true;
         }
         catch (OperationCanceledException)
         {
@@ -2049,6 +2139,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[TraktSyncService] ReconcileCollectionAsync error: {ex.Message}");
+            return false;
         }
     }
 }

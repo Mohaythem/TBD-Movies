@@ -1,7 +1,7 @@
 # TBD Movies — Active Progress & Status Checkpoint
 
 ## Current Goal
-- **Active Track / Current Priority**: Wave 5 (`[U9]` Trakt custom lists & local lists unification). Batch 5.1 completed and verified with **1,372 / 1,372** tests. Next priority: Batch 5.2 (Cache valve hardening against malformed JSON, fix sync queues and show favorites pull/upload).
+- **Active Track / Current Priority**: Wave 5 (`[U9]` Trakt custom lists & local lists unification). Batch 5.2 completed and verified with **1,379 / 1,379** tests. Next priority: Batch 5.3 (UX unification, unify TraktPage into SettingsPage & MyListsPage, prune dead code, fix duplicate context menus).
 - **Batches Approved & Closed**: 
   - Wave 1 (Batches 1.1, 1.2, 1.3): `SEC-19`, `C-06`, `SEC-20`, `C-03`, `SEC-01..05`, `SEC-14..15`, `SEC-21..22`, `C-13`, `[L6]` (`1,295` tests).
   - Wave 2 (Batches 2.1, 2.2, 2.3): `C-01`, `[P3]`, `C-04`, `[U8]`, `C-05` (`1,295` tests).
@@ -9,9 +9,26 @@
   - Wave 4 (Batches 4.1, 4.2): `SEC-23`, `C-02`, `[U10]` (`1,343` tests).
   - Remediation Wave R (Batches R-1, R-2, R-3, R-4): `ENG-NEW-01..07`, `SEC-NEW-01..02`, `C-05` closure (`1,364` tests).
   - Wave 5 (Batch 5.1): `C-08`, `SEC-11`, `#290`, `#293` (`1,372` tests).
-- **Baseline Test Suite**: **`1,372 / 1,372`** tests passing in Release.
+  - Wave 5 (Batch 5.2): `SEC-06..10`, `C-07.1..5` (`1,379` tests).
+- **Baseline Test Suite**: **`1,379 / 1,379`** tests passing in Release.
 
 ## Completed Work
+52. **Trakt Two-Way Synchronization Hardening & Custom List Parity [Wave 5, Batch 5.2 — SEC-06..10, C-07.1..5]**:
+    - **Disaster Prevention Against Corrupt Cache (`SEC-06`)**:
+        - Hardened `TraktSyncService.ReconcileCustomListsAsync` so that reading a missing or corrupted/unparseable JSON cache payload immediately logs and aborts downstream list deletion, permanently eliminating the catastrophic vulnerability where all local custom lists were cascade-deleted.
+    - **Dead Code Cleanup & Error Propagation (`SEC-07`)**:
+        - Removed dead `catch (HttpRequestException)` on `DeleteCustomListAsync` in `TraktSyncService.cs`, rethrowing `OperationCanceledException` and properly handling `TraktClientException` without swallowing network or server failures.
+    - **Offline Queue Compaction Parity (`SEC-08`)**:
+        - Implemented net-effect chronological compaction for offline pending action queues: balanced alternating sequences (`[ADD, REMOVE]`) cancel out cleanly as pure No-Ops; odd sequences replay the net user intent (`group.Last()`), deleting earlier superseded actions and maintaining consistency with idempotent Trakt mutations.
+    - **TV Show Favorites Full Parity (`SEC-09`)**:
+        - Injected `IShowPersonalRepository` into `TraktSyncService` and `AppServices` (`_showPersonalRepo`), synchronizing TV show favorites downstream (`remote -> local`) and upstream (`local -> remote`) matching movie favorites.
+    - **Sync Step Outcome Tracking (`SEC-10`)**:
+        - Updated Steps 6, 7, and 8 in `TraktSyncService` to return `Task<bool>`, incrementing `failedCount` and preventing `SyncAsync` from reporting `overallSuccess = true` when reconciliation steps fail.
+    - **Tombstoned List Filtering (`C-07.1..5`)**:
+        - Updated `PersonalLibraryRepository.cs` queries `GetCustomListIdsForMovie` and `GetCustomListIdsForShow` to join `custom_lists cl ON clm.list_id = cl.id AND cl.is_deleted = 0`, preventing tombstoned (`PENDING_DELETE`) lists from appearing checked in UI context menus.
+        - Extended `RequireCustomList` with `bool allowDeleted = false` to block mutations on tombstoned lists while allowing hard purge from `DeleteCustomListCascade`.
+    - **Automated Tests**:
+        - Added 7 comprehensive unit tests in `UnifiedTraktListsTests.cs` verifying deleted list filtering, deletion cascade, and queue compaction, expanding test baseline to **1,379** tests.
 51. **Trakt ClientId Unification & Error Handling Hardening [Wave 5, Batch 5.1 — C-08, SEC-11, #290, #293]**:
     - **Interface Unification (`ITraktDataClient.cs`)**:
         - Extended `AddWatchlistAsync`, `RemoveWatchlistAsync`, `AddFavoriteAsync`, `RemoveFavoriteAsync`, and `AddCollectionBatchAsync` with optional `string? clientId = null`, preserving source-level backward compatibility while enabling configured app ID propagation.

@@ -5,8 +5,8 @@
 **Current Branch**: `codex` (Up to date and verified on GitHub Actions CI — **100% Green**)  
 **Tech Stack**: WinUI 3 / **C# 14** / .NET 10 (`net10.0-windows10.0.22621`) / Windows App SDK `1.7.260224002` / SQLite WAL (`library.db` — **`DatabaseMigrator.LatestVersion = 23`**) / Unpackaged mode (`win-x64`).  
 **Windows Release Baseline**: Clean `Release` build (`0 Warning(s), 0 Error(s)`).  
-**Automated Test Baseline**: **`1,372 / 1,372`** test cases (100% pass without regression: `Failed: 0, Passed: 1,372, Skipped: 0`; `1,408` executed runner test cases).  
-**Overall Development State**: **Wave 5 in progress (Batch 5.1 complete: Trakt ClientId Unification & Error Handling Hardening)**. Ready for **Batch 5.2 (Cache valve hardening against malformed JSON, fix sync queues and show favorites pull/upload)**.
+**Automated Test Baseline**: **`1,379 / 1,379`** test cases (100% pass without regression: `Failed: 0, Passed: 1,379, Skipped: 0`; `1,415` executed runner test cases).  
+**Overall Development State**: **Wave 5 in progress (Batch 5.2 complete: Cache disaster protection, queue compaction parity, show favorites sync, tombstone filtering)**. Ready for **Batch 5.3 (UX unification, Settings & MyLists cleanup)**.
 
 ---
 

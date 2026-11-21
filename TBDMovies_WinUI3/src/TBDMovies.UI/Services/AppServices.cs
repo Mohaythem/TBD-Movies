@@ -405,6 +405,7 @@ internal static class AppServices
     private static WatchHistoryService? _watchHistory;
     private static ViewingActivityService? _viewingActivity;
     private static ShowPersonalLibraryService? _showPersonal;
+    private static IShowPersonalRepository? _showPersonalRepo;
     private static PlaybackProgressRepository? _playbackProgressRepository;
     private static PlaybackTrackingService? _playbackTrackingService;
     private static ImportService? _import;
@@ -610,7 +611,9 @@ internal static class AppServices
                 _personal = library;
                 _watchHistory = watchHistory;
                 _viewingActivity = new ViewingActivityService(new ViewingActivityRepository(connectionString, tracker: revisionTracker));
-                _showPersonal = new ShowPersonalLibraryService(new ShowPersonalLibraryRepository(connectionString, tracker: revisionTracker), tv);
+                var showPersonalRepo = new ShowPersonalLibraryRepository(connectionString, tracker: revisionTracker);
+                _showPersonalRepo = showPersonalRepo;
+                _showPersonal = new ShowPersonalLibraryService(showPersonalRepo, tv);
                 var playbackProgress = new PlaybackProgressRepository(connectionString, tracker: revisionTracker);
                 _playbackProgressRepository = playbackProgress;
                 _playbackTrackingService = new PlaybackTrackingService(
@@ -828,7 +831,7 @@ internal static class AppServices
             candidateData = new TraktDataClient();
             var snapshot = new TraktLocalSnapshotBuilder(Require(_movies), Require(_mediaFiles),
                 Require(_tvShows), Require(_tvSeasons), Require(_tvEpisodes), Require(_availabilityInspector));
-            candidateSync = new TraktSyncService(auth, candidateData, cache, candidateConfig, Require(_settingsRepository), timeProvider: null, snapshot, _personalRepo, _watchHistoryRepo);
+            candidateSync = new TraktSyncService(auth, candidateData, cache, candidateConfig, Require(_settingsRepository), timeProvider: null, snapshot, _personalRepo, _watchHistoryRepo, _showPersonalRepo);
             candidateSync.SyncCompleted += (_, _) => TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
             var projection = new TraktProjectionService();
             var json = JsonSerializer.Serialize(new TraktConfigDto(candidateConfig.ClientId, candidateConfig.RedirectUri));
@@ -953,7 +956,8 @@ internal static class AppServices
                 timeProvider: null,
                 snapshotBuilder,
                 personalRepo,
-                watchHistoryRepo);
+                watchHistoryRepo,
+                _showPersonalRepo);
             syncService.SyncCompleted += (_, _) => TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
 
             _traktAuthClient = authClient;
