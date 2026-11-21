@@ -1,12 +1,12 @@
 # TBD Movies — Consolidated Handoff & Active Engineering Roadmap (`HANDOFF.md`)
 
-**Documentation & Review Date**: November 21, 2026  
+**Documentation & Review Date**: November 22, 2026  
 **Current Version**: `v0.12.5` (`TBD-Movies.exe` / `TBDMoviesSetup.exe`)  
 **Current Branch**: `codex` (Up to date and verified on GitHub Actions CI — **100% Green**)  
 **Tech Stack**: WinUI 3 / **C# 14** / .NET 10 (`net10.0-windows10.0.22621`) / Windows App SDK `1.7.260224002` / SQLite WAL (`library.db` — **`DatabaseMigrator.LatestVersion = 23`**) / Unpackaged mode (`win-x64`).  
 **Windows Release Baseline**: Clean `Release` build (`0 Warning(s), 0 Error(s)`).  
-**Automated Test Baseline**: **`1,379 / 1,379`** test cases (100% pass without regression: `Failed: 0, Passed: 1,379, Skipped: 0`; `1,414` executed runner test cases).  
-**Overall Development State**: **Wave 5 Complete ([U9] Trakt Two-Way Synchronization & List Unification closed and verified)**. UX unification complete, TraktPage eradicated, dead code pruned, poster caching hardened. Ready for next architectural milestone.
+**Automated Test Baseline**: **`1,435 / 1,435`** test cases (100% pass without regression: `Failed: 0, Passed: 1,435, Skipped: 0`; all CI runs green).  
+**Overall Development State**: **All 7 Remediation Waves Fully Closed & Verified**. All security vectors (`SEC-01..SEC-26`), codebase findings (`C-01..C-17`), engine optimizations (`ENG-NEW-01..07`), dead packages (`S-DEAD`), and architectural invariants are completely remediated, audited by Goldfish Pro subagents, and verified on GitHub Actions CI runners.
 
 ---
 
@@ -64,7 +64,13 @@ Before taking any action, review and strictly adhere to the following root repos
   - Wave 3 (Batches 3.1..3.3): `1,328` tests.
   - Wave 4 (Batches 4.1..4.2): `1,343` tests.
   - Remediation Wave R (Batches R-1..R-4): `1,364 / 1,364` tests passing (`1,400` executed test cases in xUnit).
-  - Wave 5 (Batch 5.1): **`1,372 / 1,372`** tests passing (`1,408` executed test cases in xUnit).
+  - Wave 5 (Batch 5.1): `1,372 / 1,372` tests passing.
+  - Wave 5 (Batch 5.2): `1,379 / 1,379` tests passing.
+  - Wave 5 (Batch 5.3): `1,379 / 1,379` tests passing.
+  - Wave 7 (Batch 7.1): `1,418 / 1,418` tests passing.
+  - Wave 7 (Batch 7.2): `1,421 / 1,421` tests passing.
+  - Wave 6 (Batch 6.2): `1,429 / 1,429` tests passing.
+  - Wave 6 (Batch 6.1): **`1,435 / 1,435`** tests passing (100% green on CI Run `44962428501`).
 
 • **Standard Verification Command (Windows PowerShell)**:
 ```powershell
@@ -77,20 +83,23 @@ dotnet test "TBDMovies_WinUI3\TBDMovies.slnx" -c Release
 
 ---
 
-## 📌 Open & Deferred Engineering Backlog
+## 📌 Status of All Remediation Waves & Roadmap
 
-*(All items below remain deferred; no code may be modified without explicit user authorization)*
+• **Wave 1 (Batches 1.1, 1.2, 1.3)**: **CLOSED & VERIFIED ✅** (`SEC-19`, `C-06`, `SEC-20`, `C-03`, `SEC-01..05`, `SEC-14..15`, `SEC-21..22`, `C-13`, `[L6]`).  
+• **Wave 2 (Batches 2.1, 2.2, 2.3)**: **CLOSED & VERIFIED ✅** (`C-01`, `[P3]`, `C-04`, `[U8]`, `C-05`).  
+• **Wave 3 (Batches 3.1, 3.2, 3.3)**: **CLOSED & VERIFIED ✅** (`SEC-16`, `C-09`, `C-10`, `C-11`, `C-12`).  
+• **Wave 4 (Batches 4.1, 4.2)**: **CLOSED & VERIFIED ✅** (`SEC-23`, `C-02`, `[U10]`).  
+• **Remediation Wave R (Batches R-1..R-4)**: **CLOSED & VERIFIED ✅** (`ENG-NEW-01..07`, `SEC-NEW-01..02`).  
+• **Wave 5 (Batches 5.1, 5.2, 5.3)**: **CLOSED & VERIFIED ✅** (`C-08`, `SEC-11`, `SEC-06..10`, `C-07.1..6`, `SEC-26`, TraktPage Eradication & Navigation Unification).  
+• **Wave 7 (Batches 7.1, 7.2)**: **CLOSED & VERIFIED ✅** (`S-DEAD`, `S-ARCH`, Decision 3 UndoOperation & RestoreFromBackup, `C-17`, `[L8]` AppMutex & Inno Setup).  
+• **Wave 6 (Batches 6.1, 6.2)**: **CLOSED & VERIFIED ✅** (`C-14..16`, `SEC-12..13`, `SEC-17..18`, `SEC-24..25`, Localization Parity, LRU Poster Cache, `AppDiagnosticsLog`, UI Error Sanitization).  
 
-• **1. Trakt Unified Lists & Favorites (`[U9]`)**: **CLOSED & VERIFIED ✅** (Delivered across Batches 5.1, 5.2, 5.3).
+---
 
-• **2. Plaintext Secrets VACUUM Gap in SQLite (`[L6]`)**:
-  - `VACUUM` currently runs only in the DPAPI sanitization path outside `DatabaseWriteGate`; deletion of `'tmdb_read_access_token'` does not invoke `VACUUM;`. Migrate plaintext `'subdl_api_key'` to Windows Credential Manager.
+## 📌 Next Milestone Roadmap
 
-• **3. Inno Setup Code Signing (`[L8]`)**:
-  - Prepared `#if SIGN_ENABLED == "1"` directive with `SignTool` and `signonce` flag for `TBD-Movies.exe` in `TBD-Movies.iss`.
+*(All remaining roadmap items are clean-slate features frozen pending user review and instruction)*
 
-• **4. Subtitles & Remaining Backlog Items**:
-  - **`[M1]`**: TMDB v3 API Key query-string vs. v4 JWT Bearer header compatibility.
-  - **`[U7]` & `[U3]`**: Subtitle download engine and SubDL API authentication (**frozen pending user review**).
-  - **`[U6]`**: Routine regression verification for `RandomPickerButton`.
-  - **Audit Findings (`C-01` to `C-17`)**: Documented with multi-solution matrices in `/AUDIT_FINDINGS_REPORT.md`.
+• **1. Subtitles & External Providers (`[U7]` & `[U3]`)**: SubDL API authentication and subtitle discovery/download workflows.  
+• **2. TMDB v4 Token / Key Unification (`[M1]`)**: Review token authentication headers across TMDB API endpoints.  
+• **3. Random Media Selector (`[U6]`)**: Verification of random picker interactive UI behavior across multi-thousand title libraries.
