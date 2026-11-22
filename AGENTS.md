@@ -104,11 +104,12 @@ Before committing changes or proposing a push, verify the following historical C
     - Gate third-party offline pending queues behind verified linked account status (`HasLinkedTraktAccount`), and purge queues on explicit session disconnect to prevent cross-account mutation leakage.
 16. **Partial Class Using Directives Isolation (CS0103 / CS0246)**: In C# partial classes split across multiple files (such as `MyListsPage.xaml.cs` and `MyListsPage.Trakt.cs`), `using` directives in one partial file do not propagate to another. Explicitly import all required namespaces (`using TBDMovies.Application.Trakt;`) in each partial class file where types (e.g. `TraktMediaKind`) are referenced.
 17. **Factory Method Invocation Parentheses (CS0119 / CS0201)**: Verify whether resource specification members (e.g., `TraktResourceSpec.FavoriteMovies()`, `FavoriteShows()`, `Watchlist()`, `UserLists()`) are static factory methods rather than properties, and ensure parentheses `()` are present on invocations.
+18. **Strict Greater-Than for Temporal Invalidation**: When querying active viewings or resume checkpoints relative to append-only event streams (such as `watch_events`), use strictly greater-than (`julianday(w.watched_at) > julianday(checkpoint)`) rather than `>=`. Using `>=` falsely invalidates sessions where the replaying event occurred at the same discrete millisecond/clock checkpoint as a prior watch event.
 
 ### Step 5: Automated Verification & Strict Test Baseline
 - **Clean Solution Build (`dotnet build`)**: Build must produce exit code `0` with zero warnings and zero errors (`0 Warning(s), 0 Error(s)`).
 - **Test Suite Execution (`dotnet test`)**:
-  - 100% of the active reference baseline (**`1,458` automated tests**) must pass without regression (`Failed: 0, Total == Passed`).
+  - 100% of the active reference baseline (**`1,467` automated tests**) must pass without regression (`Failed: 0, Total == Passed`).
   - Never equate `Passed` to total test count without verifying `Failed: 0`.
 - **Verifiable Log Evidence**: Provide physical terminal command output logs from the Windows runner.
 
