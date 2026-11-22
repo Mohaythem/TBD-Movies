@@ -702,7 +702,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         finally
         {
             _operationGate.Release();
-            try { SyncCompleted?.Invoke(this, EventArgs.Empty); } catch { }
+            if (fireSyncCompleted)
+            {
+                try { SyncCompleted?.Invoke(this, EventArgs.Empty); } catch { }
+            }
         }
     }
 
@@ -2175,8 +2178,9 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         {
             if (_personalLibraryRepository != null)
             {
-                foreach (var m in movies) _personalLibraryRepository.EnqueueTraktPendingWatchlist("MOVIE", (int)m, action);
-                foreach (var s in shows) _personalLibraryRepository.EnqueueTraktPendingWatchlist("SHOW", (int)s, action);
+                var now = _timeProvider.GetUtcNow();
+                foreach (var m in movies) _personalLibraryRepository.EnqueueTraktPendingWatchlist("MOVIE", (int)m, action, now);
+                foreach (var s in shows) _personalLibraryRepository.EnqueueTraktPendingWatchlist("SHOW", (int)s, action, now);
             }
             return false;
         }
@@ -2193,8 +2197,9 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                 AppDiagnosticsLog.Record("TraktWatchlist", $"PushBatchWatchlistAsync failed: {result.Error}");
                 if (_personalLibraryRepository != null)
                 {
-                    foreach (var m in movies) _personalLibraryRepository.EnqueueTraktPendingWatchlist("MOVIE", (int)m, action);
-                    foreach (var s in shows) _personalLibraryRepository.EnqueueTraktPendingWatchlist("SHOW", (int)s, action);
+                    var now = _timeProvider.GetUtcNow();
+                    foreach (var m in movies) _personalLibraryRepository.EnqueueTraktPendingWatchlist("MOVIE", (int)m, action, now);
+                    foreach (var s in shows) _personalLibraryRepository.EnqueueTraktPendingWatchlist("SHOW", (int)s, action, now);
                 }
                 return false;
             }
@@ -2209,8 +2214,9 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             AppDiagnosticsLog.Record("TraktWatchlist", $"PushBatchWatchlistAsync error: {ex.Message}");
             if (_personalLibraryRepository != null)
             {
-                foreach (var m in movies) _personalLibraryRepository.EnqueueTraktPendingWatchlist("MOVIE", (int)m, action);
-                foreach (var s in shows) _personalLibraryRepository.EnqueueTraktPendingWatchlist("SHOW", (int)s, action);
+                var now = _timeProvider.GetUtcNow();
+                foreach (var m in movies) _personalLibraryRepository.EnqueueTraktPendingWatchlist("MOVIE", (int)m, action, now);
+                foreach (var s in shows) _personalLibraryRepository.EnqueueTraktPendingWatchlist("SHOW", (int)s, action, now);
             }
             return false;
         }
@@ -2647,7 +2653,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to fetch remote watchlist: {ex.Message}");
+                AppDiagnosticsLog.Record("TraktWatchlist", $"Failed to fetch remote watchlist: {ex.Message}");
                 return false;
             }
 
@@ -2834,7 +2840,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] ReconcileWatchlistAsync error: {ex.Message}");
+            AppDiagnosticsLog.Record("TraktWatchlist", $"ReconcileWatchlistAsync error: {ex.Message}");
             return false;
         }
     }
@@ -2857,7 +2863,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to fetch remote collection: {ex.Message}");
+                AppDiagnosticsLog.Record("TraktCollection", $"Failed to fetch remote collection: {ex.Message}");
                 return false;
             }
 
@@ -2894,7 +2900,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] ReconcileCollectionAsync error: {ex.Message}");
+            AppDiagnosticsLog.Record("TraktCollection", $"ReconcileCollectionAsync error: {ex.Message}");
             return false;
         }
     }
