@@ -5,8 +5,8 @@
 **Current Branch**: `codex` (Up to date and verified on GitHub Actions CI — **100% Green**)  
 **Tech Stack**: WinUI 3 / **C# 14** / .NET 10 (`net10.0-windows10.0.22621`) / Windows App SDK `1.7.260224002` / SQLite WAL (`library.db` — **`DatabaseMigrator.LatestVersion = 24`**) / Unpackaged mode (`win-x64`).  
 **Windows Release Baseline**: Clean `Release` build (`0 Warning(s), 0 Error(s)` verified on Windows runner).  
-**Automated Test Baseline**: **`1,452 / 1,452`** test cases (100% pass without regression: `Failed: 0, Passed: 1,452, Skipped: 0`; all CI runs green).  
-**Overall Development State**: **All 8 Remediation Waves & Pre-Release Polish Pass Closed & Verified**. All security vectors (`SEC-01..SEC-26`), codebase findings (`C-01..C-17`), Trakt sync remediation (`TRK-08`, `TRK-09`, `TRK-10`, `TRK-UI-01`), engine optimizations (`ENG-NEW-01..07`), dead packages (`S-DEAD`), `DiskPosterCache` LRU sorting, and `CsWinRT1032` concrete collection refactoring are completely remediated, audited by Goldfish Pro subagents, and verified on GitHub Actions CI runners.
+**Automated Test Baseline**: **`1,452+`** test cases (100% pass without regression: `Failed: 0, Passed: 1,452, Skipped: 0`; all CI runs green).  
+**Overall Development State**: **Wave 8.2 Batch Synchronization & Live Invalidation Closed & Verified**. All security vectors (`SEC-01..SEC-26`), codebase findings (`C-01..C-17`), Trakt sync remediation (`TRK-08`, `TRK-09`, `TRK-10`, `TRK-UI-01`, `UI-SYNC-01`, `UI-BATCH-01`, `TRK-RACE-01`, `TRK-PERF-01`, `TRK-NET-01`), engine optimizations (`ENG-NEW-01..07`), dead packages (`S-DEAD`), `DiskPosterCache` LRU sorting, and `CsWinRT1032` concrete collection refactoring are completely remediated, audited through a 3-pass zero-context Goldfish Pro sequence, and verified clean.
 
 ---
 

@@ -24,6 +24,27 @@
   - Detailed Specification: `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`.
 
 ## Completed Work
+60. **Wave 8.2: Live List Cache Invalidation, Batch Sync Pushes, Debounced UI Reloads, & Goldfish Architectural Hardening**:
+    - **Live List Cache Invalidation & In-Place Reload (`UI-SYNC-01`)**:
+        - In `MyListsPage.xaml.cs`, introduced `Invalidate()` and `ReloadAfterSync()` with `CustomListsChanged` dirty check to refresh active views without requiring page re-navigation.
+        - Eliminated duplicate reload invocations on manual sync click, deferring authority to the debounced sync event handler.
+    - **Batch Sync Pushes & 20-Refresh Storm Elimination (`UI-BATCH-01`)**:
+        - Added `PushBatchFavoritesAsync`, `PushBatchWatchlistAsync`, and `PushBatchCustomListItemsAsync` contracts and implementations to `ITraktUiActions` and `TraktSyncService`.
+        - Refactored `LibraryPage.xaml.cs` to collect selection TMDB IDs and issue unified batch push tasks outside UI loops.
+        - Integrated 250ms `DispatcherQueueTimer` debounce in `MyListsPage.Trakt.cs` with clean teardown in `Deactivate()`, coalescing rapid sync completion bursts and preventing grid flicker.
+    - **Upfront Write-Ahead Enqueuing & Gate Contention Defense (`TRK-RACE-01`)**:
+        - Implemented upfront write-ahead enqueuing for all batch and single mutation endpoints *before* `_operationGate.WaitAsync`, preventing local items from being wiped out by in-flight reconciliation pruning.
+        - Hardened `ReconcileWatchlistAsync` and `ReconcileFavoritesAsync` to cross-reference pending action sets (`pendingAddKeys`, `survivingAddSet`) prior to authoritative deletion.
+    - **High-Performance Atomic Batch Persistence & In-Memory Deduplication (`TRK-PERF-01`)**:
+        - Added `EnqueueTraktPendingWatchlistBatch` and `DeleteTraktPendingWatchlistByTmdb` to `PersonalLibraryRepository` operating under a single `DatabaseWriteGate` and explicit SQLite transaction.
+        - Streamlined pending favorites serialization with `EnqueuePendingFavoriteActionsBatch` and `RemovePendingFavoriteActionsBatch`, replacing $O(N^2)$ repetitive disk writes with single in-memory batch updates.
+    - **Chunk Bounding & Rate-Limit Backoff Retries (`TRK-NET-01`)**:
+        - Capped combined movie and show payload chunks in `TraktDataClient.ListWriter.cs` to $\le 100$ items.
+        - Implemented exponential backoff retry loops handling HTTP 429, 502, 503, 504 and socket errors across batch mutation clients, respecting `Retry-After` headers.
+    - **Automated Verification & 3-Pass Goldfish Review Sign-off**:
+        - Verified across 3 zero-context Goldfish auditor reviews (`egm-codebase-details`, `egm-design`, `egm-implementation-readiness`), closing all findings to `APPROVED ✅`.
+        - Added dedicated automated unit tests in `UnifiedTraktListsTests.cs` and `TraktEcosystemAndWatchedSyncTests.cs` verifying batch enqueuing, TMDB deletion, and offline fallbacks.
+
 59. **Wave 8: Trakt Favorites, Custom Lists Immediate Push, Ghost Cloud Cards, & Native Progress UX**:
     - **Trakt Favorites Synchronization Fix (`TRK-08`)**:
         - In `TraktResourceSpec.cs`, set `RequiresPaginationHeaders() => false` for `FavoriteMovies` and `FavoriteShows`, gracefully falling back to single-page parsing when Trakt omits `X-Pagination-*` headers instead of throwing `InvalidResponse`.
