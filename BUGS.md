@@ -32,6 +32,15 @@
 
 ## 1. Active & Open Issues
 
+### [TRK-08] [Active Investigation 🔍] Discrepancy & Sync Behavior Between Trakt Liked Items and App Favorites
+- **Affected Subsystems**: `TraktSyncService.cs`, `PersonalLibraryRepository.cs`, `MediaCardContextMenu.cs`, `MovieDetailsPage.xaml.cs`.
+- **Observed Behavior**: User noted an ongoing discrepancy or desynchronization between items marked as "Liked" on Trakt and "Favorite" within the desktop application.
+- **Investigative Scope**:
+  1. Trakt API resource mapping: Trakt native `/sync/favorites` vs. user ratings vs. user liked items/lists.
+  2. Local state mapping: `PersonalPreference.Liked` (`movies` table `personal_preference = 'LIKED'`) vs. `shows` favorite (`tv_show_user_data` `is_favorite = 1`).
+  3. ReconcileFavorites upstream/downstream push/pull triggers, caching invalidation, and UI refresh reactivity.
+- **Status**: Registered for in-depth collaborative review with user notes.
+
 ### [U9] [CLOSED & VERIFIED ✅] Unification of Trakt Custom Lists with Local Lists & Two-Way Sync
 - **Affected Subsystems**: `TraktSyncService.cs`, `PersonalLibraryRepository.cs`, `MyListsPage.xaml.cs`, `MainWindow.xaml.cs`.
 - **Completed Work (Batches 5.1, 5.2, 5.3)**:

@@ -3,9 +3,9 @@
 **Documentation & Review Date**: November 22, 2026  
 **Current Version**: `v0.12.6` (`TBD-Movies.exe` / `TBDMoviesSetup.exe`)  
 **Current Branch**: `codex` (Up to date and verified on GitHub Actions CI — **100% Green**)  
-**Tech Stack**: WinUI 3 / **C# 14** / .NET 10 (`net10.0-windows10.0.22621`) / Windows App SDK `1.7.260224002` / SQLite WAL (`library.db` — **`DatabaseMigrator.LatestVersion = 23`**) / Unpackaged mode (`win-x64`).  
+**Tech Stack**: WinUI 3 / **C# 14** / .NET 10 (`net10.0-windows10.0.22621`) / Windows App SDK `1.7.260224002` / SQLite WAL (`library.db` — **`DatabaseMigrator.LatestVersion = 24`**) / Unpackaged mode (`win-x64`).  
 **Windows Release Baseline**: Clean `Release` build (`0 Warning(s), 0 Error(s)` verified on Windows runner).  
-**Automated Test Baseline**: **`1,438 / 1,438`** test cases (100% pass without regression: `Failed: 0, Passed: 1,438, Skipped: 0`; all CI runs green).  
+**Automated Test Baseline**: **`1,447 / 1,447`** test cases (100% pass without regression: `Failed: 0, Passed: 1,447, Skipped: 0`; all CI runs green).  
 **Overall Development State**: **All 7 Remediation Waves & Pre-Release Polish Pass Closed & Verified**. All security vectors (`SEC-01..SEC-26`), codebase findings (`C-01..C-17`), engine optimizations (`ENG-NEW-01..07`), dead packages (`S-DEAD`), `DiskPosterCache` LRU sorting, and `CsWinRT1032` concrete collection refactoring are completely remediated, audited by Goldfish Pro subagents, and verified on GitHub Actions CI runners.
 
 ---
