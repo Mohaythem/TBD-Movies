@@ -66,6 +66,8 @@ Each remediation batch traverses the following five formal states in strict sequ
 | **Wave 7** | **`7.1`** | Prune dead packages and files, wire `UndoOperation` and `RestoreFromBackup` buttons, extract shared UI helpers (`S-DEAD`, `S-ARCH`, Decision 3) | `TBDMovies.UI.csproj`, `OperationsLogPage.*`, `SettingsPage.*`, `WinUiClipboardService.cs`, Icon resources | `Closed` | `73dc5e4` | `PASS` (CI Run `44921541530` · 1,418 tests) |
 | **Wave 7** | **`7.2`** | Re-integrate `TBDMovies.QaSeed` into solution, update to `Schema v23`, and update Inno Setup installer signing (`C-17`, `[L8]`) | `TBDMovies.slnx`, `Seed.cs`, `TBD-Movies.iss`, `App.xaml.cs`, `QaSeedAndInstallerTests.cs` | `Closed` | `1c4a08c` | `PASS` (CI Run `44957957524` · 1,421 tests) |
 | **Polish Pass** | **`Polish`** | Correct `DiskPosterCache` LRU sorting, CRLF log sanitization & `CsWinRT1032` zero-warnings refactoring | `DiskPosterCache.cs`, `AppDiagnosticsLog.cs`, `LocalizationService.cs`, UI views & models | `Closed` | `ee64dcc` | `PASS` (CI Run `44970928679` · 1,438 tests · 0 warnings) |
+| **Feature Phase** | **`F-1`** | Episode Stills & Season Posters (`FEAT-EPISODE-ARTWORK`) — Decouple primary still from fallback backdrop in `ArtworkLoader` | `ShowModels.cs`, `TVShowDetailsPage.xaml.cs`, `ArtworkLoader` | `Pending` | — | Documented in `docs/plans/` |
+| **Feature Phase** | **`F-2`** | Inbound Downloads Auto-Scan (`FEAT-INBOUND-AUTOSCAN`) — Auto-detect completed media in watch folder upon Add Media navigation with file-lock guard | `AppSettingsStore.cs`, `AddMediaPage.xaml.cs`, `FileLockGuard.cs` | `Pending` | — | Documented in `docs/plans/` |
 
 ---
 

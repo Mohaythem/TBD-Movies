@@ -103,4 +103,6 @@ dotnet test "TBDMovies_WinUI3\TBDMovies.slnx" -c Release
 
 • **1. Subtitles & External Providers (`[U7]` & `[U3]`)**: SubDL API authentication and subtitle discovery/download workflows.  
 • **2. TMDB v4 Token / Key Unification (`[M1]`)**: Review token authentication headers across TMDB API endpoints.  
-• **3. Random Media Selector (`[U6]`)**: Verification of random picker interactive UI behavior across multi-thousand title libraries.
+• **3. Random Media Selector (`[U6]`)**: Verification of random picker interactive UI behavior across multi-thousand title libraries.  
+• **4. Episode Stills & Season Posters (`[F1]` — `FEAT-EPISODE-ARTWORK`)**: Decouple primary episode still from fallback backdrop in `ArtworkLoader.cs` (spec: `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`).  
+• **5. Inbound Downloads Auto-Scan (`[F2]` — `FEAT-INBOUND-AUTOSCAN`)**: Auto-detect completed media in watch folder upon Add Media navigation with file-lock guard (spec: `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`).

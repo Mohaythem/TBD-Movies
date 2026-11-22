@@ -17,6 +17,10 @@
   - Wave 6 (Batch 6.1): `SEC-17..18`, `SEC-24..25`, UI Crash Relocation, AppDiagnosticsLog, UI Error Sanitization & Startup Telemetry (`1,435` tests).
   - Polish Pass: LRU Sorting Logic Fix, Reparse Guards, `CsWinRT1032` Concrete Collection Refactoring & GitHub Actions v7/v6 Upgrade (`1,438+` tests).
 - **Baseline Test Suite**: **`1,438 / 1,438`** tests passing in Release (100% Green on Windows CI with `0 Warning(s), 0 Error(s)`).
+- **Upcoming Feature Backlog (User Feedback Intake)**:
+  - `FEAT-EPISODE-ARTWORK` (`[F1]`): Episode Stills & Season Posters in WinUI 3 via `ArtworkLoader` decoupling.
+  - `FEAT-INBOUND-AUTOSCAN` (`[F2]`): Inbound Downloads Auto-Scan with FileLock Guard on `AddMediaPage`.
+  - Detailed Specification: `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`.
 
 ## Completed Work
 58. **LRU Cache Fix, Reparse & Log Hardening, and Pre-Release Polish Pass [CsWinRT1032 Zero-Warnings & CI Modernization]**:

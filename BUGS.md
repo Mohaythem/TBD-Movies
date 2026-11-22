@@ -66,6 +66,17 @@
 ### [U6] [Regression Check Only 🔍] Random Media Picker
 - **Status**: Verified functional; requires routine regression verification following player workflow updates.
 
+### [F1] [Backlog / Scheduled ⏳] Episode Stills & Season Posters (`FEAT-EPISODE-ARTWORK`)
+- **Affected Subsystems**: `ShowModels.cs` (`ArtworkLoader:708-726`), `TVShowDetailsPage.xaml`, `TVShowDetailsPage.xaml.cs`.
+- **Problem & Root Cause**: `ArtworkLoader` defaults to cached series backdrop and skips asynchronous downloading of individual episode still thumbnails (`still_path`).
+- **Required Resolution**: Decouple primary `stillReference` from fallback backdrop; trigger background download for primary still, with smooth UI dispatcher swap on completion.
+- **Specification**: Full details in `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`.
+
+### [F2] [Backlog / Scheduled ⏳] Inbound Downloads Auto-Scan (`FEAT-INBOUND-AUTOSCAN`)
+- **Affected Subsystems**: `AppSettingsStore.cs`, `AddMediaPage.xaml.cs`, `FileLockGuard.cs` (new).
+- **Feature Scope**: Automatically detect completed downloads/torrents in the configured inbound folder upon opening Add Media, using write-lock guards to skip in-progress files.
+- **Specification**: Full details in `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`.
+
 ---
 
 ## 2. Resolved & Verified Problem Ledger
