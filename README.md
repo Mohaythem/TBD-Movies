@@ -33,7 +33,7 @@ A modern, fast, and local-first desktop media library for Windows, built with **
 Download the latest official release directly from **[GitHub Releases](https://github.com/Mohaythem/TBD-Movies/releases)**:
 
 - **Installer (`TBDMoviesSetup.exe`)**: Automatic per-user setup with Desktop and Start Menu shortcuts.
-- **Portable Edition (`TBD-Movies-v0.12.5-portable.zip`)**: Ready to run anywhere without installation. Just extract and launch `TBD-Movies.exe`.
+- **Portable Edition (`TBD-Movies-v0.12.6-portable.zip`)**: Ready to run anywhere without installation. Just extract and launch `TBD-Movies.exe`.
 
 ---
 

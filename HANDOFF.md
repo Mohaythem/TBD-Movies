@@ -1,7 +1,7 @@
 # TBD Movies — Consolidated Handoff & Active Engineering Roadmap (`HANDOFF.md`)
 
 **Documentation & Review Date**: November 22, 2026  
-**Current Version**: `v0.12.5` (`TBD-Movies.exe` / `TBDMoviesSetup.exe`)  
+**Current Version**: `v0.12.6` (`TBD-Movies.exe` / `TBDMoviesSetup.exe`)  
 **Current Branch**: `codex` (Up to date and verified on GitHub Actions CI — **100% Green**)  
 **Tech Stack**: WinUI 3 / **C# 14** / .NET 10 (`net10.0-windows10.0.22621`) / Windows App SDK `1.7.260224002` / SQLite WAL (`library.db` — **`DatabaseMigrator.LatestVersion = 23`**) / Unpackaged mode (`win-x64`).  
 **Windows Release Baseline**: Clean `Release` build (`0 Warning(s), 0 Error(s)` verified on Windows runner).  

@@ -143,7 +143,7 @@ Before committing changes or proposing a push, verify the following ten historic
 - **Data Isolation Variable**: The exact environment variable used in code (`AppServices.cs:77`) is **`TBDMOVIES_TEST_DATA_ROOT`** (uppercase, no spaces).
 - **Concurrency & Security Gates**: All SQLite writes pass exclusively through `DatabaseWriteGate`; network paths are verified via `NetworkReadGuard`; TMDB and Trakt tokens reside in `Windows Credential Manager` (`CredWriteW` / `CredReadW`).
 - **GPL-3.0 Clean-Room Standard**: The project is licensed under `GPL-3.0`. Reference implementations (e.g. Seanime, Habari) may be studied for protocols and WinRT APIs, but code must be authored cleanly and natively to match TBD Movies contracts without copy-paste.
-- **Product Identity & Build Artifacts**: Product version is **`v0.12.5`**, executable is `TBD-Movies.exe`, installer is `TBDMoviesSetup.exe`, solution file is `TBDMovies_WinUI3/TBDMovies.slnx`, and database schema is `DatabaseMigrator.LatestVersion = 23`.
+- **Product Identity & Build Artifacts**: Product version is **`v0.12.6`**, executable is `TBD-Movies.exe`, installer is `TBDMoviesSetup.exe`, solution file is `TBDMovies_WinUI3/TBDMovies.slnx`, and database schema is `DatabaseMigrator.LatestVersion = 23`.
 
 ### VII. Cross-Assembly Accessibility Invariant
 - `[InternalsVisibleTo]` is granted exclusively to `TBDMovies.Tests` and never to `TBDMovies.UI`.

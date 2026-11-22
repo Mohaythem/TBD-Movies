@@ -242,7 +242,7 @@ public sealed class PlaybackTrackingService
                         Year: target.MovieYear,
                         Ids: new TraktSyncIds(Tmdb: target.MovieTmdbId)),
                     Progress: progress,
-                    AppVersion: "0.12.5");
+                    AppVersion: "0.12.6");
             }
             else
             {
@@ -257,7 +257,7 @@ public sealed class PlaybackTrackingService
                         Number: target.EpisodeNumber.Value,
                         Title: target.EpisodeTitle),
                     Progress: progress,
-                    AppVersion: "0.12.5");
+                    AppVersion: "0.12.6");
             }
 
             switch (action)
