@@ -10,6 +10,7 @@ using TBDMovies.Application.Trakt;
 using TBDMovies.Domain.Library.Personal;
 using TBDMovies.UI.Models;
 using TBDMovies.UI.Services;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;

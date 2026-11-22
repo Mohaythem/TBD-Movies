@@ -467,7 +467,7 @@ public sealed class TraktEcosystemAndWatchedSyncTests
         Assert.NotNull(dataClient.LastWatchlistBatchCall);
         Assert.True(dataClient.LastWatchlistBatchCall!.Value.IsAdd);
         Assert.Equal(2, dataClient.LastWatchlistBatchCall.Value.Movies!.Count);
-        Assert.Equal(1, dataClient.LastWatchlistBatchCall.Value.Shows!.Count);
+        Assert.Single(dataClient.LastWatchlistBatchCall.Value.Shows!);
         Assert.Equal(1, syncCompletedCount);
     }
 
