@@ -256,114 +256,84 @@ public sealed partial class TraktDataClient
         string accessToken,
         CancellationToken cancellationToken)
     {
-        var uri = new Uri($"{TraktDataConfig.ApiBaseUrl}/{relativePath}");
-        int attempt = 0;
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            new Uri($"{TraktDataConfig.ApiBaseUrl}/{relativePath}"));
+        TraktRequestHeaders.IdentifyApplication(request);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Headers.Add("trakt-api-key", clientId);
+        request.Headers.Add("trakt-api-version", TraktDataConfig.ApiVersion);
+        request.Content = new StringContent(
+            JsonSerializer.Serialize(payload),
+            Encoding.UTF8,
+            "application/json");
 
-        while (true)
+        HttpResponseMessage response;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(_httpClient.Timeout);
+        try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, uri);
-            TraktRequestHeaders.IdentifyApplication(request);
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-            request.Headers.Add("trakt-api-key", clientId);
-            request.Headers.Add("trakt-api-version", TraktDataConfig.ApiVersion);
-            request.Content = new StringContent(
-                JsonSerializer.Serialize(payload),
-                Encoding.UTF8,
-                "application/json");
+            response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                timeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            throw new TraktClientException(TraktFailureKind.Network,
+                    "Network error occurred while writing to Trakt.", relativePath);
+        }
 
-            HttpResponseMessage response;
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(_httpClient.Timeout);
+        using (response)
+        {
+            if ((int)response.StatusCode is >= 300 and <= 399)
+                throw new TraktClientException(TraktFailureKind.HttpError,
+                    "HTTP redirect not permitted.", relativePath, response.StatusCode);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+                throw new TraktClientException(TraktFailureKind.Unauthorized,
+                    "Trakt rejected authentication credentials.", relativePath, response.StatusCode);
+            if (response.StatusCode != HttpStatusCode.Created && response.StatusCode != HttpStatusCode.OK)
+                throw new TraktClientException(TraktFailureKind.HttpError,
+                    $"Trakt server returned HTTP status {(int)response.StatusCode}.", relativePath, response.StatusCode);
+
+            byte[] bytes;
             try
             {
-                response = await _httpClient.SendAsync(
-                    request,
-                    HttpCompletionOption.ResponseHeadersRead,
-                    timeout.Token).ConfigureAwait(false);
+                bytes = await ReadBoundedStreamAsync(
+                    response.Content, _options.MaxResponseBytesPerPage, relativePath, timeout.Token).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                throw;
+                throw new TraktClientException(TraktFailureKind.Network, "Trakt write response timed out; outcome is unknown.", relativePath);
             }
-            catch (Exception ex)
+            catch (IOException)
             {
-                if (attempt >= _options.MaxRateLimitRetries)
-                {
-                    throw new TraktClientException(TraktFailureKind.Network,
-                        "Network error occurred while writing to Trakt.", relativePath, innerException: ex);
-                }
-                var delay = CalculateRetryDelay(null, attempt);
-                await _delayAsync(delay, cancellationToken).ConfigureAwait(false);
-                attempt++;
-                continue;
+                throw new TraktClientException(TraktFailureKind.Network, "Trakt write response could not be read; outcome is unknown.", relativePath);
             }
 
-            using (response)
+            if (bytes.Length == 0)
             {
-                if ((int)response.StatusCode is >= 300 and <= 399)
-                    throw new TraktClientException(TraktFailureKind.HttpError,
-                        "HTTP redirect not permitted.", relativePath, response.StatusCode);
+                using var emptyDoc = JsonDocument.Parse("{}");
+                return emptyDoc.RootElement.Clone();
+            }
 
-                if (response.StatusCode == HttpStatusCode.Unauthorized)
-                    throw new TraktClientException(TraktFailureKind.Unauthorized,
-                        "Trakt rejected authentication credentials.", relativePath, response.StatusCode);
-
-                if (response.StatusCode == HttpStatusCode.TooManyRequests ||
-                    response.StatusCode == HttpStatusCode.BadGateway ||
-                    response.StatusCode == HttpStatusCode.ServiceUnavailable ||
-                    response.StatusCode == HttpStatusCode.GatewayTimeout)
-                {
-                    if (attempt >= _options.MaxRateLimitRetries)
-                    {
-                        throw new TraktClientException(
-                            response.StatusCode == HttpStatusCode.TooManyRequests ? TraktFailureKind.RateLimited : TraktFailureKind.HttpError,
-                            $"Trakt server returned {(int)response.StatusCode}; retries exhausted.", relativePath, response.StatusCode);
-                    }
-                    var delay = CalculateRetryDelay(response.Headers.RetryAfter, attempt);
-                    await _delayAsync(delay, cancellationToken).ConfigureAwait(false);
-                    attempt++;
-                    continue;
-                }
-
-                if (response.StatusCode != HttpStatusCode.Created && response.StatusCode != HttpStatusCode.OK)
-                    throw new TraktClientException(TraktFailureKind.HttpError,
-                        $"Trakt server returned HTTP status {(int)response.StatusCode}.", relativePath, response.StatusCode);
-
-                byte[] bytes;
-                try
-                {
-                    bytes = await ReadBoundedStreamAsync(
-                        response.Content, _options.MaxResponseBytesPerPage, relativePath, timeout.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-                {
-                    throw new TraktClientException(TraktFailureKind.Network, "Trakt write response timed out; outcome is unknown.", relativePath);
-                }
-                catch (IOException)
-                {
-                    throw new TraktClientException(TraktFailureKind.Network, "Trakt write response could not be read; outcome is unknown.", relativePath);
-                }
-
-                if (bytes.Length == 0)
-                {
-                    using var emptyDoc = JsonDocument.Parse("{}");
-                    return emptyDoc.RootElement.Clone();
-                }
-
-                try
-                {
-                    using var document = JsonDocument.Parse(bytes);
-                    if (document.RootElement.ValueKind != JsonValueKind.Object)
-                        throw new TraktClientException(TraktFailureKind.InvalidResponse,
-                            "Expected JSON object payload for list write.", relativePath, response.StatusCode);
-                    return document.RootElement.Clone();
-                }
-                catch (JsonException)
-                {
+            try
+            {
+                using var document = JsonDocument.Parse(bytes);
+                if (document.RootElement.ValueKind != JsonValueKind.Object)
                     throw new TraktClientException(TraktFailureKind.InvalidResponse,
-                        "Malformed JSON received for list write.", relativePath, response.StatusCode);
-                }
+                        "Expected JSON object payload for list write.", relativePath, response.StatusCode);
+                return document.RootElement.Clone();
+            }
+            catch (JsonException)
+            {
+                throw new TraktClientException(TraktFailureKind.InvalidResponse,
+                    "Malformed JSON received for list write.", relativePath, response.StatusCode);
             }
         }
     }

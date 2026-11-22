@@ -711,7 +711,7 @@ public sealed class UnifiedTraktListsTests : IDisposable
         }
 
         var pendingBefore = repo.ListPendingActions(listId);
-        Assert.Single(pendingBefore);
+        Assert.Equal(2, pendingBefore.Count);
 
         repo.ClearTraktPendingActions();
 
