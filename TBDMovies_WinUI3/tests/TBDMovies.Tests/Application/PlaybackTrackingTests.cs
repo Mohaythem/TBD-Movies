@@ -710,8 +710,8 @@ public sealed class PlaybackTrackingTests
             // Stale progress must be deleted
             Assert.Null(progressRepo.GetByMediaFileId(800));
 
-            // Stop scrobble must be sent even for under 3s exit to clear "Watching Now" on Trakt
-            Assert.Contains(mockTrakt.Calls, c => c.Action == "stop" && c.Progress == 0.0);
+            // Stop scrobble must be sent even for under 3s exit to clear "Watching Now" on Trakt (1.5s / 1000s = 0.15%)
+            Assert.Contains(mockTrakt.Calls, c => c.Action == "stop" && Math.Abs(c.Progress - 0.15) < 0.01);
 
             // PlaybackEnded must still be invoked to refresh UI
             Assert.True(endedFired);
