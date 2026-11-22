@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -14,6 +16,87 @@ namespace TBDMovies.Infrastructure.Trakt;
 
 public sealed partial class TraktDataClient
 {
+    public async Task<JsonElement> AddItemsToListAsync(
+        long? listId,
+        IReadOnlyList<long>? movieTmdbIds,
+        IReadOnlyList<long>? showTmdbIds,
+        string clientId,
+        string accessToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (listId is <= 0) throw new ArgumentOutOfRangeException(nameof(listId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(clientId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(accessToken);
+
+        var relativePath = listId.HasValue
+            ? $"users/me/lists/{listId.Value.ToString(CultureInfo.InvariantCulture)}/items"
+            : "sync/watchlist";
+
+        return await SendChunkedListMutationAsync(relativePath, movieTmdbIds, showTmdbIds, clientId, accessToken, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<JsonElement> RemoveItemsFromListAsync(
+        long? listId,
+        IReadOnlyList<long>? movieTmdbIds,
+        IReadOnlyList<long>? showTmdbIds,
+        string clientId,
+        string accessToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (listId is <= 0) throw new ArgumentOutOfRangeException(nameof(listId));
+        ArgumentException.ThrowIfNullOrWhiteSpace(clientId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(accessToken);
+
+        var relativePath = listId.HasValue
+            ? $"users/me/lists/{listId.Value.ToString(CultureInfo.InvariantCulture)}/items/remove"
+            : "sync/watchlist/remove";
+
+        return await SendChunkedListMutationAsync(relativePath, movieTmdbIds, showTmdbIds, clientId, accessToken, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<JsonElement> SendChunkedListMutationAsync(
+        string relativePath,
+        IReadOnlyList<long>? movieTmdbIds,
+        IReadOnlyList<long>? showTmdbIds,
+        string clientId,
+        string accessToken,
+        CancellationToken cancellationToken)
+    {
+        var movies = movieTmdbIds?.Where(id => id > 0).Distinct().ToList() ?? [];
+        var shows = showTmdbIds?.Where(id => id > 0).Distinct().ToList() ?? [];
+
+        if (movies.Count == 0 && shows.Count == 0)
+        {
+            using var doc = JsonDocument.Parse("{}");
+            return doc.RootElement.Clone();
+        }
+
+        const int chunkSize = 100;
+        int movieIdx = 0;
+        int showIdx = 0;
+        JsonElement lastResult = default;
+
+        while (movieIdx < movies.Count || showIdx < shows.Count)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var chunkMovies = movies.Skip(movieIdx).Take(chunkSize).Select(id => new { ids = new { tmdb = id } }).ToArray();
+            var chunkShows = shows.Skip(showIdx).Take(chunkSize).Select(id => new { ids = new { tmdb = id } }).ToArray();
+
+            movieIdx += chunkMovies.Length;
+            showIdx += chunkShows.Length;
+
+            object payload = new
+            {
+                movies = chunkMovies,
+                shows = chunkShows
+            };
+
+            lastResult = await ExecuteListMutationAsync(relativePath, payload, clientId, accessToken, cancellationToken).ConfigureAwait(false);
+        }
+
+        return lastResult;
+    }
+
     public Task<JsonElement> AddMovieToListAsync(
         long? listId,
         long tmdbId,

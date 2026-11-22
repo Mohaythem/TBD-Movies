@@ -128,5 +128,20 @@ public interface ITraktUiActions
     /// Pushes custom list item addition/removal to Trakt (with offline queueing support).
     /// </summary>
     Task<bool> PushCustomListItemAsync(int localListId, TraktMediaKind kind, long tmdbId, bool isAdd, CancellationToken ct = default);
+
+    /// <summary>
+    /// Pushes a batch of movie and show favorites additions or removals to Trakt in a single operation.
+    /// </summary>
+    Task<bool> PushBatchFavoritesAsync(IReadOnlyList<long> movieTmdbIds, IReadOnlyList<long> showTmdbIds, bool isFavorite, CancellationToken ct = default);
+
+    /// <summary>
+    /// Pushes a batch of movie and show watchlist additions or removals to Trakt in a single operation.
+    /// </summary>
+    Task<bool> PushBatchWatchlistAsync(IReadOnlyList<long> movieTmdbIds, IReadOnlyList<long> showTmdbIds, bool isWatchlisted, CancellationToken ct = default);
+
+    /// <summary>
+    /// Pushes a batch of movie and show items to a custom list on Trakt in a single operation.
+    /// </summary>
+    Task<bool> PushBatchCustomListItemsAsync(int localListId, IReadOnlyList<long> movieTmdbIds, IReadOnlyList<long> showTmdbIds, bool isAdd, CancellationToken ct = default);
 }
 

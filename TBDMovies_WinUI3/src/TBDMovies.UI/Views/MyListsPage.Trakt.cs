@@ -760,9 +760,35 @@ public sealed partial class MyListsPage
         RefreshTrakt();
     }
 
+    private DispatcherQueueTimer? _syncRefreshDebounceTimer;
+
+    private void EnsureSyncDebounceTimer()
+    {
+        if (_syncRefreshDebounceTimer is not null) return;
+        _syncRefreshDebounceTimer = DispatcherQueue.CreateTimer();
+        _syncRefreshDebounceTimer.Interval = TimeSpan.FromMilliseconds(250);
+        _syncRefreshDebounceTimer.IsRepeating = false;
+        _syncRefreshDebounceTimer.Tick += (_, _) =>
+        {
+            _syncRefreshDebounceTimer?.Stop();
+            if (!_isActivated || !IsLoaded) return;
+            RebuildTraktTabs();
+            ReloadAfterSync();
+        };
+    }
+
+    private void ScheduleDebouncedSyncReload()
+    {
+        EnsureSyncDebounceTimer();
+        _syncRefreshDebounceTimer?.Stop();
+        _syncRefreshDebounceTimer?.Start();
+    }
+
     public void Deactivate()
     {
         _searchDebounceTimer?.Stop();
+        _syncRefreshDebounceTimer?.Stop();
+        _syncRefreshDebounceTimer = null;
         AppServices.TraktSyncCompleted -= OnTraktSyncCompleted;
         if (AppServices.Trakt is { } trakt) trakt.SyncProgressChanged -= OnTraktSyncProgressChanged;
         _traktActive = false;
@@ -794,10 +820,7 @@ public sealed partial class MyListsPage
             SyncStatusText.Visibility = Visibility.Visible;
             if (!_isActivated || !IsLoaded) return;
             UpdateSyncStatus();
-            _customLists = LoadCustomLists();
-            RebuildTabs();
-            RebuildTraktTabs();
-            Refresh();
+            ScheduleDebouncedSyncReload();
         });
     }
 

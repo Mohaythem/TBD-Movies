@@ -150,16 +150,14 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             SyncProgressContainer.Visibility = Visibility.Collapsed;
             SyncStatusText.Visibility = Visibility.Visible;
             UpdateSyncStatus();
-            _customLists = LoadCustomLists();
-            RebuildTabs();
-            Refresh();
+            ReloadAfterSync();
         }
     }
 
     /// <summary>Drops the per-visit caches: the custom lists and the loaded section.</summary>
     private void Invalidate()
     {
-        _customLists = _isActivated ? LoadCustomLists() : [];
+        _customLists = _isActivated ? LoadCustomLists() : Array.Empty<CustomList>();
         _sectionItems = null;
         _sectionKey = null;
         _continueItems = null;
@@ -167,10 +165,34 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         _activityReadError = null;
     }
 
+    private static bool CustomListsChanged(IReadOnlyList<CustomList> previous, IReadOnlyList<CustomList> next)
+    {
+        if (previous.Count != next.Count) return true;
+        for (int i = 0; i < previous.Count; i++)
+        {
+            var p = previous[i];
+            var n = next[i];
+            if (p.Id != n.Id || !string.Equals(p.Name, n.Name, StringComparison.Ordinal) || p.TraktListId != n.TraktListId)
+                return true;
+        }
+        return false;
+    }
+
+    private void ReloadAfterSync()
+    {
+        var previousLists = _customLists;
+        Invalidate();
+        if (CustomListsChanged(previousLists, _customLists))
+        {
+            RebuildTabs();
+        }
+        Refresh();
+    }
+
     private static IReadOnlyList<CustomList> LoadCustomLists()
     {
         try { return AppServices.Personal.ListCustomLists(); }
-        catch (Exception) { return []; }
+        catch (Exception) { return Array.Empty<CustomList>(); }
     }
 
     public void ApplyLocalization()

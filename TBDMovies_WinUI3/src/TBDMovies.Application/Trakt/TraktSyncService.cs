@@ -290,12 +290,19 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
 
             // 4. Update in-memory state:
             // Clear current account connection, but retain explicit last account ID for offline cache browsing.
+            var activeId = _currentAccountId ?? _authService.GetAuthState().AccountId;
             _currentAccountId = null;
             UpdateState(auth: _authService.GetAuthState(), isSyncing: false, clearError: true);
 
             // 5. Clear pending offline actions to prevent cross-account leak
             _personalLibraryRepository?.ClearTraktPendingActions();
             SavePendingFavoriteActions(new List<TraktPendingFavoriteAction>());
+
+            if (!string.IsNullOrWhiteSpace(activeId) && _settingsRepository != null)
+            {
+                _settingsRepository.Delete($"trakt_initial_sync_v2_{activeId}_favorites");
+                _settingsRepository.Delete($"trakt_initial_sync_{activeId}_watchlist");
+            }
         }
         finally
         {
@@ -1958,6 +1965,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
 
             if (!result.Success)
             {
+                AppDiagnosticsLog.Record("TraktFavorites", $"PushMovieFavoriteAsync write failed: {result.Error}");
                 EnqueuePendingFavoriteAction("MOVIE", (int)tmdbId, action);
                 return false;
             }
@@ -1969,7 +1977,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] PushMovieFavoriteAsync error, enqueued offline: {ex.Message}");
+            AppDiagnosticsLog.Record("TraktFavorites", $"PushMovieFavoriteAsync error, enqueued offline: {ex.Message}");
             EnqueuePendingFavoriteAction("MOVIE", (int)tmdbId, action);
             return false;
         }
@@ -2002,6 +2010,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
 
             if (!result.Success)
             {
+                AppDiagnosticsLog.Record("TraktFavorites", $"PushShowFavoriteAsync write failed: {result.Error}");
                 EnqueuePendingFavoriteAction("SHOW", (int)tmdbId, action);
                 return false;
             }
@@ -2090,6 +2099,191 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         catch (Exception ex)
         {
             AppDiagnosticsLog.Record("TraktCustomLists", $"PushCustomListItemAsync failed, queued for next sync: {ex.Message}");
+            return false;
+        }
+        finally
+        {
+            _operationGate.Release();
+            try { SyncCompleted?.Invoke(this, EventArgs.Empty); } catch { }
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> PushBatchFavoritesAsync(IReadOnlyList<long> movieTmdbIds, IReadOnlyList<long> showTmdbIds, bool isFavorite, CancellationToken ct = default)
+    {
+        var movies = movieTmdbIds?.Where(id => id > 0).Distinct().ToList() ?? [];
+        var shows = showTmdbIds?.Where(id => id > 0).Distinct().ToList() ?? [];
+        if (movies.Count == 0 && shows.Count == 0) return false;
+
+        var auth = _authService.GetAuthState();
+        if (!HasLinkedTraktAccount(auth)) return false;
+        var action = isFavorite ? "ADD" : "REMOVE";
+
+        if (!auth.IsConnected || auth.RequiresReconnect)
+        {
+            foreach (var m in movies) EnqueuePendingFavoriteAction("MOVIE", (int)m, action);
+            foreach (var s in shows) EnqueuePendingFavoriteAction("SHOW", (int)s, action);
+            return false;
+        }
+
+        await _operationGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = isFavorite
+                ? await MutateWithAuthRetryAsync(token => _dataClient.AddFavoritesBatchAsync(movies, shows, token, _config.ClientId, ct), ct).ConfigureAwait(false)
+                : await MutateWithAuthRetryAsync(token => _dataClient.RemoveFavoritesBatchAsync(movies, shows, token, _config.ClientId, ct), ct).ConfigureAwait(false);
+
+            if (!result.Success)
+            {
+                AppDiagnosticsLog.Record("TraktFavorites", $"PushBatchFavoritesAsync failed: {result.Error}");
+                foreach (var m in movies) EnqueuePendingFavoriteAction("MOVIE", (int)m, action);
+                foreach (var s in shows) EnqueuePendingFavoriteAction("SHOW", (int)s, action);
+                return false;
+            }
+            return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            AppDiagnosticsLog.Record("TraktFavorites", $"PushBatchFavoritesAsync error: {ex.Message}");
+            foreach (var m in movies) EnqueuePendingFavoriteAction("MOVIE", (int)m, action);
+            foreach (var s in shows) EnqueuePendingFavoriteAction("SHOW", (int)s, action);
+            return false;
+        }
+        finally
+        {
+            _operationGate.Release();
+            try { SyncCompleted?.Invoke(this, EventArgs.Empty); } catch { }
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> PushBatchWatchlistAsync(IReadOnlyList<long> movieTmdbIds, IReadOnlyList<long> showTmdbIds, bool isWatchlisted, CancellationToken ct = default)
+    {
+        var movies = movieTmdbIds?.Where(id => id > 0).Distinct().ToList() ?? [];
+        var shows = showTmdbIds?.Where(id => id > 0).Distinct().ToList() ?? [];
+        if (movies.Count == 0 && shows.Count == 0) return false;
+
+        var auth = _authService.GetAuthState();
+        if (!HasLinkedTraktAccount(auth)) return false;
+        var action = isWatchlisted ? "ADD" : "REMOVE";
+
+        if (!auth.IsConnected || auth.RequiresReconnect)
+        {
+            if (_personalLibraryRepository != null)
+            {
+                foreach (var m in movies) _personalLibraryRepository.EnqueueTraktPendingWatchlist("MOVIE", (int)m, action);
+                foreach (var s in shows) _personalLibraryRepository.EnqueueTraktPendingWatchlist("SHOW", (int)s, action);
+            }
+            return false;
+        }
+
+        await _operationGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = isWatchlisted
+                ? await MutateWithAuthRetryAsync(token => _dataClient.AddWatchlistBatchAsync(movies, shows, token, _config.ClientId, ct), ct).ConfigureAwait(false)
+                : await MutateWithAuthRetryAsync(token => _dataClient.RemoveWatchlistBatchAsync(movies, shows, token, _config.ClientId, ct), ct).ConfigureAwait(false);
+
+            if (!result.Success)
+            {
+                AppDiagnosticsLog.Record("TraktWatchlist", $"PushBatchWatchlistAsync failed: {result.Error}");
+                if (_personalLibraryRepository != null)
+                {
+                    foreach (var m in movies) _personalLibraryRepository.EnqueueTraktPendingWatchlist("MOVIE", (int)m, action);
+                    foreach (var s in shows) _personalLibraryRepository.EnqueueTraktPendingWatchlist("SHOW", (int)s, action);
+                }
+                return false;
+            }
+            return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            AppDiagnosticsLog.Record("TraktWatchlist", $"PushBatchWatchlistAsync error: {ex.Message}");
+            if (_personalLibraryRepository != null)
+            {
+                foreach (var m in movies) _personalLibraryRepository.EnqueueTraktPendingWatchlist("MOVIE", (int)m, action);
+                foreach (var s in shows) _personalLibraryRepository.EnqueueTraktPendingWatchlist("SHOW", (int)s, action);
+            }
+            return false;
+        }
+        finally
+        {
+            _operationGate.Release();
+            try { SyncCompleted?.Invoke(this, EventArgs.Empty); } catch { }
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> PushBatchCustomListItemsAsync(int localListId, IReadOnlyList<long> movieTmdbIds, IReadOnlyList<long> showTmdbIds, bool isAdd, CancellationToken ct = default)
+    {
+        if (localListId <= 0) return false;
+        var movies = movieTmdbIds?.Where(id => id > 0).Distinct().ToList() ?? [];
+        var shows = showTmdbIds?.Where(id => id > 0).Distinct().ToList() ?? [];
+        if (movies.Count == 0 && shows.Count == 0) return false;
+
+        var auth = _authService.GetAuthState();
+        if (!HasLinkedTraktAccount(auth)) return false;
+
+        if (_personalLibraryRepository == null) return false;
+        var localList = _personalLibraryRepository.ListCustomLists().FirstOrDefault(l => l.Id == localListId);
+        if (localList == null || !localList.TraktListId.HasValue || localList.TraktListId.Value <= 0) return false;
+        var traktListId = localList.TraktListId.Value;
+
+        if (_dataClient is not ITraktListWriter listWriter) return false;
+
+        var actionType = isAdd ? "ADD" : "REMOVE";
+
+        if (!auth.IsConnected || auth.RequiresReconnect)
+        {
+            return false;
+        }
+
+        await _operationGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (isAdd)
+            {
+                await MutateWithAuthRetryAsync(token => listWriter.AddItemsToListAsync(traktListId, movies, shows, _config.ClientId, token, ct), ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await MutateWithAuthRetryAsync(token => listWriter.RemoveItemsFromListAsync(traktListId, movies, shows, _config.ClientId, token, ct), ct).ConfigureAwait(false);
+            }
+
+            var pending = _personalLibraryRepository.ListPendingActions(localListId);
+            var movieSet = movies.Select(id => (int)id).ToHashSet();
+            var showSet = shows.Select(id => (int)id).ToHashSet();
+
+            foreach (var p in pending)
+            {
+                if (!string.Equals(p.ActionType, actionType, StringComparison.OrdinalIgnoreCase)) continue;
+                if (p.MediaKind == CustomListMediaKind.Movie && p.TmdbId.HasValue && movieSet.Contains(p.TmdbId.Value))
+                {
+                    _personalLibraryRepository.DeletePendingAction(p.Id);
+                }
+                else if (p.MediaKind == CustomListMediaKind.Show && p.TmdbId.HasValue && showSet.Contains(p.TmdbId.Value))
+                {
+                    _personalLibraryRepository.DeletePendingAction(p.Id);
+                }
+            }
+
+            return true;
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            AppDiagnosticsLog.Record("TraktCustomLists", $"PushBatchCustomListItemsAsync failed: {ex.Message}");
             return false;
         }
         finally
@@ -2231,7 +2425,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             var remoteFavMovieTmdb = remoteFavMovies.Where(m => m.TmdbId.HasValue).Select(m => (int)m.TmdbId!.Value).ToHashSet();
             var remoteFavShowTmdb = remoteFavShows.Where(s => s.TmdbId.HasValue).Select(s => (int)s.TmdbId!.Value).ToHashSet();
 
-            var isInitialSync = _settingsRepository?.Get($"trakt_initial_sync_{accountId}_favorites") != "true";
+            var isInitialSync = _settingsRepository?.Get($"trakt_initial_sync_v2_{accountId}_favorites") != "true";
             var initialUploadSucceeded = true;
 
             // 3. Downstream & Upstream Reconciliation
@@ -2257,7 +2451,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                             }
                             catch (Exception ex)
                             {
-                                System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to set favorite for movie {cand.LocalId}: {ex.Message}");
+                                AppDiagnosticsLog.Record("TraktFavorites", $"Failed to set favorite for movie {cand.LocalId}: {ex.Message}");
                             }
                         }
                     }
@@ -2394,7 +2588,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
 
             if (isInitialSync && initialUploadSucceeded)
             {
-                _settingsRepository?.Set($"trakt_initial_sync_{accountId}_favorites", "true", now);
+                _settingsRepository?.Set($"trakt_initial_sync_v2_{accountId}_favorites", "true", now);
             }
 
             return true;

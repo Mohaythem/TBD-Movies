@@ -409,6 +409,86 @@ public sealed class TraktEcosystemAndWatchedSyncTests
     }
 
     [Fact]
+    public async Task PushBatchFavoritesAsync_WhenConnected_CallsDataClientAndRaisesSyncCompleted()
+    {
+        var authService = new TestTraktAuthService();
+        authService.SetConnected("uuid-123", "valid-token");
+        var dataClient = new TestTraktDataClient();
+        var cacheRepo = new TestTraktCacheRepository();
+        var settingsRepo = new TestSettingsRepository();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero));
+        var config = TraktDefaults.CreateDefaultConfig();
+
+        using var syncService = new TraktSyncService(authService, dataClient, cacheRepo, config, settingsRepo, timeProvider);
+
+        int syncCompletedCount = 0;
+        syncService.SyncCompleted += (_, _) => syncCompletedCount++;
+
+        var movieIds = new List<long> { 550, 603, 105 };
+        var showIds = new List<long> { 1399, 1400 };
+
+        var addResult = await syncService.PushBatchFavoritesAsync(movieIds, showIds, isFavorite: true);
+        Assert.True(addResult);
+        Assert.NotNull(dataClient.LastFavoritesBatchCall);
+        Assert.True(dataClient.LastFavoritesBatchCall!.Value.IsAdd);
+        Assert.Equal(3, dataClient.LastFavoritesBatchCall.Value.Movies!.Count);
+        Assert.Equal(2, dataClient.LastFavoritesBatchCall.Value.Shows!.Count);
+        Assert.Equal(1, syncCompletedCount);
+
+        syncCompletedCount = 0;
+        var removeResult = await syncService.PushBatchFavoritesAsync(movieIds, showIds, isFavorite: false);
+        Assert.True(removeResult);
+        Assert.NotNull(dataClient.LastFavoritesBatchCall);
+        Assert.False(dataClient.LastFavoritesBatchCall!.Value.IsAdd);
+        Assert.Equal(1, syncCompletedCount);
+    }
+
+    [Fact]
+    public async Task PushBatchWatchlistAsync_WhenConnected_CallsDataClientAndRaisesSyncCompleted()
+    {
+        var authService = new TestTraktAuthService();
+        authService.SetConnected("uuid-123", "valid-token");
+        var dataClient = new TestTraktDataClient();
+        var cacheRepo = new TestTraktCacheRepository();
+        var settingsRepo = new TestSettingsRepository();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero));
+        var config = TraktDefaults.CreateDefaultConfig();
+
+        using var syncService = new TraktSyncService(authService, dataClient, cacheRepo, config, settingsRepo, timeProvider);
+
+        int syncCompletedCount = 0;
+        syncService.SyncCompleted += (_, _) => syncCompletedCount++;
+
+        var movieIds = new List<long> { 550, 603 };
+        var showIds = new List<long> { 1399 };
+
+        var addResult = await syncService.PushBatchWatchlistAsync(movieIds, showIds, isWatchlisted: true);
+        Assert.True(addResult);
+        Assert.NotNull(dataClient.LastWatchlistBatchCall);
+        Assert.True(dataClient.LastWatchlistBatchCall!.Value.IsAdd);
+        Assert.Equal(2, dataClient.LastWatchlistBatchCall.Value.Movies!.Count);
+        Assert.Equal(1, dataClient.LastWatchlistBatchCall.Value.Shows!.Count);
+        Assert.Equal(1, syncCompletedCount);
+    }
+
+    [Fact]
+    public async Task PushBatchFavoritesAsync_WhenDisconnected_ReturnsFalseAndEnqueuesOffline()
+    {
+        var authService = new TestTraktAuthService(); // disconnected
+        var dataClient = new TestTraktDataClient();
+        var cacheRepo = new TestTraktCacheRepository();
+        var settingsRepo = new TestSettingsRepository();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero));
+        var config = TraktDefaults.CreateDefaultConfig();
+
+        using var syncService = new TraktSyncService(authService, dataClient, cacheRepo, config, settingsRepo, timeProvider);
+
+        var result = await syncService.PushBatchFavoritesAsync(new[] { 550L }, new[] { 1399L }, isFavorite: true);
+        Assert.False(result);
+        Assert.Null(dataClient.LastFavoritesBatchCall);
+    }
+
+    [Fact]
     public async Task PushWatched_RaisesSyncCompleted()
     {
         var authService = new TestTraktAuthService();
@@ -606,6 +686,8 @@ public sealed class TraktEcosystemAndWatchedSyncTests
         var config = TraktDefaults.CreateDefaultConfig();
 
         settingsRepo.Set("trakt_pending_favorite_actions", "[{\"MediaKind\":\"MOVIE\",\"TmdbId\":550,\"Action\":\"ADD\"}]", timeProvider.GetUtcNow());
+        settingsRepo.Set("trakt_initial_sync_v2_uuid-123_favorites", "true", timeProvider.GetUtcNow());
+        settingsRepo.Set("trakt_initial_sync_uuid-123_watchlist", "true", timeProvider.GetUtcNow());
 
         using var syncService = new TraktSyncService(
             authService,
@@ -622,6 +704,8 @@ public sealed class TraktEcosystemAndWatchedSyncTests
         Assert.True(personalRepo.ClearTraktPendingActionsCalled);
         var favoritesJson = settingsRepo.Get("trakt_pending_favorite_actions");
         Assert.Equal("[]", favoritesJson);
+        Assert.Null(settingsRepo.Get("trakt_initial_sync_v2_uuid-123_favorites"));
+        Assert.Null(settingsRepo.Get("trakt_initial_sync_uuid-123_watchlist"));
     }
 
     // --- Helpers and Fakes ---
@@ -757,6 +841,33 @@ public sealed class TraktEcosystemAndWatchedSyncTests
             }
             LastWatchlistCall = (tmdbId, kind, false);
             return Task.FromResult(new TraktSyncWriteResult(true, 1));
+        }
+
+        public (IReadOnlyList<long>? Movies, IReadOnlyList<long>? Shows, bool IsAdd)? LastFavoritesBatchCall { get; private set; }
+        public (IReadOnlyList<long>? Movies, IReadOnlyList<long>? Shows, bool IsAdd)? LastWatchlistBatchCall { get; private set; }
+
+        public Task<TraktSyncWriteResult> AddFavoritesBatchAsync(IReadOnlyList<long>? movieTmdbIds, IReadOnlyList<long>? showTmdbIds, string token, string? clientId = null, CancellationToken ct = default)
+        {
+            LastFavoritesBatchCall = (movieTmdbIds, showTmdbIds, true);
+            return Task.FromResult(new TraktSyncWriteResult(true, (movieTmdbIds?.Count ?? 0) + (showTmdbIds?.Count ?? 0)));
+        }
+
+        public Task<TraktSyncWriteResult> RemoveFavoritesBatchAsync(IReadOnlyList<long>? movieTmdbIds, IReadOnlyList<long>? showTmdbIds, string token, string? clientId = null, CancellationToken ct = default)
+        {
+            LastFavoritesBatchCall = (movieTmdbIds, showTmdbIds, false);
+            return Task.FromResult(new TraktSyncWriteResult(true, (movieTmdbIds?.Count ?? 0) + (showTmdbIds?.Count ?? 0)));
+        }
+
+        public Task<TraktSyncWriteResult> AddWatchlistBatchAsync(IReadOnlyList<long>? movieTmdbIds, IReadOnlyList<long>? showTmdbIds, string token, string? clientId = null, CancellationToken ct = default)
+        {
+            LastWatchlistBatchCall = (movieTmdbIds, showTmdbIds, true);
+            return Task.FromResult(new TraktSyncWriteResult(true, (movieTmdbIds?.Count ?? 0) + (showTmdbIds?.Count ?? 0)));
+        }
+
+        public Task<TraktSyncWriteResult> RemoveWatchlistBatchAsync(IReadOnlyList<long>? movieTmdbIds, IReadOnlyList<long>? showTmdbIds, string token, string? clientId = null, CancellationToken ct = default)
+        {
+            LastWatchlistBatchCall = (movieTmdbIds, showTmdbIds, false);
+            return Task.FromResult(new TraktSyncWriteResult(true, (movieTmdbIds?.Count ?? 0) + (showTmdbIds?.Count ?? 0)));
         }
     }
 

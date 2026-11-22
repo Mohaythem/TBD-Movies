@@ -211,6 +211,10 @@ public sealed class TraktListActionsTests
         { Posts++; return PostHandler?.Invoke(cancellationToken) ?? Task.FromResult(PostResponse); }
         public Task<JsonElement> RemoveShowFromListAsync(long? listId, long tmdbId, string clientId, string accessToken, CancellationToken cancellationToken = default)
         { Posts++; return PostHandler?.Invoke(cancellationToken) ?? Task.FromResult(PostResponse); }
+        public Task<JsonElement> AddItemsToListAsync(long? listId, IReadOnlyList<long>? movieTmdbIds, IReadOnlyList<long>? showTmdbIds, string clientId, string accessToken, CancellationToken cancellationToken = default)
+        { Posts++; return PostHandler?.Invoke(cancellationToken) ?? Task.FromResult(PostResponse); }
+        public Task<JsonElement> RemoveItemsFromListAsync(long? listId, IReadOnlyList<long>? movieTmdbIds, IReadOnlyList<long>? showTmdbIds, string clientId, string accessToken, CancellationToken cancellationToken = default)
+        { Posts++; return PostHandler?.Invoke(cancellationToken) ?? Task.FromResult(PostResponse); }
         public Task<JsonElement> CreateCustomListAsync(string name, string? description, string privacy, string clientId, string accessToken, CancellationToken cancellationToken = default)
         {
             Posts++;

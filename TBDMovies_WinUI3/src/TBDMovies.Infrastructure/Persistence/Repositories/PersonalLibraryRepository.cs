@@ -1311,7 +1311,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         using var gate = DatabaseWriteGate.Enter(_connectionString);
         using var connection = SqliteConnections.Open(_connectionString);
         using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM trakt_pending_watched_actions; DELETE FROM trakt_pending_watchlist_actions;";
+        command.CommandText = "DELETE FROM trakt_pending_watched_actions; DELETE FROM trakt_pending_watchlist_actions; DELETE FROM custom_list_pending_actions;";
         command.ExecuteNonQuery();
         _tracker?.IncrementPersonal();
     }

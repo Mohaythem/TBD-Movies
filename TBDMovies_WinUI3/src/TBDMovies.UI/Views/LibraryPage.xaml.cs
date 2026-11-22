@@ -1318,6 +1318,8 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         if (selected.Count == 0) return;
 
         int count = selected.Count;
+        var movieTmdbIds = new List<long>();
+        var showTmdbIds = new List<long>();
 
         await Task.Run(() =>
         {
@@ -1327,10 +1329,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
                 {
                     AppServices.ShowPersonal.SetFavorite(item.Id, setFavorite);
                     var tmdbId = AppServices.GetShowTmdbId(item.Id);
-                    if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
-                    {
-                        _ = trakt.PushShowFavoriteAsync(tmdbId.Value, setFavorite);
-                    }
+                    if (tmdbId is > 0) showTmdbIds.Add(tmdbId.Value);
                 }
                 else
                 {
@@ -1340,13 +1339,25 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
                         AppServices.Personal.ClearPersonalPreference(item.Id);
 
                     var tmdbId = AppServices.GetMovieTmdbId(item.Id);
-                    if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
-                    {
-                        _ = trakt.PushMovieFavoriteAsync(tmdbId.Value, setFavorite);
-                    }
+                    if (tmdbId is > 0) movieTmdbIds.Add(tmdbId.Value);
                 }
             }
         });
+
+        if (AppServices.Trakt is { } trakt && (movieTmdbIds.Count > 0 || showTmdbIds.Count > 0))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await trakt.PushBatchFavoritesAsync(movieTmdbIds, showTmdbIds, setFavorite).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[LibraryPage] PushBatchFavoritesAsync failed: {ex.Message}");
+                }
+            });
+        }
 
         ClearSelection();
         Refresh();
@@ -1363,6 +1374,8 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         if (selected.Count == 0) return;
 
         int count = selected.Count;
+        var movieTmdbIds = new List<long>();
+        var showTmdbIds = new List<long>();
 
         await Task.Run(() =>
         {
@@ -1372,10 +1385,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
                 {
                     AppServices.ShowPersonal.SetWatchLater(item.Id, setWatchlist);
                     var tmdbId = AppServices.GetShowTmdbId(item.Id);
-                    if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
-                    {
-                        _ = trakt.PushShowWatchlistAsync(tmdbId.Value, setWatchlist);
-                    }
+                    if (tmdbId is > 0) showTmdbIds.Add(tmdbId.Value);
                 }
                 else
                 {
@@ -1385,13 +1395,25 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
                         AppServices.Personal.RemoveFromWatchlist(item.Id);
 
                     var tmdbId = AppServices.GetMovieTmdbId(item.Id);
-                    if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
-                    {
-                        _ = trakt.PushMovieWatchlistAsync(tmdbId.Value, setWatchlist);
-                    }
+                    if (tmdbId is > 0) movieTmdbIds.Add(tmdbId.Value);
                 }
             }
         });
+
+        if (AppServices.Trakt is { } trakt && (movieTmdbIds.Count > 0 || showTmdbIds.Count > 0))
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await trakt.PushBatchWatchlistAsync(movieTmdbIds, showTmdbIds, setWatchlist).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[LibraryPage] PushBatchWatchlistAsync failed: {ex.Message}");
+                }
+            });
+        }
 
         ClearSelection();
         Refresh();
@@ -1795,6 +1817,9 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
 
             if (itemsToAdd.Count > 0)
             {
+                var movieTmdbIds = new List<long>();
+                var showTmdbIds = new List<long>();
+
                 await Task.Run(() =>
                 {
                     foreach (var item in itemsToAdd)
@@ -1802,13 +1827,32 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
                         if (item.IsShow)
                         {
                             AppServices.Personal.AddShowToCustomList(listId, item.Id);
+                            var tmdb = AppServices.GetShowTmdbId(item.Id);
+                            if (tmdb is > 0) showTmdbIds.Add(tmdb.Value);
                         }
                         else
                         {
                             AppServices.Personal.AddMovieToCustomList(listId, item.Id);
+                            var tmdb = AppServices.GetMovieTmdbId(item.Id);
+                            if (tmdb is > 0) movieTmdbIds.Add(tmdb.Value);
                         }
                     }
                 });
+
+                if (AppServices.Trakt is { } trakt && (movieTmdbIds.Count > 0 || showTmdbIds.Count > 0))
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await trakt.PushBatchCustomListItemsAsync(listId, movieTmdbIds, showTmdbIds, isAdd: true).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[LibraryPage] PushBatchCustomListItemsAsync failed: {ex.Message}");
+                        }
+                    });
+                }
             }
 
             bool isRtl = LocalizationService.FlowDirection == FlowDirection.RightToLeft;

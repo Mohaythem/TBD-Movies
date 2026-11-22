@@ -694,4 +694,28 @@ public sealed class UnifiedTraktListsTests : IDisposable
         Assert.False(TraktResourceSpec.FavoriteMovies().RequiresPaginationHeaders());
         Assert.False(TraktResourceSpec.FavoriteShows().RequiresPaginationHeaders());
     }
+
+    [Fact]
+    public void ClearTraktPendingActions_PurgesCustomListPendingActions()
+    {
+        var repo = Repo();
+        var listId = repo.CreateCustomList("Action Clear Test", Now);
+
+        using (var conn = new SqliteConnection(_connectionString))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "INSERT INTO custom_list_pending_actions (list_id, media_kind, tmdb_id, action_type, enqueued_at) VALUES (@list, 'MOVIE', 550, 'ADD', '2026-01-01');";
+            cmd.Parameters.AddWithValue("@list", listId);
+            cmd.ExecuteNonQuery();
+        }
+
+        var pendingBefore = repo.ListPendingActions(listId);
+        Assert.Single(pendingBefore);
+
+        repo.ClearTraktPendingActions();
+
+        var pendingAfter = repo.ListPendingActions(listId);
+        Assert.Empty(pendingAfter);
+    }
 }
