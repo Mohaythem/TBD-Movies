@@ -69,6 +69,7 @@ public sealed class PlaybackTrackingService
     public PlaybackProgress? GetForMovie(int movieId) => _progressRepository.GetForMovie(movieId);
     public PlaybackProgress? GetForEpisode(int episodeId) => _progressRepository.GetForEpisode(episodeId);
     public IReadOnlyDictionary<int, PlaybackProgress> GetForEpisodes(IEnumerable<int> episodeIds) => _progressRepository.GetForEpisodes(episodeIds);
+    public IReadOnlyDictionary<int, PlaybackProgress> GetForMovies(IEnumerable<int> movieIds) => _progressRepository.GetForMovies(movieIds);
     public void ClearProgress(int mediaFileId) => _progressRepository.DeleteProgress(mediaFileId);
     public void ClearProgressForMovie(int movieId) => _progressRepository.DeleteProgressForMovie(movieId);
     public void ClearProgressForEpisode(int episodeId) => _progressRepository.DeleteProgressForEpisode(episodeId);
@@ -157,8 +158,8 @@ public sealed class PlaybackTrackingService
 
         if (target.MediaFileId > 0)
         {
-            // If watched past 92% (in end credits), mark as completed and clear resume point
-            if (effectiveDuration is > 0 && progressPercent >= 92.0)
+            // If watched past 90%, mark as completed and clear resume point
+            if (effectiveDuration is > 0 && progressPercent >= 90.0)
             {
                 _progressRepository.DeleteProgress(target.MediaFileId);
             }

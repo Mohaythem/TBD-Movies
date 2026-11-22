@@ -716,6 +716,7 @@ public sealed partial class MyListsPage
         AppServices.TraktSyncCompleted -= OnTraktSyncCompleted;
         if (AppServices.Trakt is { } trakt) trakt.SyncProgressChanged -= OnTraktSyncProgressChanged;
         _traktActive = false;
+        _isActivated = false;
         ++_traktGeneration;
         _traktCts?.Cancel();
         _traktWriteCts?.Cancel();

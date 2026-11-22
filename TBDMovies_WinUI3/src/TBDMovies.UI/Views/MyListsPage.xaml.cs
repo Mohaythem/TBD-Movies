@@ -81,7 +81,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         }
 
         var currentSnapshot = AppServices.LibrarySnapshot;
-        if (_lastLoadedSnapshot.HasValue && _lastLoadedSnapshot.Value == currentSnapshot && _customLists.Count > 0)
+        if (_lastLoadedSnapshot.HasValue && _lastLoadedSnapshot.Value == currentSnapshot)
         {
             UpdateSyncStatus();
             return;
@@ -107,23 +107,25 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         var state = trakt.GetSyncState();
         if (!state.AuthState.IsConnected)
         {
+            TraktSyncContainer.Visibility = Visibility.Collapsed;
             SyncStatusText.Visibility = Visibility.Collapsed;
             SyncNowButton.Visibility = Visibility.Collapsed;
             return;
         }
 
+        TraktSyncContainer.Visibility = Visibility.Visible;
         SyncStatusText.Visibility = Visibility.Visible;
         SyncNowButton.Visibility = Visibility.Visible;
         SyncNowButton.IsEnabled = !state.IsSyncing;
 
         if (state.IsSyncing)
         {
-            SyncStatusText.Text = LocalizationService.Text("TraktSyncing") ?? "جارٍ المزامنة...";
+            SyncStatusText.Text = LocalizationService.Text("TraktStatusSyncing");
         }
         else if (state.LastSyncSuccessAt.HasValue)
         {
-            var timeStr = state.LastSyncSuccessAt.Value.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture);
-            SyncStatusText.Text = $"{LocalizationService.Text("TraktLastSynced") ?? "آخر مزامنة"}: {timeStr}";
+            var timeStr = LocalizationService.Digits(state.LastSyncSuccessAt.Value.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture));
+            SyncStatusText.Text = $"{LocalizationService.Text("TraktLastSynced")}: {timeStr}";
         }
         else
         {
@@ -136,7 +138,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         var trakt = AppServices.Trakt;
         if (trakt is null) return;
         SyncNowButton.IsEnabled = false;
-        SyncStatusText.Text = LocalizationService.Text("TraktSyncing") ?? "جارٍ المزامنة...";
+        SyncStatusText.Text = LocalizationService.Text("TraktStatusSyncing");
         try
         {
             await trakt.SyncAsync(CancellationToken.None);
@@ -206,7 +208,6 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         RenameListMenuItem.Text = LocalizationService.Text("Rename") ?? "Rename";
         DeleteListMenuItem.Text = LocalizationService.Text("Delete") ?? "Delete";
         SearchBox.PlaceholderText = LocalizationService.Text("SearchLists");
-        ListsCountText.Text = LocalizationService.Format("ListsCountFormat", Definitions.Count);
         LocalizeSystemTabs();
         RebuildTabs();
         Refresh();
@@ -298,9 +299,9 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         }
 
         ListSelector.Children.Add(NewListButton);
+        TabsSeparator.Visibility = _customLists.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         _rebuilding = false;
-        ListsCountText.Text = LocalizationService.Format("ListsCountFormat", Definitions.Count);
     }
 
     // APPEND_MARKER2
@@ -324,6 +325,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         var isActivity = definition.Key is "continue-watching" or "recently-watched";
         var isCustom = !definition.IsSystem;
         ListNameText.Text = isCustom ? definition.LabelKey : LocalizationService.Text(definition.LabelKey);
+        ListNameText.Visibility = Visibility.Visible;
         AddMoviesButton.Visibility = isActivity ? Visibility.Collapsed : Visibility.Visible;
         ListMoreOptionsButton.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
 
@@ -333,6 +335,8 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             ContinueGrid.Visibility = Visibility.Collapsed;
             HistoryGrid.Visibility = Visibility.Collapsed;
             EmptyState.Visibility = Visibility.Collapsed;
+            ListNameText.Visibility = Visibility.Collapsed;
+            ListHeadingSeparator.Visibility = Visibility.Collapsed;
             ListCountText.Visibility = Visibility.Collapsed;
             return;
         }
@@ -351,6 +355,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 ContinueGrid.Visibility = filteredCount == 0 ? Visibility.Collapsed : Visibility.Visible;
                 ListCountText.Text = FormatCount(filteredCount);
                 ListCountText.Visibility = filteredCount == 0 ? Visibility.Collapsed : Visibility.Visible;
+                ListHeadingSeparator.Visibility = filteredCount == 0 ? Visibility.Collapsed : Visibility.Visible;
                 EmptyState.Visibility = filteredCount == 0 ? Visibility.Visible : Visibility.Collapsed;
                 SetActivityEmptyState(filteredCount);
                 UpdateSystemCounts(definition.Key, filteredCount);
@@ -364,6 +369,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 HistoryGrid.Visibility = filteredCount == 0 ? Visibility.Collapsed : Visibility.Visible;
                 ListCountText.Text = FormatCount(filteredCount);
                 ListCountText.Visibility = filteredCount == 0 ? Visibility.Collapsed : Visibility.Visible;
+                ListHeadingSeparator.Visibility = filteredCount == 0 ? Visibility.Collapsed : Visibility.Visible;
                 EmptyState.Visibility = filteredCount == 0 ? Visibility.Visible : Visibility.Collapsed;
                 SetActivityEmptyState(filteredCount);
                 UpdateSystemCounts(definition.Key, filteredCount);
@@ -378,6 +384,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         ListGrid.ItemsSource = _displayedItems;
         ListCountText.Text = FormatCount(items.Count);
         ListCountText.Visibility = items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        ListHeadingSeparator.Visibility = items.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
 
         foreach (var (_, _, count, key) in SystemTabs)
         {
@@ -514,14 +521,60 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
     private IReadOnlyList<HomeActivityCard> BuildContinueItems()
     {
         if (_continueItems is not null) return _continueItems;
-        try { return _continueItems = AppServices.ViewingActivity.ListActive(int.MaxValue).Select(item => new HomeActivityCard(item)).ToArray(); }
-        catch (Exception error) { _activityReadError = error; return Array.Empty<HomeActivityCard>(); }
+        try
+        {
+            var items = AppServices.ViewingActivity.ListActive(100);
+            if (items.Count == 0) return _continueItems = Array.Empty<HomeActivityCard>();
+
+            IReadOnlyDictionary<int, PlaybackProgress> epProgress = new Dictionary<int, PlaybackProgress>();
+            IReadOnlyDictionary<int, PlaybackProgress> movieProgress = new Dictionary<int, PlaybackProgress>();
+
+            if (AppServices.IsAvailable)
+            {
+                try
+                {
+                    var epIds = items.Where(i => i.EpisodeId.HasValue).Select(i => i.EpisodeId!.Value).Distinct().ToList();
+                    var movieIds = items.Where(i => i.MovieId.HasValue).Select(i => i.MovieId!.Value).Distinct().ToList();
+
+                    if (epIds.Count > 0)
+                    {
+                        epProgress = AppServices.PlaybackTracking.GetForEpisodes(epIds);
+                    }
+
+                    if (movieIds.Count > 0)
+                    {
+                        movieProgress = AppServices.PlaybackTracking.GetForMovies(movieIds);
+                    }
+                }
+                catch { }
+            }
+
+            return _continueItems = items.Select(item =>
+            {
+                PlaybackProgress? progress = null;
+                if (item.EpisodeId is int epId && epProgress.TryGetValue(epId, out var epProg))
+                {
+                    progress = epProg;
+                }
+                else if (item.MovieId is int movieId && movieProgress.TryGetValue(movieId, out var mProg))
+                {
+                    progress = mProg;
+                }
+
+                return new HomeActivityCard(item, progress);
+            }).ToArray();
+        }
+        catch (Exception error)
+        {
+            _activityReadError = error;
+            return Array.Empty<HomeActivityCard>();
+        }
     }
 
     private IReadOnlyList<WatchHistoryCardRecord> BuildHistoryItems()
     {
         if (_historyItems is not null) return _historyItems;
-        try { return _historyItems = AppServices.ViewingActivity.ListRecentCompleted(int.MaxValue).Select(ToHistoryCard).ToArray(); }
+        try { return _historyItems = AppServices.ViewingActivity.ListRecentCompleted(100).Select(ToHistoryCard).ToArray(); }
         catch (Exception error) { _activityReadError = error; return Array.Empty<WatchHistoryCardRecord>(); }
     }
 
@@ -722,6 +775,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         _searchDebounceTimer.Tick += (_, _) =>
         {
             _searchDebounceTimer?.Stop();
+            if (!_isActivated || !IsLoaded) return;
             _query = SearchBox.Text?.Trim() ?? string.Empty;
             Refresh();
         };
@@ -1089,11 +1143,13 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             var count = _displayedItems.Count;
             ListCountText.Text = FormatCount(count);
             ListCountText.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            ListHeadingSeparator.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
             UpdateActiveTabBadge(count);
 
             var isEmpty = count == 0;
             if (isEmpty)
             {
+                ListHeadingSeparator.Visibility = Visibility.Collapsed;
                 ListCountText.Visibility = Visibility.Collapsed;
                 _ = Task.Run(async () =>
                 {
@@ -1437,6 +1493,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             var count = _displayedItems.Count;
             ListCountText.Text = FormatCount(count);
             ListCountText.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
+            ListHeadingSeparator.Visibility = count == 0 ? Visibility.Collapsed : Visibility.Visible;
             if (count > 0)
             {
                 ListGrid.Visibility = Visibility.Visible;

@@ -13,7 +13,7 @@ public sealed class ViewingActivityRepository(string connectionString, ILibraryR
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
         using var connection = SqliteConnections.Open(connectionString);
         using var command = connection.CreateCommand();
-        command.CommandText = ActiveQuery + " ORDER BY julianday(a.started_at) DESC, a.id DESC LIMIT $limit;";
+        command.CommandText = ContinueWatchingQuery;
         command.Parameters.AddWithValue("$limit", limit);
         return ReadActive(command);
     }
@@ -59,7 +59,7 @@ public sealed class ViewingActivityRepository(string connectionString, ILibraryR
             upsert.ExecuteNonQuery();
         }
         using var result = Command(connection, transaction,
-            ActiveQuery + (movieId is not null ? " AND a.movie_id = $id;" : " AND a.episode_id = $id;"));
+            SingleActiveQuery + (movieId is not null ? " AND a.movie_id = $id;" : " AND a.episode_id = $id;"));
         result.Parameters.AddWithValue("$id", (object?)movieId ?? episodeId!.Value);
         var item = ReadActive(result).Single();
         transaction.Commit();
@@ -114,8 +114,8 @@ public sealed class ViewingActivityRepository(string connectionString, ILibraryR
     }
 
     // Resolve current catalog locations, so a supported rename/move cannot leave Home playing a stale path.
-    private const string ActiveQuery = """
-        SELECT a.movie_id, se.show_id, a.episode_id, COALESCE(NULLIF(m.custom_display_title, ''), m.title, NULLIF(s.custom_display_title, ''), s.title, a.title_snapshot),
+    private const string SingleActiveQuery = """
+        SELECT a.movie_id, se.show_id, a.episode_id, COALESCE(NULLIF(m.custom_display_title, ''), m.title, NULLIF(s.custom_display_title, ''), s.title, a.title_snapshot, ''),
                COALESCE(m.year, s.year, a.year_snapshot), COALESCE(se.season_number, a.season_number_snapshot),
                COALESCE(e.episode_number, a.episode_number_snapshot), COALESCE(e.title, a.episode_title_snapshot),
                COALESCE(CASE WHEN played.status = 'PRESENT' THEN played.current_path END,
@@ -135,6 +135,194 @@ public sealed class ViewingActivityRepository(string connectionString, ILibraryR
             AND (played.movie_id = a.movie_id OR EXISTS (
                 SELECT 1 FROM episode_media_files ef WHERE ef.episode_id = a.episode_id AND ef.media_file_id = played.id))
          WHERE 1 = 1
+        """;
+
+    private const string ContinueWatchingQuery = """
+        WITH in_progress_movies_ranked AS (
+            SELECT 
+                mf.movie_id,
+                NULL AS show_id,
+                NULL AS episode_id,
+                COALESCE(NULLIF(m.custom_display_title, ''), m.title, '') AS title,
+                m.year AS year,
+                NULL AS season_number,
+                NULL AS episode_number,
+                NULL AS episode_title,
+                mf.current_path AS path,
+                p.last_watched_at AS started_at,
+                m.backdrop_path AS artwork_reference,
+                m.backdrop_path AS backdrop_reference,
+                m.poster_path AS poster_reference,
+                p.position_seconds,
+                p.total_duration_seconds,
+                ROW_NUMBER() OVER (
+                    PARTITION BY mf.movie_id
+                    ORDER BY julianday(p.last_watched_at) DESC, p.media_file_id DESC
+                ) AS movie_rank
+            FROM playback_progress p
+            JOIN media_files mf ON mf.id = p.media_file_id AND mf.status = 'PRESENT'
+            JOIN movies m ON m.id = mf.movie_id
+            WHERE p.position_seconds >= 3.0
+              AND (p.total_duration_seconds IS NULL OR p.total_duration_seconds <= 0 OR (CAST(p.position_seconds AS REAL) / p.total_duration_seconds) < 0.90)
+              AND NOT EXISTS (
+                  SELECT 1 FROM watch_events w 
+                   WHERE w.media_kind = 'MOVIE' 
+                     AND w.movie_id = mf.movie_id 
+                     AND julianday(w.watched_at) >= julianday(p.last_watched_at)
+              )
+        ),
+        in_progress_movies AS (
+            SELECT movie_id, show_id, episode_id, title, year, season_number, episode_number, episode_title,
+                   path, started_at, artwork_reference, backdrop_reference, poster_reference,
+                   position_seconds, total_duration_seconds
+            FROM in_progress_movies_ranked
+            WHERE movie_rank = 1
+        ),
+        in_progress_episodes_ranked AS (
+            SELECT 
+                NULL AS movie_id,
+                se.show_id,
+                ef.episode_id,
+                COALESCE(NULLIF(s.custom_display_title, ''), s.title, '') AS title,
+                s.year AS year,
+                se.season_number,
+                e.episode_number,
+                COALESCE(e.title, CAST(e.episode_number AS TEXT)) AS episode_title,
+                mf.current_path AS path,
+                p.last_watched_at AS started_at,
+                COALESCE(e.still_path, s.backdrop_path) AS artwork_reference,
+                s.backdrop_path AS backdrop_reference,
+                s.poster_path AS poster_reference,
+                p.position_seconds,
+                p.total_duration_seconds,
+                ROW_NUMBER() OVER (
+                    PARTITION BY se.show_id 
+                    ORDER BY julianday(p.last_watched_at) DESC, p.media_file_id DESC
+                ) AS show_rank
+            FROM playback_progress p
+            JOIN media_files mf ON mf.id = p.media_file_id AND mf.status = 'PRESENT'
+            JOIN episode_media_files ef ON ef.media_file_id = mf.id
+            JOIN tv_episodes e ON e.id = ef.episode_id
+            JOIN tv_seasons se ON se.id = e.season_id
+            JOIN tv_shows s ON s.id = se.show_id
+            WHERE p.position_seconds >= 3.0
+              AND (p.total_duration_seconds IS NULL OR p.total_duration_seconds <= 0 OR (CAST(p.position_seconds AS REAL) / p.total_duration_seconds) < 0.90)
+              AND NOT EXISTS (
+                  SELECT 1 FROM watch_events w 
+                   WHERE w.media_kind = 'EPISODE' 
+                     AND w.episode_id = ef.episode_id 
+                     AND julianday(w.watched_at) >= julianday(p.last_watched_at)
+              )
+        ),
+        in_progress_episodes AS (
+            SELECT movie_id, show_id, episode_id, title, year, season_number, episode_number, episode_title,
+                   path, started_at, artwork_reference, backdrop_reference, poster_reference,
+                   position_seconds, total_duration_seconds
+            FROM in_progress_episodes_ranked
+            WHERE show_rank = 1
+        ),
+        active_shows AS (
+            SELECT se.show_id, MAX(w.watched_at) AS last_watched_at
+            FROM watch_events w
+            JOIN tv_episodes e ON e.id = w.episode_id
+            JOIN tv_seasons se ON se.id = e.season_id
+            WHERE w.media_kind = 'EPISODE' AND w.episode_id IS NOT NULL
+            GROUP BY se.show_id
+        ),
+        next_up_candidates AS (
+            SELECT 
+                NULL AS movie_id,
+                ashow.show_id,
+                e.id AS episode_id,
+                COALESCE(NULLIF(s.custom_display_title, ''), s.title, '') AS title,
+                s.year AS year,
+                se.season_number,
+                e.episode_number,
+                COALESCE(e.title, CAST(e.episode_number AS TEXT)) AS episode_title,
+                mf.current_path AS path,
+                ashow.last_watched_at AS started_at,
+                COALESCE(e.still_path, s.backdrop_path) AS artwork_reference,
+                s.backdrop_path AS backdrop_reference,
+                s.poster_path AS poster_reference,
+                0.0 AS position_seconds,
+                NULL AS total_duration_seconds,
+                ROW_NUMBER() OVER (
+                    PARTITION BY ashow.show_id 
+                    ORDER BY CASE WHEN se.season_number = 0 THEN 1 ELSE 0 END, se.season_number ASC, e.episode_number ASC
+                ) AS ep_rank
+            FROM active_shows ashow
+            JOIN tv_shows s ON s.id = ashow.show_id
+            JOIN tv_seasons se ON se.show_id = s.id
+            JOIN tv_episodes e ON e.season_id = se.id
+            JOIN episode_media_files ef ON ef.episode_id = e.id
+            JOIN media_files mf ON mf.id = ef.media_file_id AND mf.status = 'PRESENT'
+            WHERE NOT EXISTS (SELECT 1 FROM in_progress_episodes ipe WHERE ipe.show_id = ashow.show_id)
+              AND NOT EXISTS (
+                  SELECT 1 FROM watch_events w2 
+                   WHERE w2.media_kind = 'EPISODE' AND w2.episode_id = e.id
+              )
+        ),
+        next_up_episodes AS (
+            SELECT movie_id, show_id, episode_id, title, year, season_number, episode_number, episode_title,
+                   path, started_at, artwork_reference, backdrop_reference, poster_reference,
+                   position_seconds, total_duration_seconds
+            FROM next_up_candidates
+            WHERE ep_rank = 1
+        ),
+        legacy_active AS (
+            SELECT a.movie_id, se.show_id, a.episode_id,
+                   COALESCE(NULLIF(m.custom_display_title, ''), m.title, NULLIF(s.custom_display_title, ''), s.title, a.title_snapshot, '') AS title,
+                   COALESCE(m.year, s.year, a.year_snapshot) AS year,
+                   COALESCE(se.season_number, a.season_number_snapshot) AS season_number,
+                   COALESCE(e.episode_number, a.episode_number_snapshot) AS episode_number,
+                   COALESCE(e.title, a.episode_title_snapshot) AS episode_title,
+                   COALESCE(CASE WHEN played.status = 'PRESENT' THEN played.current_path END,
+                   (SELECT mf.current_path FROM media_files mf
+                     WHERE (a.media_kind = 'MOVIE' AND mf.movie_id = a.movie_id)
+                        OR (a.media_kind = 'EPISODE' AND EXISTS (
+                            SELECT 1 FROM episode_media_files ef WHERE ef.episode_id = a.episode_id AND ef.media_file_id = mf.id))
+                     ORDER BY CASE WHEN mf.status = 'PRESENT' THEN 0 ELSE 1 END,
+                              mf.id LIMIT 1)) AS path,
+                   a.started_at,
+                   a.artwork_reference,
+                   a.backdrop_reference,
+                   a.poster_reference,
+                   0.0 AS position_seconds,
+                   NULL AS total_duration_seconds
+              FROM active_viewings a
+              LEFT JOIN movies m ON m.id = a.movie_id
+              LEFT JOIN tv_episodes e ON e.id = a.episode_id
+              LEFT JOIN tv_seasons se ON se.id = e.season_id
+              LEFT JOIN tv_shows s ON s.id = se.show_id
+              LEFT JOIN media_files played ON played.id = a.media_file_id
+                AND (played.status = 'PRESENT' AND (played.movie_id = a.movie_id OR EXISTS (
+                    SELECT 1 FROM episode_media_files ef WHERE ef.episode_id = a.episode_id AND ef.media_file_id = played.id)))
+             WHERE (a.movie_id IS NULL OR NOT EXISTS (SELECT 1 FROM in_progress_movies ipm WHERE ipm.movie_id = a.movie_id))
+               AND (se.show_id IS NULL OR (
+                   NOT EXISTS (SELECT 1 FROM in_progress_episodes ipe WHERE ipe.show_id = se.show_id)
+                   AND NOT EXISTS (SELECT 1 FROM next_up_episodes nue WHERE nue.show_id = se.show_id)))
+               AND NOT EXISTS (
+                   SELECT 1 FROM watch_events w
+                    WHERE ((a.media_kind = 'MOVIE' AND a.movie_id IS NOT NULL AND w.movie_id = a.movie_id) 
+                        OR (a.media_kind = 'EPISODE' AND a.episode_id IS NOT NULL AND w.episode_id = a.episode_id))
+                      AND julianday(w.watched_at) >= julianday(a.started_at)
+               )
+        ),
+        all_candidates AS (
+            SELECT * FROM in_progress_movies
+            UNION ALL
+            SELECT * FROM in_progress_episodes
+            UNION ALL
+            SELECT * FROM next_up_episodes
+            UNION ALL
+            SELECT * FROM legacy_active
+        )
+        SELECT movie_id, show_id, episode_id, title, year, season_number, episode_number, episode_title,
+               path, started_at, artwork_reference, backdrop_reference, poster_reference
+        FROM all_candidates
+        WHERE path IS NOT NULL
+        ORDER BY julianday(started_at) DESC
+        LIMIT $limit;
         """;
 
     private const string MovieUpsert = """

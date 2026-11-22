@@ -35,7 +35,7 @@
             Padding="32,32,32,0"
             Spacing="20">
             <!--
-                Page header: title and list count on leading edge, SearchBox on trailing edge.
+                Page header: title on leading edge, Trakt sync capsule & SearchBox on trailing edge.
             -->
             <Grid ColumnSpacing="16" VerticalAlignment="Center">
                 <Grid.ColumnDefinitions>
@@ -43,69 +43,76 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel
+                <TextBlock
+                    x:Name="PageTitleText"
                     Grid.Column="0"
+                    VerticalAlignment="Center"
+                    Style="{StaticResource TitleTextBlockStyle}"
+                    TextTrimming="CharacterEllipsis" />
+
+                <StackPanel
+                    Grid.Column="1"
                     VerticalAlignment="Center"
                     Orientation="Horizontal"
                     Spacing="10">
-                    <TextBlock
-                        x:Name="PageTitleText"
-                        Style="{StaticResource TitleTextBlockStyle}"
-                        TextTrimming="CharacterEllipsis" />
-                    <TextBlock
-                        x:Name="ListsCountText"
-                        Margin="0,0,0,2"
-                        VerticalAlignment="Bottom"
-                        Style="{StaticResource SecondaryCaptionTextStyle}" />
-                    <TextBlock
-                        x:Name="SyncStatusText"
-                        Margin="12,0,0,2"
-                        VerticalAlignment="Bottom"
-                        Style="{StaticResource SecondaryCaptionTextStyle}"
-                        Visibility="Collapsed" />
-                    <StackPanel
-                        x:Name="SyncProgressContainer"
-                        Orientation="Horizontal"
-                        Margin="12,0,0,2"
-                        VerticalAlignment="Bottom"
-                        Visibility="Collapsed">
-                        <ProgressBar
-                            x:Name="SyncProgressBar"
-                            Width="110"
-                            Height="4"
-                            Minimum="0"
-                            Maximum="8"
-                            Value="0"
-                            CornerRadius="2"
-                            VerticalAlignment="Center" />
-                        <TextBlock
-                            x:Name="SyncProgressCounter"
-                            Style="{StaticResource SecondaryCaptionTextStyle}"
-                            Margin="8,0,0,0"
-                            VerticalAlignment="Center" />
-                    </StackPanel>
-                    <Button
-                        x:Name="SyncNowButton"
-                        Click="SyncNowButton_Click"
-                        Style="{StaticResource SubtleControlButtonStyle}"
-                        Height="28" Width="28" Padding="0"
-                        Margin="4,0,0,0"
-                        VerticalAlignment="Center"
-                        ToolTipService.ToolTip="Sync Trakt Now"
-                        Visibility="Collapsed">
-                        <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="12" Glyph="&#xE895;" />
-                    </Button>
-                </StackPanel>
 
-                <AutoSuggestBox
-                    x:Name="SearchBox"
-                    Grid.Column="1"
-                    VerticalAlignment="Center"
-                    Width="260"
-                    QueryIcon="Find"
-                    CornerRadius="8"
-                    Style="{StaticResource PageSearchBoxStyle}"
-                    TextChanged="SearchBox_TextChanged" />
+                    <!-- Trakt Sync Status Capsule -->
+                    <Border
+                        x:Name="TraktSyncContainer"
+                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="8,3,8,3"
+                        VerticalAlignment="Center"
+                        Visibility="Collapsed">
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <StackPanel
+                                x:Name="SyncProgressContainer"
+                                Orientation="Horizontal"
+                                Spacing="6"
+                                VerticalAlignment="Center"
+                                Visibility="Collapsed">
+                                <ProgressBar
+                                    x:Name="SyncProgressBar"
+                                    Width="80"
+                                    Height="4"
+                                    Minimum="0"
+                                    Maximum="8"
+                                    Value="0"
+                                    CornerRadius="2"
+                                    VerticalAlignment="Center" />
+                                <TextBlock
+                                    x:Name="SyncProgressCounter"
+                                    Style="{StaticResource SecondaryCaptionTextStyle}"
+                                    VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock
+                                x:Name="SyncStatusText"
+                                VerticalAlignment="Center"
+                                Style="{StaticResource SecondaryCaptionTextStyle}"
+                                Visibility="Collapsed" />
+                            <Button
+                                x:Name="SyncNowButton"
+                                Click="SyncNowButton_Click"
+                                Style="{StaticResource SubtleControlButtonStyle}"
+                                Height="24" Width="24" Padding="0"
+                                VerticalAlignment="Center"
+                                ToolTipService.ToolTip="Sync Trakt Now">
+                                <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="11" Glyph="&#xE895;" />
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <AutoSuggestBox
+                        x:Name="SearchBox"
+                        VerticalAlignment="Center"
+                        Width="240"
+                        QueryIcon="Find"
+                        CornerRadius="8"
+                        Style="{StaticResource PageSearchBoxStyle}"
+                        TextChanged="SearchBox_TextChanged" />
+                </StackPanel>
             </Grid>
 
             <!--
@@ -170,10 +177,19 @@
                         <TextBlock x:Name="RecentlyWatchedCount" VerticalAlignment="Center" Style="{StaticResource SecondaryCaptionTextStyle}" Visibility="Collapsed" />
                     </StackPanel>
                 </RadioButton>
+                <Rectangle
+                    x:Name="TabsSeparator"
+                    Width="1"
+                    Height="18"
+                    Margin="4,0,4,0"
+                    VerticalAlignment="Center"
+                    Fill="{ThemeResource DividerStrokeColorDefaultBrush}"
+                    Opacity="0.4"
+                    Visibility="Collapsed" />
                 <Button
                     x:Name="NewListButton"
                     Click="NewListButton_Click"
-                    Style="{StaticResource AccentControlButtonStyle}"
+                    Style="{StaticResource DefaultButtonStyle}"
                     CornerRadius="8"
                     Height="32"
                     Padding="14,0,14,0"
@@ -195,13 +211,25 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel VerticalAlignment="Center" Spacing="2">
+                <StackPanel VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
                     <TextBlock
                         x:Name="ListNameText"
                         Style="{StaticResource SubtitleTextBlockStyle}"
                         TextTrimming="CharacterEllipsis"
+                        VerticalAlignment="Center" />
+                    <TextBlock
+                        x:Name="ListHeadingSeparator"
+                        Text="·"
+                        Style="{StaticResource SubtitleTextBlockStyle}"
+                        Opacity="0.4"
+                        VerticalAlignment="Center"
                         Visibility="Collapsed" />
-                    <TextBlock x:Name="ListCountText" Style="{StaticResource SecondaryCaptionTextStyle}" VerticalAlignment="Center" Visibility="Collapsed" />
+                    <TextBlock
+                        x:Name="ListCountText"
+                        Style="{StaticResource BodyTextBlockStyle}"
+                        Opacity="0.7"
+                        VerticalAlignment="Center"
+                        Visibility="Collapsed" />
                 </StackPanel>
 
                 <StackPanel
@@ -307,11 +335,12 @@
                                     <ProgressBar
                                         VerticalAlignment="Bottom"
                                         Height="4"
-                                        Value="60"
+                                        Value="{x:Bind ProgressPercentage, Mode=OneWay}"
                                         Maximum="100"
                                         Foreground="{ThemeResource SystemFillColorSuccessBrush}"
                                         Background="Transparent"
-                                        CornerRadius="0,0,8,8" />
+                                        CornerRadius="0,0,8,8"
+                                        Visibility="{x:Bind HasResumeVisibility, Mode=OneWay}" />
                                 </Grid>
                             </Border>
                             <StackPanel Margin="6,0,6,14" Spacing="2">
