@@ -764,6 +764,7 @@ public sealed partial class MyListsPage
     {
         _searchDebounceTimer?.Stop();
         AppServices.TraktSyncCompleted -= OnTraktSyncCompleted;
+        if (AppServices.Trakt is { } trakt) trakt.SyncProgressChanged -= OnTraktSyncProgressChanged;
         _traktActive = false;
         ++_traktGeneration;
         _traktCts?.Cancel();
@@ -772,17 +773,31 @@ public sealed partial class MyListsPage
         ++_traktDisplayGeneration;
     }
 
-    private void OnTraktSyncCompleted(object? sender, EventArgs e)
+    private void OnTraktSyncProgressChanged(object? sender, TraktSyncProgress progress)
     {
-        if (!_traktActive) return;
         DispatcherQueue.TryEnqueue(() =>
         {
-            if (!_traktActive || !_isActivated || !IsLoaded) return;
+            if (!_isActivated || !IsLoaded) return;
+            SyncProgressBar.Maximum = progress.TotalSteps;
+            SyncProgressBar.Value = progress.CurrentStep;
+            SyncProgressCounter.Text = LocalizationService.Format("TraktSyncProgressFormat", progress.CurrentStep, progress.TotalSteps);
+            SyncProgressContainer.Visibility = Visibility.Visible;
+            SyncStatusText.Visibility = Visibility.Collapsed;
+        });
+    }
+
+    private void OnTraktSyncCompleted(object? sender, EventArgs e)
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            SyncProgressContainer.Visibility = Visibility.Collapsed;
+            SyncStatusText.Visibility = Visibility.Visible;
+            if (!_isActivated || !IsLoaded) return;
+            UpdateSyncStatus();
+            _customLists = LoadCustomLists();
+            RebuildTabs();
             RebuildTraktTabs();
-            if (IsTraktKey(_selectedKey))
-            {
-                Refresh();
-            }
+            Refresh();
         });
     }
 

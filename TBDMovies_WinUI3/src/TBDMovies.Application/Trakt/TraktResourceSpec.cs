@@ -124,8 +124,8 @@ public readonly record struct TraktResourceSpec
         TraktResourceType.WatchedMovies => true,
         TraktResourceType.WatchedShows => true,
         TraktResourceType.History => true,
-        TraktResourceType.FavoriteMovies => true,
-        TraktResourceType.FavoriteShows => true,
+        TraktResourceType.FavoriteMovies => false,
+        TraktResourceType.FavoriteShows => false,
         TraktResourceType.CollectionMovies => true,
         TraktResourceType.CollectionShows => true,
         _ => true

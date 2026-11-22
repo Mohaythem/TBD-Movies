@@ -154,4 +154,12 @@ public sealed record TraktPendingWatchlistAction(
     string Action,
     DateTimeOffset CreatedAt);
 
+/// <summary>
+/// Progress reporting payload for Trakt synchronization operations.
+/// </summary>
+public sealed record TraktSyncProgress(
+    int CurrentStep,
+    int TotalSteps,
+    string StatusText);
+
 

@@ -1,7 +1,7 @@
 # TBD Movies — Active Progress & Status Checkpoint
 
 ## Current Goal
-- **Active Track / Current Priority**: Pre-Release Polish Pass & LRU Cache Fix Complete (Zero Warnings, 100% Green CI, Ready for Release Tagging).
+- **Active Track / Current Priority**: Wave 8 Complete — Trakt Favorites Sync, Custom Lists Immediate Push, Ghost Cloud Cards Deduplication, and Native WinUI 3 Progress UX (`1,447+` tests).
 - **Batches Approved & Closed**: 
   - Wave 1 (Batches 1.1, 1.2, 1.3): `SEC-19`, `C-06`, `SEC-20`, `C-03`, `SEC-01..05`, `SEC-14..15`, `SEC-21..22`, `C-13`, `[L6]` (`1,295` tests).
   - Wave 2 (Batches 2.1, 2.2, 2.3): `C-01`, `[P3]`, `C-04`, `[U8]`, `C-05` (`1,295` tests).
@@ -16,13 +16,40 @@
   - Wave 6 (Batch 6.2): `C-14..16`, `SEC-12..13`, Comprehensive Localization Parity, LRU Poster Cache & Persistence Hardening (`1,429` tests).
   - Wave 6 (Batch 6.1): `SEC-17..18`, `SEC-24..25`, UI Crash Relocation, AppDiagnosticsLog, UI Error Sanitization & Startup Telemetry (`1,435` tests).
   - Polish Pass: LRU Sorting Logic Fix, Reparse Guards, `CsWinRT1032` Concrete Collection Refactoring & GitHub Actions v7/v6 Upgrade (`1,438+` tests).
-- **Baseline Test Suite**: **`1,438 / 1,438`** tests passing in Release (100% Green on Windows CI with `0 Warning(s), 0 Error(s)`).
+  - Wave 8: Trakt Favorites Sync (`TRK-08`), Custom Lists Immediate Push & Stagnation Fix (`TRK-09`), Cloud Card Deduplication & TMDB Launch (`TRK-10`), Native WinUI 3 Progress Bar & Step Counter (`TRK-UI-01`), Analyzer xUnit2031 Cleanup (`TEST-WARN-01`) (`1,447+` tests).
+- **Baseline Test Suite**: **`1,447+`** tests passing in Release (100% Green on Windows CI with `0 Warning(s), 0 Error(s)`).
 - **Upcoming Feature Backlog (User Feedback Intake)**:
   - `FEAT-EPISODE-ARTWORK` (`[F1]`): Episode Stills & Season Posters in WinUI 3 via `ArtworkLoader` decoupling.
   - `FEAT-INBOUND-AUTOSCAN` (`[F2]`): Inbound Downloads Auto-Scan with FileLock Guard on `AddMediaPage`.
   - Detailed Specification: `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`.
 
 ## Completed Work
+59. **Wave 8: Trakt Favorites, Custom Lists Immediate Push, Ghost Cloud Cards, & Native Progress UX**:
+    - **Trakt Favorites Synchronization Fix (`TRK-08`)**:
+        - In `TraktResourceSpec.cs`, set `RequiresPaginationHeaders() => false` for `FavoriteMovies` and `FavoriteShows`, gracefully falling back to single-page parsing when Trakt omits `X-Pagination-*` headers instead of throwing `InvalidResponse`.
+        - In `TraktDataModels.cs`, updated `ParseFavorites` to infer `show` when property `show` exists rather than defaulting to `movie`.
+        - In `TraktSyncService.cs` (`ReconcileFavoritesAsync`), added `survivingAddSet` guard to prevent pruning pending `ADD` items, gated initial sync on upload success, and routed release failure diagnostics through `AppDiagnosticsLog.Record("TraktFavorites", ...)`.
+    - **Custom Lists Immediate Push & Stagnation Fix (`TRK-09`)**:
+        - Added `PushCustomListItemAsync` to `ITraktUiActions` and implemented symmetric immediate pushes with offline fallback queueing in `TraktSyncService.cs`.
+        - Wired immediate pushes across `MediaCardContextMenu.cs`, `MovieDetailsPage.xaml.cs`, `TVShowDetailsPage.xaml.cs`, and `MyListsPage.xaml.cs`.
+        - In `MyListsPage.Trakt.cs` (`OnTraktSyncCompleted`), reloaded `_customLists`, rebuilt tabs (`RebuildTabs()`), and refreshed UI on sync completion.
+        - In `MyListsPage.xaml.cs` (`Activate`), bypassed stale snapshot early return when `_customLists.Count == 0`.
+    - **Cloud Card Deduplication, Cascade Deletion & TMDB Launch (`TRK-10`)**:
+        - Enforced case-insensitive `lower(provider) = 'tmdb'` across `PersonalLibraryRepository.cs`.
+        - In `RemoveMovieFromCustomList` and `RemoveShowFromCustomList`, cascade-deleted both local and cloud rows matching TMDB ID, eliminating orphan ghost cards.
+        - Implemented `UpsertLocalMediaInCustomList` with defensive check against SQLite UNIQUE constraint violations, promoting cloud rows and deleting duplicate cloud members.
+        - Added `DeduplicateCustomListMembers` to purge legacy duplicate cloud rows and promote matched items.
+        - In `MyListsPage.xaml.cs`, clicking genuine cloud-only cards opens the movie or show on `themoviedb.org` via `Launcher.LaunchUriAsync`.
+    - **Native WinUI 3 Trakt Progress Bar & Step Counter (`TRK-UI-01`)**:
+        - Added `TraktSyncProgress` record and `SyncProgressChanged` event reporting across all 8 sync stages.
+        - Embedded a 4px high native `ProgressBar` with step counter (`10 of 20` / `10 من 20`) in `MyListsPage.xaml`.
+        - Guaranteed collapse in `finally` and on `SyncCompleted` even on sync failure or cancellation.
+        - Balanced event subscription in `Activate` and `Deactivate/Unloaded` preventing singleton memory leaks.
+    - **Analyzer Warning Cleanup (`TEST-WARN-01`)**:
+        - Refactored `UnifiedTraktListsTests.cs` lines 461, 468, 501, 505 to `Assert.Single(collection, predicate)` to eliminate 8 `xUnit2031` warnings.
+    - **Automated Verification**:
+        - Added 5 new automated unit tests in `UnifiedTraktListsTests.cs` verifying cloud-only row upgrades, duplicate deletion under UNIQUE constraints, cascade deletion on remove, `ParseFavorites` property inference, and pagination header requirements.
+
 58. **LRU Cache Fix, Reparse & Log Hardening, and Pre-Release Polish Pass [CsWinRT1032 Zero-Warnings & CI Modernization]**:
     - **DiskPosterCache LRU Logic & Reparse Hardening**:
         - Corrected LRU ternary sorting in `PruneToSize` from `<` to `>` (`Math.Max(LastAccessTimeUtc, LastWriteTimeUtc)`), preserving active recently accessed posters and correctly evicting stale untouched files.

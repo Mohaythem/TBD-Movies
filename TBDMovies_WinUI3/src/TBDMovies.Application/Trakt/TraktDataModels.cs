@@ -441,7 +441,19 @@ public static class TraktDataProjections
 
         foreach (var item in root.EnumerateArray())
         {
-            var type = item.TryGetProperty("type", out var tProp) ? tProp.GetString() ?? "movie" : "movie";
+            string type;
+            if (item.TryGetProperty("type", out var tProp) && tProp.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(tProp.GetString()))
+            {
+                type = tProp.GetString()!;
+            }
+            else if (item.TryGetProperty("show", out var showCheck) && showCheck.ValueKind == JsonValueKind.Object)
+            {
+                type = "show";
+            }
+            else
+            {
+                type = "movie";
+            }
             var listedAt = TryGetDateTimeOffset(item, "listed_at");
             long? tmdbId = null;
             string? title = null;

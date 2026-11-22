@@ -63,6 +63,27 @@
                         VerticalAlignment="Bottom"
                         Style="{StaticResource SecondaryCaptionTextStyle}"
                         Visibility="Collapsed" />
+                    <StackPanel
+                        x:Name="SyncProgressContainer"
+                        Orientation="Horizontal"
+                        Margin="12,0,0,2"
+                        VerticalAlignment="Bottom"
+                        Visibility="Collapsed">
+                        <ProgressBar
+                            x:Name="SyncProgressBar"
+                            Width="110"
+                            Height="4"
+                            Minimum="0"
+                            Maximum="8"
+                            Value="0"
+                            CornerRadius="2"
+                            VerticalAlignment="Center" />
+                        <TextBlock
+                            x:Name="SyncProgressCounter"
+                            Style="{StaticResource SecondaryCaptionTextStyle}"
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Center" />
+                    </StackPanel>
                     <Button
                         x:Name="SyncNowButton"
                         Click="SyncNowButton_Click"

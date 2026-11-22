@@ -388,6 +388,27 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         existsCmd.Parameters.AddWithValue("$movie", movieId);
         if (existsCmd.ExecuteScalar() != null)
         {
+            using var resolveTmdb = Command(connection, transaction,
+                "SELECT CASE WHEN lower(provider) = 'tmdb' AND external_id GLOB '[0-9]*' THEN CAST(external_id AS INTEGER) ELSE NULL END FROM movies WHERE id = $movie;");
+            resolveTmdb.Parameters.AddWithValue("$movie", movieId);
+            var tmdbObj = resolveTmdb.ExecuteScalar();
+            if (tmdbObj != null && tmdbObj != DBNull.Value)
+            {
+                var tmdbVal = Convert.ToInt32(tmdbObj);
+                using var fixLocal = Command(connection, transaction,
+                    "UPDATE custom_list_members SET tmdb_id = $tmdb WHERE list_id = $list AND movie_id = $movie AND tmdb_id IS NULL;");
+                fixLocal.Parameters.AddWithValue("$list", listId);
+                fixLocal.Parameters.AddWithValue("$movie", movieId);
+                fixLocal.Parameters.AddWithValue("$tmdb", tmdbVal);
+                fixLocal.ExecuteNonQuery();
+
+                using var purgeCloud = Command(connection, transaction,
+                    "DELETE FROM custom_list_members WHERE list_id = $list AND media_kind = 'MOVIE' AND tmdb_id = $tmdb AND movie_id IS NULL;");
+                purgeCloud.Parameters.AddWithValue("$list", listId);
+                purgeCloud.Parameters.AddWithValue("$tmdb", tmdbVal);
+                purgeCloud.ExecuteNonQuery();
+            }
+
             transaction.Commit();
             return;
         }
@@ -395,12 +416,14 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         using var command = Command(connection, transaction, """
             INSERT INTO custom_list_members (list_id, media_kind, movie_id, tmdb_id, added_at)
             SELECT $list, 'MOVIE', $movie,
-                   CASE WHEN m.provider = 'tmdb' AND m.external_id GLOB '[0-9]*' THEN CAST(m.external_id AS INTEGER) ELSE NULL END,
+                   CASE WHEN lower(m.provider) = 'tmdb' AND m.external_id GLOB '[0-9]*' THEN CAST(m.external_id AS INTEGER) ELSE NULL END,
                    $now
               FROM movies m
              WHERE m.id = $movie
             ON CONFLICT(list_id, media_kind, tmdb_id) WHERE tmdb_id IS NOT NULL DO UPDATE SET
-                movie_id = excluded.movie_id;
+                movie_id = excluded.movie_id,
+                cloud_title = NULL,
+                cloud_year = NULL;
             """);
         command.Parameters.AddWithValue("$list", listId);
         command.Parameters.AddWithValue("$movie", movieId);
@@ -421,10 +444,25 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         using var transaction = connection.BeginTransaction(deferred: false);
         RecordPendingRemoveIfSynced(connection, transaction, listId, CustomListMediaKind.Movie, movieId, isMovie: true, DateTimeOffset.UtcNow);
 
-        using var command = Command(connection, transaction,
-            "DELETE FROM custom_list_members WHERE list_id = $list AND movie_id = $movie;");
+        int? tmdbId = null;
+        using (var getTmdb = Command(connection, transaction, "SELECT external_id FROM movies WHERE id = $id AND lower(provider) = 'tmdb';"))
+        {
+            getTmdb.Parameters.AddWithValue("$id", movieId);
+            var ext = getTmdb.ExecuteScalar()?.ToString();
+            if (int.TryParse(ext, out var val) && val > 0) tmdbId = val;
+        }
+
+        using var command = Command(connection, transaction, """
+            DELETE FROM custom_list_members
+             WHERE list_id = $list
+               AND (
+                 movie_id = $movie
+                 OR ($tmdb IS NOT NULL AND media_kind = 'MOVIE' AND tmdb_id = $tmdb)
+               );
+            """);
         command.Parameters.AddWithValue("$list", listId);
         command.Parameters.AddWithValue("$movie", movieId);
+        command.Parameters.AddWithValue("$tmdb", (object?)tmdbId ?? DBNull.Value);
         command.ExecuteNonQuery();
         transaction.Commit();
         _tracker?.IncrementPersonal();
@@ -463,6 +501,27 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         existsCmd.Parameters.AddWithValue("$show", showId);
         if (existsCmd.ExecuteScalar() != null)
         {
+            using var resolveTmdb = Command(connection, transaction,
+                "SELECT CASE WHEN lower(provider) = 'tmdb' AND external_id GLOB '[0-9]*' THEN CAST(external_id AS INTEGER) ELSE NULL END FROM tv_shows WHERE id = $show;");
+            resolveTmdb.Parameters.AddWithValue("$show", showId);
+            var tmdbObj = resolveTmdb.ExecuteScalar();
+            if (tmdbObj != null && tmdbObj != DBNull.Value)
+            {
+                var tmdbVal = Convert.ToInt32(tmdbObj);
+                using var fixLocal = Command(connection, transaction,
+                    "UPDATE custom_list_members SET tmdb_id = $tmdb WHERE list_id = $list AND show_id = $show AND tmdb_id IS NULL;");
+                fixLocal.Parameters.AddWithValue("$list", listId);
+                fixLocal.Parameters.AddWithValue("$show", showId);
+                fixLocal.Parameters.AddWithValue("$tmdb", tmdbVal);
+                fixLocal.ExecuteNonQuery();
+
+                using var purgeCloud = Command(connection, transaction,
+                    "DELETE FROM custom_list_members WHERE list_id = $list AND media_kind = 'SHOW' AND tmdb_id = $tmdb AND show_id IS NULL;");
+                purgeCloud.Parameters.AddWithValue("$list", listId);
+                purgeCloud.Parameters.AddWithValue("$tmdb", tmdbVal);
+                purgeCloud.ExecuteNonQuery();
+            }
+
             transaction.Commit();
             return;
         }
@@ -470,12 +529,14 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         using var command = Command(connection, transaction, """
             INSERT INTO custom_list_members (list_id, media_kind, show_id, tmdb_id, added_at)
             SELECT $list, 'SHOW', $show,
-                   CASE WHEN s.provider = 'tmdb' AND s.external_id GLOB '[0-9]*' THEN CAST(s.external_id AS INTEGER) ELSE NULL END,
+                   CASE WHEN lower(s.provider) = 'tmdb' AND s.external_id GLOB '[0-9]*' THEN CAST(s.external_id AS INTEGER) ELSE NULL END,
                    $now
               FROM tv_shows s
              WHERE s.id = $show
             ON CONFLICT(list_id, media_kind, tmdb_id) WHERE tmdb_id IS NOT NULL DO UPDATE SET
-                show_id = excluded.show_id;
+                show_id = excluded.show_id,
+                cloud_title = NULL,
+                cloud_year = NULL;
             """);
         command.Parameters.AddWithValue("$list", listId);
         command.Parameters.AddWithValue("$show", showId);
@@ -496,10 +557,25 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         using var transaction = connection.BeginTransaction(deferred: false);
         RecordPendingRemoveIfSynced(connection, transaction, listId, CustomListMediaKind.Show, showId, isMovie: false, DateTimeOffset.UtcNow);
 
-        using var command = Command(connection, transaction,
-            "DELETE FROM custom_list_members WHERE list_id = $list AND show_id = $show;");
+        int? tmdbId = null;
+        using (var getTmdb = Command(connection, transaction, "SELECT external_id FROM tv_shows WHERE id = $id AND lower(provider) = 'tmdb';"))
+        {
+            getTmdb.Parameters.AddWithValue("$id", showId);
+            var ext = getTmdb.ExecuteScalar()?.ToString();
+            if (int.TryParse(ext, out var val) && val > 0) tmdbId = val;
+        }
+
+        using var command = Command(connection, transaction, """
+            DELETE FROM custom_list_members
+             WHERE list_id = $list
+               AND (
+                 show_id = $show
+                 OR ($tmdb IS NOT NULL AND media_kind = 'SHOW' AND tmdb_id = $tmdb)
+               );
+            """);
         command.Parameters.AddWithValue("$list", listId);
         command.Parameters.AddWithValue("$show", showId);
+        command.Parameters.AddWithValue("$tmdb", (object?)tmdbId ?? DBNull.Value);
         command.ExecuteNonQuery();
         transaction.Commit();
         _tracker?.IncrementPersonal();
@@ -691,7 +767,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         if (kind == CustomListMediaKind.Movie)
         {
             using var findMovie = Command(connection, transaction,
-                "SELECT id FROM movies WHERE provider = 'tmdb' AND external_id = $tmdb LIMIT 1;");
+                "SELECT id FROM movies WHERE lower(provider) = 'tmdb' AND external_id = $tmdb LIMIT 1;");
             findMovie.Parameters.AddWithValue("$tmdb", tmdbId.ToString(CultureInfo.InvariantCulture));
             var obj = findMovie.ExecuteScalar();
             if (obj != null && obj != DBNull.Value) localMovieId = Convert.ToInt32(obj);
@@ -699,7 +775,7 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         else
         {
             using var findShow = Command(connection, transaction,
-                "SELECT id FROM tv_shows WHERE provider = 'tmdb' AND external_id = $tmdb LIMIT 1;");
+                "SELECT id FROM tv_shows WHERE lower(provider) = 'tmdb' AND external_id = $tmdb LIMIT 1;");
             findShow.Parameters.AddWithValue("$tmdb", tmdbId.ToString(CultureInfo.InvariantCulture));
             var obj = findShow.ExecuteScalar();
             if (obj != null && obj != DBNull.Value) localShowId = Convert.ToInt32(obj);
@@ -756,13 +832,201 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
             DELETE FROM custom_list_members
              WHERE list_id = $list
                AND media_kind = $kind
-               AND (tmdb_id = $tmdb OR movie_id IN (SELECT id FROM movies WHERE provider = 'tmdb' AND external_id = $tmdbStr) OR show_id IN (SELECT id FROM tv_shows WHERE provider = 'tmdb' AND external_id = $tmdbStr));
+               AND (tmdb_id = $tmdb OR movie_id IN (SELECT id FROM movies WHERE lower(provider) = 'tmdb' AND external_id = $tmdbStr) OR show_id IN (SELECT id FROM tv_shows WHERE lower(provider) = 'tmdb' AND external_id = $tmdbStr));
             """);
         deleteCmd.Parameters.AddWithValue("$list", listId);
         deleteCmd.Parameters.AddWithValue("$kind", kind == CustomListMediaKind.Show ? "SHOW" : "MOVIE");
         deleteCmd.Parameters.AddWithValue("$tmdb", tmdbId);
         deleteCmd.Parameters.AddWithValue("$tmdbStr", tmdbId.ToString(CultureInfo.InvariantCulture));
         deleteCmd.ExecuteNonQuery();
+
+        transaction.Commit();
+        _tracker?.IncrementPersonal();
+    }
+
+    public void UpsertLocalMediaInCustomList(int listId, CustomListMediaKind kind, int localId, int tmdbId, DateTimeOffset now)
+    {
+        ValidateId(listId, nameof(listId));
+        ValidateId(localId, nameof(localId));
+        if (tmdbId <= 0) throw new ArgumentOutOfRangeException(nameof(tmdbId));
+
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var transaction = connection.BeginTransaction(deferred: false);
+        RequireCustomList(connection, listId, transaction);
+
+        if (kind == CustomListMediaKind.Movie)
+        {
+            RequireMovie(connection, localId, transaction);
+
+            using var findLocal = Command(connection, transaction,
+                "SELECT id FROM custom_list_members WHERE list_id = $list AND movie_id = $movie;");
+            findLocal.Parameters.AddWithValue("$list", listId);
+            findLocal.Parameters.AddWithValue("$movie", localId);
+            var localRowId = findLocal.ExecuteScalar();
+
+            if (localRowId != null && localRowId != DBNull.Value)
+            {
+                using var updateLocal = Command(connection, transaction,
+                    "UPDATE custom_list_members SET tmdb_id = $tmdb WHERE id = $id;");
+                updateLocal.Parameters.AddWithValue("$tmdb", tmdbId);
+                updateLocal.Parameters.AddWithValue("$id", localRowId);
+                updateLocal.ExecuteNonQuery();
+
+                using var deleteCloud = Command(connection, transaction,
+                    "DELETE FROM custom_list_members WHERE list_id = $list AND media_kind = 'MOVIE' AND tmdb_id = $tmdb AND movie_id IS NULL;");
+                deleteCloud.Parameters.AddWithValue("$list", listId);
+                deleteCloud.Parameters.AddWithValue("$tmdb", tmdbId);
+                deleteCloud.ExecuteNonQuery();
+            }
+            else
+            {
+                using var findCloud = Command(connection, transaction,
+                    "SELECT id FROM custom_list_members WHERE list_id = $list AND media_kind = 'MOVIE' AND tmdb_id = $tmdb AND movie_id IS NULL;");
+                findCloud.Parameters.AddWithValue("$list", listId);
+                findCloud.Parameters.AddWithValue("$tmdb", tmdbId);
+                var cloudRowId = findCloud.ExecuteScalar();
+
+                if (cloudRowId != null && cloudRowId != DBNull.Value)
+                {
+                    using var upgradeCloud = Command(connection, transaction,
+                        "UPDATE custom_list_members SET movie_id = $movie, cloud_title = NULL, cloud_year = NULL WHERE id = $id;");
+                    upgradeCloud.Parameters.AddWithValue("$movie", localId);
+                    upgradeCloud.Parameters.AddWithValue("$id", cloudRowId);
+                    upgradeCloud.ExecuteNonQuery();
+                }
+                else
+                {
+                    using var insertCmd = Command(connection, transaction, """
+                        INSERT INTO custom_list_members (list_id, media_kind, movie_id, tmdb_id, added_at)
+                        VALUES ($list, 'MOVIE', $movie, $tmdb, $now)
+                        ON CONFLICT(list_id, media_kind, tmdb_id) WHERE tmdb_id IS NOT NULL DO UPDATE SET
+                            movie_id = excluded.movie_id,
+                            cloud_title = NULL,
+                            cloud_year = NULL;
+                        """);
+                    insertCmd.Parameters.AddWithValue("$list", listId);
+                    insertCmd.Parameters.AddWithValue("$movie", localId);
+                    insertCmd.Parameters.AddWithValue("$tmdb", tmdbId);
+                    insertCmd.Parameters.AddWithValue("$now", now.ToString("O"));
+                    insertCmd.ExecuteNonQuery();
+                }
+            }
+        }
+        else
+        {
+            RequireShow(connection, localId, transaction);
+
+            using var findLocal = Command(connection, transaction,
+                "SELECT id FROM custom_list_members WHERE list_id = $list AND show_id = $show;");
+            findLocal.Parameters.AddWithValue("$list", listId);
+            findLocal.Parameters.AddWithValue("$show", localId);
+            var localRowId = findLocal.ExecuteScalar();
+
+            if (localRowId != null && localRowId != DBNull.Value)
+            {
+                using var updateLocal = Command(connection, transaction,
+                    "UPDATE custom_list_members SET tmdb_id = $tmdb WHERE id = $id;");
+                updateLocal.Parameters.AddWithValue("$tmdb", tmdbId);
+                updateLocal.Parameters.AddWithValue("$id", localRowId);
+                updateLocal.ExecuteNonQuery();
+
+                using var deleteCloud = Command(connection, transaction,
+                    "DELETE FROM custom_list_members WHERE list_id = $list AND media_kind = 'SHOW' AND tmdb_id = $tmdb AND show_id IS NULL;");
+                deleteCloud.Parameters.AddWithValue("$list", listId);
+                deleteCloud.Parameters.AddWithValue("$tmdb", tmdbId);
+                deleteCloud.ExecuteNonQuery();
+            }
+            else
+            {
+                using var findCloud = Command(connection, transaction,
+                    "SELECT id FROM custom_list_members WHERE list_id = $list AND media_kind = 'SHOW' AND tmdb_id = $tmdb AND show_id IS NULL;");
+                findCloud.Parameters.AddWithValue("$list", listId);
+                findCloud.Parameters.AddWithValue("$tmdb", tmdbId);
+                var cloudRowId = findCloud.ExecuteScalar();
+
+                if (cloudRowId != null && cloudRowId != DBNull.Value)
+                {
+                    using var upgradeCloud = Command(connection, transaction,
+                        "UPDATE custom_list_members SET show_id = $show, cloud_title = NULL, cloud_year = NULL WHERE id = $id;");
+                    upgradeCloud.Parameters.AddWithValue("$show", localId);
+                    upgradeCloud.Parameters.AddWithValue("$id", cloudRowId);
+                    upgradeCloud.ExecuteNonQuery();
+                }
+                else
+                {
+                    using var insertCmd = Command(connection, transaction, """
+                        INSERT INTO custom_list_members (list_id, media_kind, show_id, tmdb_id, added_at)
+                        VALUES ($list, 'SHOW', $show, $tmdb, $now)
+                        ON CONFLICT(list_id, media_kind, tmdb_id) WHERE tmdb_id IS NOT NULL DO UPDATE SET
+                            show_id = excluded.show_id,
+                            cloud_title = NULL,
+                            cloud_year = NULL;
+                        """);
+                    insertCmd.Parameters.AddWithValue("$list", listId);
+                    insertCmd.Parameters.AddWithValue("$show", localId);
+                    insertCmd.Parameters.AddWithValue("$tmdb", tmdbId);
+                    insertCmd.Parameters.AddWithValue("$now", now.ToString("O"));
+                    insertCmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+        transaction.Commit();
+        _tracker?.IncrementPersonal();
+    }
+
+    public void DeduplicateCustomListMembers()
+    {
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var transaction = connection.BeginTransaction(deferred: false);
+
+        using var purgeMovieClouds = Command(connection, transaction, """
+            DELETE FROM custom_list_members
+             WHERE movie_id IS NULL AND show_id IS NULL AND tmdb_id IS NOT NULL AND media_kind = 'MOVIE'
+               AND EXISTS (
+                   SELECT 1 FROM custom_list_members clm2
+                    WHERE clm2.list_id = custom_list_members.list_id
+                      AND clm2.media_kind = 'MOVIE'
+                      AND clm2.movie_id IS NOT NULL
+                      AND clm2.tmdb_id = custom_list_members.tmdb_id
+               );
+            """);
+        purgeMovieClouds.ExecuteNonQuery();
+
+        using var purgeShowClouds = Command(connection, transaction, """
+            DELETE FROM custom_list_members
+             WHERE movie_id IS NULL AND show_id IS NULL AND tmdb_id IS NOT NULL AND media_kind = 'SHOW'
+               AND EXISTS (
+                   SELECT 1 FROM custom_list_members clm2
+                    WHERE clm2.list_id = custom_list_members.list_id
+                      AND clm2.media_kind = 'SHOW'
+                      AND clm2.show_id IS NOT NULL
+                      AND clm2.tmdb_id = custom_list_members.tmdb_id
+               );
+            """);
+        purgeShowClouds.ExecuteNonQuery();
+
+        using var promoteMovieClouds = Command(connection, transaction, """
+            UPDATE custom_list_members
+               SET movie_id = (SELECT m.id FROM movies m WHERE lower(m.provider) = 'tmdb' AND m.external_id = CAST(custom_list_members.tmdb_id AS TEXT) LIMIT 1),
+                   cloud_title = NULL,
+                   cloud_year = NULL
+             WHERE movie_id IS NULL AND show_id IS NULL AND tmdb_id IS NOT NULL AND media_kind = 'MOVIE'
+               AND EXISTS (SELECT 1 FROM movies m WHERE lower(m.provider) = 'tmdb' AND m.external_id = CAST(custom_list_members.tmdb_id AS TEXT));
+            """);
+        promoteMovieClouds.ExecuteNonQuery();
+
+        using var promoteShowClouds = Command(connection, transaction, """
+            UPDATE custom_list_members
+               SET show_id = (SELECT s.id FROM tv_shows s WHERE lower(s.provider) = 'tmdb' AND s.external_id = CAST(custom_list_members.tmdb_id AS TEXT) LIMIT 1),
+                   cloud_title = NULL,
+                   cloud_year = NULL
+             WHERE movie_id IS NULL AND show_id IS NULL AND tmdb_id IS NOT NULL AND media_kind = 'SHOW'
+               AND EXISTS (SELECT 1 FROM tv_shows s WHERE lower(s.provider) = 'tmdb' AND s.external_id = CAST(custom_list_members.tmdb_id AS TEXT));
+            """);
+        promoteShowClouds.ExecuteNonQuery();
 
         transaction.Commit();
         _tracker?.IncrementPersonal();
@@ -1051,14 +1315,14 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         int? tmdbId = null;
         if (isMovie)
         {
-            using var getTmdb = Command(connection, transaction, "SELECT external_id FROM movies WHERE id = $id AND provider = 'tmdb';");
+            using var getTmdb = Command(connection, transaction, "SELECT external_id FROM movies WHERE id = $id AND lower(provider) = 'tmdb';");
             getTmdb.Parameters.AddWithValue("$id", mediaId);
             var ext = getTmdb.ExecuteScalar()?.ToString();
             if (int.TryParse(ext, out var val) && val > 0) tmdbId = val;
         }
         else
         {
-            using var getTmdb = Command(connection, transaction, "SELECT external_id FROM tv_shows WHERE id = $id AND provider = 'tmdb';");
+            using var getTmdb = Command(connection, transaction, "SELECT external_id FROM tv_shows WHERE id = $id AND lower(provider) = 'tmdb';");
             getTmdb.Parameters.AddWithValue("$id", mediaId);
             var ext = getTmdb.ExecuteScalar()?.ToString();
             if (int.TryParse(ext, out var val) && val > 0) tmdbId = val;
@@ -1096,6 +1360,25 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         getMemberTmdb.Parameters.AddWithValue("$isMovie", isMovie ? 1 : 0);
         getMemberTmdb.Parameters.AddWithValue("$mediaId", mediaId);
         var tmdbObj = getMemberTmdb.ExecuteScalar();
+
+        if (tmdbObj == null || tmdbObj == DBNull.Value || Convert.ToInt32(tmdbObj) <= 0)
+        {
+            if (isMovie)
+            {
+                using var getTmdb = Command(connection, transaction, "SELECT external_id FROM movies WHERE id = $id AND lower(provider) = 'tmdb';");
+                getTmdb.Parameters.AddWithValue("$id", mediaId);
+                var ext = getTmdb.ExecuteScalar()?.ToString();
+                if (int.TryParse(ext, out var val) && val > 0) tmdbObj = val;
+            }
+            else
+            {
+                using var getTmdb = Command(connection, transaction, "SELECT external_id FROM tv_shows WHERE id = $id AND lower(provider) = 'tmdb';");
+                getTmdb.Parameters.AddWithValue("$id", mediaId);
+                var ext = getTmdb.ExecuteScalar()?.ToString();
+                if (int.TryParse(ext, out var val) && val > 0) tmdbObj = val;
+            }
+        }
+
         if (tmdbObj != null && tmdbObj != DBNull.Value && Convert.ToInt32(tmdbObj) is int tmdb && tmdb > 0)
         {
             using var queueCmd = Command(connection, transaction, """

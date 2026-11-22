@@ -1,7 +1,9 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
+using TBDMovies.Application.Trakt;
 using TBDMovies.Domain.Library.Personal;
 using TBDMovies.Infrastructure.Persistence.Migrations;
 using TBDMovies.Infrastructure.Persistence.Repositories;
@@ -458,14 +460,14 @@ public sealed class UnifiedTraktListsTests : IDisposable
         var pending = repo.ListTraktPendingWatched();
         Assert.Equal(2, pending.Count);
 
-        var movieAction = Assert.Single(pending.Where(p => p.MediaKind == "MOVIE"));
+        var movieAction = Assert.Single(pending, p => p.MediaKind == "MOVIE");
         Assert.Equal(550, movieAction.TmdbId);
         Assert.Null(movieAction.SeasonNumber);
         Assert.Null(movieAction.EpisodeNumber);
         Assert.Equal(watchedAt, movieAction.WatchedAt);
         Assert.True(movieAction.IsWatched);
 
-        var epAction = Assert.Single(pending.Where(p => p.MediaKind == "EPISODE"));
+        var epAction = Assert.Single(pending, p => p.MediaKind == "EPISODE");
         Assert.Equal(1399, epAction.TmdbId);
         Assert.Equal(1, epAction.SeasonNumber);
         Assert.Equal(1, epAction.EpisodeNumber);
@@ -498,11 +500,11 @@ public sealed class UnifiedTraktListsTests : IDisposable
         var pending = repo.ListTraktPendingWatchlist();
         Assert.Equal(2, pending.Count);
 
-        var movieAction = Assert.Single(pending.Where(p => p.MediaKind == "MOVIE"));
+        var movieAction = Assert.Single(pending, p => p.MediaKind == "MOVIE");
         Assert.Equal(550, movieAction.TmdbId);
         Assert.Equal("ADD", movieAction.Action);
 
-        var showAction = Assert.Single(pending.Where(p => p.MediaKind == "SHOW"));
+        var showAction = Assert.Single(pending, p => p.MediaKind == "SHOW");
         Assert.Equal(1399, showAction.TmdbId);
         Assert.Equal("REMOVE", showAction.Action);
 
@@ -510,5 +512,177 @@ public sealed class UnifiedTraktListsTests : IDisposable
         repo.DeleteTraktPendingWatchlist(movieAction.Id);
         repo.DeleteTraktPendingWatchlist(showAction.Id);
         Assert.Empty(repo.ListTraktPendingWatchlist());
+    }
+
+    [Fact]
+    public void UpsertLocalMediaInCustomList_UpgradesCloudOnlyRow_AndDeletesDuplicates()
+    {
+        var repo = Repo();
+        var listId = repo.CreateCustomList("Favorites Test", Now);
+
+        // 1. Add cloud-only member
+        repo.AddCloudMediaToCustomList(listId, CustomListMediaKind.Movie, 550, Now, "Fight Club", 1999);
+        var items = repo.ListCustomListItems(listId);
+        Assert.Single(items);
+        Assert.True(items[0].IsCloudOnly);
+
+        // 2. Insert movie into movies table
+        using (var conn = new SqliteConnection(_connectionString))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "INSERT INTO movies (id, title, year, provider, external_id, date_added, metadata_status, created_at, updated_at) VALUES (101, 'Fight Club', 1999, 'tmdb', '550', '2026-01-01', 'READY', '2026-01-01', '2026-01-01');";
+            cmd.ExecuteNonQuery();
+        }
+
+        // 3. Upsert local media
+        repo.UpsertLocalMediaInCustomList(listId, CustomListMediaKind.Movie, 101, 550, Now);
+
+        var upgradedItems = repo.ListCustomListItems(listId);
+        Assert.Single(upgradedItems);
+        Assert.Equal(101, upgradedItems[0].Id);
+        Assert.False(upgradedItems[0].IsCloudOnly);
+        Assert.Equal(550, upgradedItems[0].TmdbId);
+
+        // 4. Alert 1 verification: simulate a duplicate cloud row existing alongside the local row
+        using (var conn = new SqliteConnection(_connectionString))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "INSERT INTO custom_list_members (list_id, media_kind, movie_id, tmdb_id, added_at) VALUES (@list, 'MOVIE', NULL, 550, '2026-01-01');";
+            cmd.Parameters.AddWithValue("@list", listId);
+            cmd.ExecuteNonQuery();
+        }
+
+        // Call UpsertLocalMediaInCustomList again - must NOT throw UNIQUE constraint exception, and must delete the duplicate cloud row
+        repo.UpsertLocalMediaInCustomList(listId, CustomListMediaKind.Movie, 101, 550, Now);
+
+        var finalItems = repo.ListCustomListItems(listId);
+        Assert.Single(finalItems);
+        Assert.Equal(101, finalItems[0].Id);
+        Assert.False(finalItems[0].IsCloudOnly);
+    }
+
+    [Fact]
+    public void RemoveMovieFromCustomList_DeletesBothLocalAndCloudRowByTmdbId()
+    {
+        var repo = Repo();
+        var listId = repo.CreateCustomList("Cleanup Test", Now);
+
+        // Seed movie
+        using (var conn = new SqliteConnection(_connectionString))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "INSERT INTO movies (id, title, year, provider, external_id, date_added, metadata_status, created_at, updated_at) VALUES (202, 'The Matrix', 1999, 'tmdb', '603', '2026-01-01', 'READY', '2026-01-01', '2026-01-01');";
+            cmd.ExecuteNonQuery();
+        }
+
+        // Add local movie
+        repo.AddMovieToCustomList(listId, 202, Now);
+
+        // Simulate ghost cloud row inserted before fix
+        using (var conn = new SqliteConnection(_connectionString))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "INSERT INTO custom_list_members (list_id, media_kind, movie_id, tmdb_id, added_at) VALUES (@list, 'MOVIE', NULL, 603, '2026-01-01');";
+            cmd.Parameters.AddWithValue("@list", listId);
+            cmd.ExecuteNonQuery();
+        }
+
+        // Remove movie
+        repo.RemoveMovieFromCustomList(listId, 202);
+
+        // Both rows must be wiped out; zero items left
+        var remaining = repo.ListCustomListItems(listId);
+        Assert.Empty(remaining);
+    }
+
+    [Fact]
+    public void DeduplicateCustomListMembers_PurgesDuplicateCloudRowsAndPromotesLocal()
+    {
+        var repo = Repo();
+        var listId = repo.CreateCustomList("Dedup Test", Now);
+
+        using (var conn = new SqliteConnection(_connectionString))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "INSERT INTO movies (id, title, year, provider, external_id, date_added, metadata_status, created_at, updated_at) VALUES (303, 'Inception', 2010, 'tmdb', '27205', '2026-01-01', 'READY', '2026-01-01', '2026-01-01');";
+            cmd.ExecuteNonQuery();
+        }
+
+        // Insert local row and cloud row
+        using (var conn = new SqliteConnection(_connectionString))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                INSERT INTO custom_list_members (list_id, media_kind, movie_id, tmdb_id, added_at) VALUES (@list, 'MOVIE', 303, 27205, '2026-01-01');
+                INSERT INTO custom_list_members (list_id, media_kind, movie_id, tmdb_id, added_at) VALUES (@list, 'MOVIE', NULL, 27205, '2026-01-02');";
+            cmd.Parameters.AddWithValue("@list", listId);
+            cmd.ExecuteNonQuery();
+        }
+
+        // Run deduplication
+        repo.DeduplicateCustomListMembers();
+
+        var items = repo.ListCustomListItems(listId);
+        Assert.Single(items);
+        Assert.Equal(303, items[0].Id);
+        Assert.False(items[0].IsCloudOnly);
+        Assert.Equal(27205, items[0].TmdbId);
+    }
+
+    [Fact]
+    public void ParseFavorites_WhenShowItemOmitsTypeProperty_ExtractsShowTmdbId()
+    {
+        const string json = @"[
+            {
+                ""show"": {
+                    ""title"": ""Breaking Bad"",
+                    ""year"": 2008,
+                    ""ids"": {
+                        ""trakt"": 1390,
+                        ""slug"": ""breaking-bad"",
+                        ""tmdb"": 1396
+                    }
+                }
+            },
+            {
+                ""movie"": {
+                    ""title"": ""Fight Club"",
+                    ""year"": 1999,
+                    ""ids"": {
+                        ""trakt"": 100,
+                        ""slug"": ""fight-club"",
+                        ""tmdb"": 550
+                    }
+                }
+            }
+        ]";
+
+        using var doc = JsonDocument.Parse(json);
+        var favorites = TraktDataProjections.ParseFavorites(doc.RootElement);
+
+        Assert.Equal(2, favorites.Count);
+
+        var showFav = favorites[0];
+        Assert.Equal("show", showFav.Type);
+        Assert.Equal(1396, showFav.TmdbId);
+        Assert.Equal("Breaking Bad", showFav.Title);
+
+        var movieFav = favorites[1];
+        Assert.Equal("movie", movieFav.Type);
+        Assert.Equal(550, movieFav.TmdbId);
+        Assert.Equal("Fight Club", movieFav.Title);
+    }
+
+    [Fact]
+    public void TraktResourceSpec_FavoriteMoviesAndShows_DoNotRequirePaginationHeaders()
+    {
+        Assert.False(TraktResourceSpec.FavoriteMovies.RequiresPaginationHeaders());
+        Assert.False(TraktResourceSpec.FavoriteShows.RequiresPaginationHeaders());
     }
 }

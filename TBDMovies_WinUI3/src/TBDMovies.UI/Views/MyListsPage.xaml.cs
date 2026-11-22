@@ -73,9 +73,14 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         _traktActive = true;
         AppServices.TraktSyncCompleted -= OnTraktSyncCompleted;
         AppServices.TraktSyncCompleted += OnTraktSyncCompleted;
+        if (AppServices.Trakt is { } traktService)
+        {
+            traktService.SyncProgressChanged -= OnTraktSyncProgressChanged;
+            traktService.SyncProgressChanged += OnTraktSyncProgressChanged;
+        }
 
         var currentSnapshot = AppServices.LibrarySnapshot;
-        if (_lastLoadedSnapshot.HasValue && _lastLoadedSnapshot.Value == currentSnapshot)
+        if (_lastLoadedSnapshot.HasValue && _lastLoadedSnapshot.Value == currentSnapshot && _customLists.Count > 0)
         {
             UpdateSyncStatus();
             return;
@@ -141,6 +146,8 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         }
         finally
         {
+            SyncProgressContainer.Visibility = Visibility.Collapsed;
+            SyncStatusText.Visibility = Visibility.Visible;
             UpdateSyncStatus();
             _customLists = LoadCustomLists();
             RebuildTabs();
@@ -743,13 +750,55 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
 
         if (item.Show is { } show)
         {
-            if (show.Id <= 0) return;
-            ShowSelected?.Invoke(this, show);
+            if (show.Id > 0)
+            {
+                ShowSelected?.Invoke(this, show);
+            }
+            else if (item.TmdbId is > 0)
+            {
+                var localShowId = AppServices.FindShowIdByTmdb(item.TmdbId.Value);
+                if (localShowId.HasValue && localShowId.Value > 0)
+                {
+                    ShowSelected?.Invoke(this, show with { Id = localShowId.Value });
+                }
+                else
+                {
+                    try
+                    {
+                        _ = Windows.System.Launcher.LaunchUriAsync(new Uri($"https://www.themoviedb.org/tv/{item.TmdbId.Value}"));
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[MyListsPage] Failed to launch TMDB show URL: {ex.Message}");
+                    }
+                }
+            }
         }
         else if (item.Movie is { } movie)
         {
-            if (movie.Id <= 0) return;
-            MovieSelected?.Invoke(this, movie);
+            if (movie.Id > 0)
+            {
+                MovieSelected?.Invoke(this, movie);
+            }
+            else if (item.TmdbId is > 0)
+            {
+                var localMovieId = AppServices.FindMovieIdByTmdb(item.TmdbId.Value);
+                if (localMovieId.HasValue && localMovieId.Value > 0)
+                {
+                    MovieSelected?.Invoke(this, movie with { Id = localMovieId.Value });
+                }
+                else
+                {
+                    try
+                    {
+                        _ = Windows.System.Launcher.LaunchUriAsync(new Uri($"https://www.themoviedb.org/movie/{item.TmdbId.Value}"));
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[MyListsPage] Failed to launch TMDB movie URL: {ex.Message}");
+                    }
+                }
+            }
         }
     }
 
@@ -826,16 +875,82 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 if (item.Show is { } show)
                 {
                     if (show.Id > 0)
+                    {
                         AppServices.Personal.RemoveShowFromCustomList(listId, show.Id);
+                        var tmdbId = AppServices.GetShowTmdbId(show.Id) ?? item.TmdbId;
+                        if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+                        {
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await trakt.PushCustomListItemAsync(listId, TraktMediaKind.Show, tmdbId.Value, false).ConfigureAwait(false);
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[MyListsPage] Trakt PushCustomListItemAsync failed: {ex.Message}");
+                                }
+                            });
+                        }
+                    }
                     else if (item.TmdbId is > 0)
+                    {
                         AppServices.Personal.RemoveCloudMediaFromCustomList(listId, CustomListMediaKind.Show, item.TmdbId.Value);
+                        if (AppServices.Trakt is { } trakt)
+                        {
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await trakt.PushCustomListItemAsync(listId, TraktMediaKind.Show, item.TmdbId.Value, false).ConfigureAwait(false);
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[MyListsPage] Trakt PushCustomListItemAsync failed: {ex.Message}");
+                                }
+                            });
+                        }
+                    }
                 }
                 else if (item.Movie is { } movie)
                 {
                     if (movie.Id > 0)
+                    {
                         AppServices.Personal.RemoveMovieFromCustomList(listId, movie.Id);
+                        var tmdbId = AppServices.GetMovieTmdbId(movie.Id) ?? item.TmdbId;
+                        if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+                        {
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await trakt.PushCustomListItemAsync(listId, TraktMediaKind.Movie, tmdbId.Value, false).ConfigureAwait(false);
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[MyListsPage] Trakt PushCustomListItemAsync failed: {ex.Message}");
+                                }
+                            });
+                        }
+                    }
                     else if (item.TmdbId is > 0)
+                    {
                         AppServices.Personal.RemoveCloudMediaFromCustomList(listId, CustomListMediaKind.Movie, item.TmdbId.Value);
+                        if (AppServices.Trakt is { } trakt)
+                        {
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await trakt.PushCustomListItemAsync(listId, TraktMediaKind.Movie, item.TmdbId.Value, false).ConfigureAwait(false);
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[MyListsPage] Trakt PushCustomListItemAsync failed: {ex.Message}");
+                                }
+                            });
+                        }
+                    }
                 }
             }
             else if (destinationKey == "watch-later")

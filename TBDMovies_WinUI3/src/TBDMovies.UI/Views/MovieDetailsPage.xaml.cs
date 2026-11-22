@@ -1095,13 +1095,30 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         {
             // Decide from the stored membership, not the toggle's new visual state, so a stale menu
             // cannot double-add or wrongly remove.
-            if (AppServices.Personal.GetCustomListIdsForMovie(_movie.Id).Contains(listId))
+            var isMember = AppServices.Personal.GetCustomListIdsForMovie(_movie.Id).Contains(listId);
+            if (isMember)
             {
                 AppServices.Personal.RemoveMovieFromCustomList(listId, _movie.Id);
             }
             else
             {
                 AppServices.Personal.AddMovieToCustomList(listId, _movie.Id);
+            }
+
+            var tmdbId = AppServices.GetMovieTmdbId(_movie.Id);
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await trakt.PushCustomListItemAsync(listId, TraktMediaKind.Movie, tmdbId.Value, !isMember).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[MovieDetailsPage] Trakt PushCustomListItemAsync failed: {ex.Message}");
+                    }
+                });
             }
         }
         catch (Exception error)

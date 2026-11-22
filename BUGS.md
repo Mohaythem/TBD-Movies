@@ -32,50 +32,6 @@
 
 ## 1. Active & Open Issues
 
-### [TRK-08] [Active Investigation 🔍] Discrepancy & Sync Behavior Between Trakt Liked Items and App Favorites
-- **Affected Subsystems**: `TraktSyncService.cs`, `PersonalLibraryRepository.cs`, `MediaCardContextMenu.cs`, `MovieDetailsPage.xaml.cs`.
-- **Observed Behavior**: User noted an ongoing discrepancy or desynchronization between items marked as "Liked" on Trakt and "Favorite" within the desktop application.
-- **Investigative Scope**:
-  1. Trakt API resource mapping: Trakt native `/sync/favorites` vs. user ratings vs. user liked items/lists.
-  2. Local state mapping: `PersonalPreference.Liked` (`movies` table `personal_preference = 'LIKED'`) vs. `shows` favorite (`tv_show_user_data` `is_favorite = 1`).
-  3. ReconcileFavorites upstream/downstream push/pull triggers, caching invalidation, and UI refresh reactivity.
-- **Status**: Registered for in-depth collaborative review with user notes.
-
-### [TRK-09] [Active Investigation 🔍] Custom Lists Stagnation / Trakt Lists Sync Asymmetry
-- **Affected Subsystems**: `TraktSyncService.cs` (`ReconcileCustomListsAsync`), `PersonalLibraryRepository.cs`, `MyListsPage.xaml.cs`, `MyListsPage.Trakt.cs`.
-- **Observed Behavior**: User observed that while Watchlist successfully synchronized downstream/upstream, Custom Lists (`MyListsPage`) remained unchanged without reflecting remote/local mutations.
-- **Investigative Scope**:
-  1. `MyListsPage.Trakt.cs:775` `OnTraktSyncCompleted` only invokes `RebuildTraktTabs()` and does not reload `_customLists` (`LoadCustomLists()`) or invoke `RebuildTabs()` for unified local/cloud lists.
-  2. `MyListsPage.xaml.cs:78` snapshot caching guard returns early without rebuilding tabs if `_lastLoadedSnapshot == currentSnapshot`.
-  3. Check if list item endpoints (`users/me/lists/{id}/items`) or `ReconcileCustomListsAsync` are failing silently or failing to trigger UI cache invalidation.
-- **Status**: Registered for in-depth collaborative review with user notes.
-
-### [TRK-10] [Active Investigation 🔍] Custom List Add-Push Failure, Duplicate Cloud Card Remnants, and Dead Click on Cloud Items
-- **Affected Subsystems**: `PersonalLibraryRepository.cs` (`AddMovieToCustomList`, `RemoveMovieFromCustomList`, `AddCloudMediaToCustomList`), `MyListsPage.xaml.cs` (`ListGrid_ItemClick`), `TraktSyncService.cs`.
-- **Observed Behavior**:
-  1. Adding a movie to a list from within the app does not sync upstream to Trakt.
-  2. If an item is added from Trakt while present locally, deleting it from the app removes the local entry but leaves a duplicate "سحابي" (Cloud) card behind.
-  3. Clicking on the leftover "سحابي" card is a dead click (`id == 0`, blocked by `if (movie.Id <= 0) return;`), unable to open movie details by TMDB ID.
-- **Investigative Scope**:
-  1. Unify membership deletion: `RemoveMovieFromCustomList` must delete both `movie_id = $id` and matching `tmdb_id` rows, preventing zombie cloud orphans.
-  2. Case-insensitive provider matching: use `lower(provider) = 'tmdb'` across `AddMovieToCustomList` and `AddCloudMediaToCustomList` to ensure seamless single-row linkage.
-  3. Wire active upstream push on `AddMovieToCustomList` and `RemoveMovieFromCustomList` (matching watchlist/favorites parity).
-  4. Enable `ListGrid_ItemClick` to open details via TMDB ID even for cloud-only items, eliminating dead unclickable cards.
-- **Status**: Registered for in-depth collaborative review with user notes.
-
-### [U9] [CLOSED & VERIFIED ✅] Unification of Trakt Custom Lists with Local Lists & Two-Way Sync
-- **Affected Subsystems**: `TraktSyncService.cs`, `PersonalLibraryRepository.cs`, `MyListsPage.xaml.cs`, `MainWindow.xaml.cs`.
-- **Completed Work (Batches 5.1, 5.2, 5.3)**:
-  1. Unified Trakt Client ID and cancellation checks (`C-08`, `SEC-11`).
-  2. Disaster prevention guard aborting downstream deletion on corrupted/null payload (`SEC-06`).
-  3. Replaced naive queue cancellation with net-intent chronological compaction (`SEC-08`).
-  4. Injected `IShowPersonalRepository` into `TraktSyncService`, synchronizing TV show favorites downstream and upstream (`SEC-09`).
-  5. Enforced `is_deleted = 0` tombstone filtering in `PersonalLibraryRepository.cs` (`C-07.1..5`).
-  6. Eliminated broken duplicate Trakt submenu loop in `MediaCardContextMenu.cs` and `MovieDetailsPage.xaml.cs` (`C-07.6`).
-  7. Guarded poster downloading tasks with `try-catch` handling `OperationCanceledException` and `Trace.WriteLine` (`SEC-26`).
-  8. Completely unified views: eradicated `TraktPage.xaml` and `TraktPage.xaml.cs` (>1,500 lines of dead code), pruned `TraktNavItem`, normalized navigation to `MyListsPage`, and aligned `StartupPerformanceChallengerTests.cs`.
-  9. Added 7 comprehensive unit tests in `UnifiedTraktListsTests.cs` (1,379 total unit tests). Verified 100% pass on Windows CI runner.
-
 ### [L6] [Partially Open — Secrets Sanitization & VACUUM Gap ⚠️] Residual Plaintext TMDB Tokens in SQLite Freelist Pages
 - **Affected Subsystems**: `SettingsService.cs`, `AppServices.cs`, `AppSettingsStore.cs`.
 - **Remaining Gap**:
@@ -113,6 +69,11 @@
 ## 2. Resolved & Verified Problem Ledger
 
 | ID | Issue Description | Affected Subsystem | Approved Resolution Summary | Verification Status |
+| :---: | :--- | :--- | :--- | :--- |
+| **`TRK-08`** | Discrepancy & sync failures in Trakt Favorites / Liked items | `TraktResourceSpec`, `TraktDataModels`, `TraktSyncService` | Disabled pagination header requirements for favorite endpoints; fixed `ParseFavorites` property inference for shows; protected surviving pending ADD actions from authoritative prune; logged release diagnostics | **Resolved & Verified ✅** |
+| **`TRK-09`** | Custom lists stagnation & missing refresh on Trakt sync | `MyListsPage.Trakt.cs`, `MyListsPage.xaml.cs` | Triggered `LoadCustomLists`, `RebuildTabs`, and `Refresh` in `OnTraktSyncCompleted`; bypassed stale snapshot cache when count is zero | **Resolved & Verified ✅** |
+| **`TRK-10`** | Custom list add push failure, ghost cloud cards, and dead click | `PersonalLibraryRepository`, `TraktSyncService`, `MediaCardContextMenu`, `MyListsPage` | Implemented case-insensitive TMDB provider matching; cascade-deleted duplicate cloud rows on remove; added `UpsertLocalMediaInCustomList` and `DeduplicateCustomListMembers`; wired immediate Trakt pushes across all context menus and detail pages; enabled browser launch via TMDB URL on cloud cards | **Resolved & Verified ✅** |
+| **`TRK-UI-01`**| Native WinUI 3 progress UX with step counter | `TraktSyncService`, `MyListsPage.xaml`, `MyListsPage.Trakt.cs`, `LocalizationService` | Embedded 4px native `ProgressBar` with step counter (`10 من 20` / `10 of 20`) reporting across all 8 sync stages; auto-collapsed on completion/error with memory leak prevention | **Resolved & Verified ✅** |
 | :---: | :--- | :--- | :--- | :---: |
 | **`H1`** | Trakt session destruction on transient network failures | `TraktAuthService` | Removed proactive unlinking; confined revocation strictly to explicit HTTP 400/401 errors | **Resolved & Verified ✅** (`1,066` tests) |
 | **`M2`** | DPAPI secrets stored in SQLite database | `WindowsTmdb/TraktCredentialStore` | Exclusive reliance on Windows Credential Manager; purged legacy DPAPI rows | **Resolved & Verified ✅** (`1,066` tests) |

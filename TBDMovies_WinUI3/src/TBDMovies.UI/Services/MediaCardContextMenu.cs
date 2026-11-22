@@ -312,13 +312,20 @@ public static class MediaCardContextMenu
                 foreach (var list in customLists)
                 {
                     var entry = new ToggleMenuFlyoutItem { Text = list.Name, IsChecked = memberIds.Contains(list.Id) };
-                    entry.Click += (_, _) => RunSafe(owner, () =>
+                    entry.Click += (_, _) => RunSafe(owner, async () =>
                     {
-                        if (AppServices.Personal.GetCustomListIdsForMovie(id).Contains(list.Id))
+                        var isMember = AppServices.Personal.GetCustomListIdsForMovie(id).Contains(list.Id);
+                        if (isMember)
                             AppServices.Personal.RemoveMovieFromCustomList(list.Id, id);
                         else
                             AppServices.Personal.AddMovieToCustomList(list.Id, id);
                         changed?.Invoke();
+
+                        var tmdbId = AppServices.GetMovieTmdbId(id);
+                        if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+                        {
+                            await trakt.PushCustomListItemAsync(list.Id, TraktMediaKind.Movie, tmdbId.Value, !isMember).ConfigureAwait(false);
+                        }
                     });
                     sub.Items.Add(entry);
                 }
@@ -348,13 +355,20 @@ public static class MediaCardContextMenu
                 foreach (var list in customLists)
                 {
                     var entry = new ToggleMenuFlyoutItem { Text = list.Name, IsChecked = memberIds.Contains(list.Id) };
-                    entry.Click += (_, _) => RunSafe(owner, () =>
+                    entry.Click += (_, _) => RunSafe(owner, async () =>
                     {
-                        if (AppServices.Personal.GetCustomListIdsForShow(id).Contains(list.Id))
+                        var isMember = AppServices.Personal.GetCustomListIdsForShow(id).Contains(list.Id);
+                        if (isMember)
                             AppServices.Personal.RemoveShowFromCustomList(list.Id, id);
                         else
                             AppServices.Personal.AddShowToCustomList(list.Id, id);
                         changed?.Invoke();
+
+                        var tmdbId = AppServices.GetShowTmdbId(id);
+                        if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+                        {
+                            await trakt.PushCustomListItemAsync(list.Id, TraktMediaKind.Show, tmdbId.Value, !isMember).ConfigureAwait(false);
+                        }
                     });
                     sub.Items.Add(entry);
                 }

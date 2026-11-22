@@ -17,6 +17,11 @@ public interface ITraktUiActions
     event System.EventHandler? SyncCompleted;
 
     /// <summary>
+    /// Raised during Trakt synchronization to report granular progress.
+    /// </summary>
+    event System.EventHandler<TraktSyncProgress>? SyncProgressChanged;
+
+    /// <summary>
     /// Gets the current immutable synchronization and authentication state snapshot.
     /// Thread-safe and lock-free.
     /// </summary>
@@ -118,5 +123,10 @@ public interface ITraktUiActions
     /// Pushes show addition/removal to Trakt favorites (with offline queueing support).
     /// </summary>
     Task<bool> PushShowFavoriteAsync(long tmdbId, bool isFavorite, CancellationToken ct = default);
+
+    /// <summary>
+    /// Pushes custom list item addition/removal to Trakt (with offline queueing support).
+    /// </summary>
+    Task<bool> PushCustomListItemAsync(int localListId, TraktMediaKind kind, long tmdbId, bool isAdd, CancellationToken ct = default);
 }
 

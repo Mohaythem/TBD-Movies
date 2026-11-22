@@ -252,6 +252,34 @@ internal static class AppServices
         return null;
     }
 
+    public static int? FindMovieIdByTmdb(int tmdbId)
+    {
+        if (tmdbId <= 0 || _movies is null) return null;
+        try
+        {
+            var movie = _movies.GetByExternalId("tmdb", tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            if (movie is not null && movie.Id > 0) return movie.Id;
+        }
+        catch { }
+        return null;
+    }
+
+    public static int? FindShowIdByTmdb(int tmdbId)
+    {
+        if (tmdbId <= 0 || _tvShows is null) return null;
+        try
+        {
+            var tmdbStr = tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            foreach (var s in _tvShows.ListAll())
+            {
+                if (string.Equals(s.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) && string.Equals(s.ExternalId, tmdbStr, StringComparison.Ordinal))
+                    return s.Id;
+            }
+        }
+        catch { }
+        return null;
+    }
+
 
     public static ITraktLocalSnapshotBuilder? TraktLocalSnapshot => _traktLocalSnapshot;
     private static ITraktLocalSnapshotBuilder? _traktLocalSnapshot;

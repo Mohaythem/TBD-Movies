@@ -132,6 +132,12 @@ public interface IPersonalLibraryRepository
     /// <summary>Removes a cloud-only media item (by TMDB ID) from a custom list.</summary>
     void RemoveCloudMediaFromCustomList(int listId, CustomListMediaKind kind, int tmdbId) { }
 
+    /// <summary>Upserts a local library media item into a custom list with its TMDB ID, upgrading or deduplicating any cloud-only row.</summary>
+    void UpsertLocalMediaInCustomList(int listId, CustomListMediaKind kind, int localId, int tmdbId, DateTimeOffset now) { }
+
+    /// <summary>Cleans up duplicate cloud-only rows and links remaining cloud rows to local library media.</summary>
+    void DeduplicateCustomListMembers() { }
+
     /// <summary>Enqueues an offline action into custom_list_pending_actions.</summary>
     void EnqueuePendingAction(int listId, CustomListMediaKind? kind, int? tmdbId, string actionType, DateTimeOffset now) { }
 

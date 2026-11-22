@@ -668,13 +668,30 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         try
         {
             // Decide from stored membership, not the toggle's new visual state, so a stale menu is safe.
-            if (AppServices.Personal.GetCustomListIdsForShow(_show.Id).Contains(listId))
+            var isMember = AppServices.Personal.GetCustomListIdsForShow(_show.Id).Contains(listId);
+            if (isMember)
             {
                 AppServices.Personal.RemoveShowFromCustomList(listId, _show.Id);
             }
             else
             {
                 AppServices.Personal.AddShowToCustomList(listId, _show.Id);
+            }
+
+            var tmdbId = AppServices.GetShowTmdbId(_show.Id);
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+            {
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await trakt.PushCustomListItemAsync(listId, TraktMediaKind.Show, tmdbId.Value, !isMember).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[TVShowDetailsPage] Trakt PushCustomListItemAsync failed: {ex.Message}");
+                    }
+                });
             }
         }
         catch (Exception error)
