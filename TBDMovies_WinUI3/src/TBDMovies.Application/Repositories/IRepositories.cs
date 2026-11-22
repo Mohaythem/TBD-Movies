@@ -174,6 +174,15 @@ public interface IPersonalLibraryRepository
     /// <summary>Enqueues an offline action into trakt_pending_watchlist_actions.</summary>
     void EnqueueTraktPendingWatchlist(string mediaKind, int tmdbId, string action, DateTimeOffset now) { }
 
+    /// <summary>Enqueues a batch of offline actions into trakt_pending_watchlist_actions atomically.</summary>
+    void EnqueueTraktPendingWatchlistBatch(IReadOnlyList<(string MediaKind, int TmdbId, string Action)> actions, DateTimeOffset now)
+    {
+        foreach (var a in actions) EnqueueTraktPendingWatchlist(a.MediaKind, a.TmdbId, a.Action, now);
+    }
+
+    /// <summary>Deletes pending watchlist actions matching the given media kind and TMDB IDs.</summary>
+    void DeleteTraktPendingWatchlistByTmdb(IReadOnlyList<(string MediaKind, int TmdbId)> items) { }
+
     /// <summary>Lists all pending watchlist actions ordered by created_at.</summary>
     IReadOnlyList<TraktPendingWatchlistAction> ListTraktPendingWatchlist() => Array.Empty<TraktPendingWatchlistAction>();
 

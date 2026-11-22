@@ -718,4 +718,48 @@ public sealed class UnifiedTraktListsTests : IDisposable
         var pendingAfter = repo.ListPendingActions(listId);
         Assert.Empty(pendingAfter);
     }
+
+    [Fact]
+    public void EnqueueTraktPendingWatchlistBatch_DeduplicatesAndInsertsAtomically()
+    {
+        var repo = Repo();
+        var batch = new[]
+        {
+            ("MOVIE", 550, "ADD"),
+            ("MOVIE", 550, "REMOVE"),
+            ("SHOW", 1396, "ADD")
+        };
+
+        repo.EnqueueTraktPendingWatchlistBatch(batch, Now);
+
+        var pending = repo.ListTraktPendingWatchlist();
+        Assert.Equal(2, pending.Count);
+
+        var movieAction = Assert.Single(pending, p => p.TmdbId == 550);
+        Assert.Equal("REMOVE", movieAction.Action);
+
+        var showAction = Assert.Single(pending, p => p.TmdbId == 1396);
+        Assert.Equal("ADD", showAction.Action);
+    }
+
+    [Fact]
+    public void DeleteTraktPendingWatchlistByTmdb_DeletesMatchingItems()
+    {
+        var repo = Repo();
+        var batch = new[]
+        {
+            ("MOVIE", 550, "ADD"),
+            ("MOVIE", 600, "ADD"),
+            ("SHOW", 1396, "ADD")
+        };
+
+        repo.EnqueueTraktPendingWatchlistBatch(batch, Now);
+        Assert.Equal(3, repo.ListTraktPendingWatchlist().Count);
+
+        repo.DeleteTraktPendingWatchlistByTmdb(new[] { ("MOVIE", 550), ("SHOW", 1396) });
+
+        var remaining = repo.ListTraktPendingWatchlist();
+        var single = Assert.Single(remaining);
+        Assert.Equal(600, single.TmdbId);
+    }
 }

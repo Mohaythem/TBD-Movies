@@ -56,10 +56,6 @@ public sealed partial class MyListsPage
         Refresh();
     }
 
-    private void RebuildTraktTabs()
-    {
-    }
-
     private void TraktPlaylistTab_Checked(object sender, RoutedEventArgs e)
     {
         if (!_isReady || _rebuilding || _syncing) return;
@@ -772,7 +768,6 @@ public sealed partial class MyListsPage
         {
             _syncRefreshDebounceTimer?.Stop();
             if (!_isActivated || !IsLoaded) return;
-            RebuildTraktTabs();
             ReloadAfterSync();
         };
     }
@@ -816,9 +811,9 @@ public sealed partial class MyListsPage
     {
         DispatcherQueue.TryEnqueue(() =>
         {
+            if (!_isActivated || !IsLoaded) return;
             SyncProgressContainer.Visibility = Visibility.Collapsed;
             SyncStatusText.Visibility = Visibility.Visible;
-            if (!_isActivated || !IsLoaded) return;
             UpdateSyncStatus();
             ScheduleDebouncedSyncReload();
         });

@@ -1262,17 +1262,70 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
     public void EnqueueTraktPendingWatchlist(string mediaKind, int tmdbId, string action, DateTimeOffset now)
     {
         if (tmdbId <= 0) return;
+        EnqueueTraktPendingWatchlistBatch(new[] { (mediaKind, tmdbId, action) }, now);
+    }
+
+    public void EnqueueTraktPendingWatchlistBatch(IReadOnlyList<(string MediaKind, int TmdbId, string Action)> actions, DateTimeOffset now)
+    {
+        if (actions == null || actions.Count == 0) return;
         using var gate = DatabaseWriteGate.Enter(_connectionString);
         using var connection = SqliteConnections.Open(_connectionString);
-        using var command = Command(connection, null, """
+        using var transaction = connection.BeginTransaction(deferred: false);
+
+        using var deleteCmd = Command(connection, transaction, "DELETE FROM trakt_pending_watchlist_actions WHERE media_kind = $kind AND tmdb_id = $tmdb;");
+        var delKind = deleteCmd.Parameters.Add("$kind", SqliteType.Text);
+        var delTmdb = deleteCmd.Parameters.Add("$tmdb", SqliteType.Integer);
+
+        using var insertCmd = Command(connection, transaction, """
             INSERT INTO trakt_pending_watchlist_actions (media_kind, tmdb_id, action, created_at)
             VALUES ($kind, $tmdb, $action, $now);
             """);
-        command.Parameters.AddWithValue("$kind", mediaKind.Trim().ToUpperInvariant());
-        command.Parameters.AddWithValue("$tmdb", tmdbId);
-        command.Parameters.AddWithValue("$action", action.Trim().ToUpperInvariant());
-        command.Parameters.AddWithValue("$now", now.ToString("O"));
-        command.ExecuteNonQuery();
+        var inKind = insertCmd.Parameters.Add("$kind", SqliteType.Text);
+        var inTmdb = insertCmd.Parameters.Add("$tmdb", SqliteType.Integer);
+        var inAct = insertCmd.Parameters.Add("$action", SqliteType.Text);
+        var inNow = insertCmd.Parameters.Add("$now", SqliteType.Text);
+        var nowStr = now.ToString("O");
+
+        foreach (var (mediaKind, tmdbId, action) in actions)
+        {
+            if (tmdbId <= 0) continue;
+            var normKind = mediaKind.Trim().ToUpperInvariant();
+            var normAction = action.Trim().ToUpperInvariant();
+
+            delKind.Value = normKind;
+            delTmdb.Value = tmdbId;
+            deleteCmd.ExecuteNonQuery();
+
+            inKind.Value = normKind;
+            inTmdb.Value = tmdbId;
+            inAct.Value = normAction;
+            inNow.Value = nowStr;
+            insertCmd.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+        _tracker?.IncrementPersonal();
+    }
+
+    public void DeleteTraktPendingWatchlistByTmdb(IReadOnlyList<(string MediaKind, int TmdbId)> items)
+    {
+        if (items == null || items.Count == 0) return;
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var transaction = connection.BeginTransaction(deferred: false);
+        using var deleteCmd = Command(connection, transaction, "DELETE FROM trakt_pending_watchlist_actions WHERE media_kind = $kind AND tmdb_id = $tmdb;");
+        var delKind = deleteCmd.Parameters.Add("$kind", SqliteType.Text);
+        var delTmdb = deleteCmd.Parameters.Add("$tmdb", SqliteType.Integer);
+
+        foreach (var (mediaKind, tmdbId) in items)
+        {
+            if (tmdbId <= 0) continue;
+            delKind.Value = mediaKind.Trim().ToUpperInvariant();
+            delTmdb.Value = tmdbId;
+            deleteCmd.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
         _tracker?.IncrementPersonal();
     }
 

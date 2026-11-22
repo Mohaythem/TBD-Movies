@@ -137,72 +137,103 @@ public sealed partial class TraktDataClient
         CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        using var request = new HttpRequestMessage(
-            HttpMethod.Post,
-            new Uri($"{TraktDataConfig.ApiBaseUrl}/{relativePath}"));
-        TraktRequestHeaders.IdentifyApplication(request);
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var uri = new Uri($"{TraktDataConfig.ApiBaseUrl}/{relativePath}");
         var effectiveClientId = string.IsNullOrWhiteSpace(clientId) ? TraktDefaults.OfficialClientId : clientId;
-        request.Headers.Add("trakt-api-key", effectiveClientId);
-        request.Headers.Add("trakt-api-version", TraktDataConfig.ApiVersion);
+        int attempt = 0;
 
-        request.Content = new StringContent(
-            JsonSerializer.Serialize(payload),
-            Encoding.UTF8,
-            "application/json");
-
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(_httpClient.Timeout);
-
-        try
+        while (true)
         {
-            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
-            if (!response.IsSuccessStatusCode)
+            using var request = new HttpRequestMessage(HttpMethod.Post, uri);
+            TraktRequestHeaders.IdentifyApplication(request);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            request.Headers.Add("trakt-api-key", effectiveClientId);
+            request.Headers.Add("trakt-api-version", TraktDataConfig.ApiVersion);
+
+            request.Content = new StringContent(
+                JsonSerializer.Serialize(payload),
+                Encoding.UTF8,
+                "application/json");
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(_httpClient.Timeout);
+
+            HttpResponseMessage response;
+            try
             {
-                if (response.StatusCode == HttpStatusCode.Unauthorized)
+                response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                if (attempt >= _options.MaxRateLimitRetries)
                 {
-                    throw new TraktClientException(
-                        TraktFailureKind.Unauthorized,
-                        "Trakt rejected authentication credentials (HTTP 401).",
-                        relativePath,
-                        HttpStatusCode.Unauthorized);
+                    return new TraktSyncWriteResult(false, 0, ex.Message);
                 }
-                return new TraktSyncWriteResult(false, 0, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
+                var delay = CalculateRetryDelay(null, attempt);
+                await _delayAsync(delay, ct).ConfigureAwait(false);
+                attempt++;
+                continue;
             }
 
-            var bytes = await ReadBoundedStreamAsync(
-                response.Content, _options.MaxResponseBytesPerPage, relativePath, timeout.Token).ConfigureAwait(false);
-            using var doc = JsonDocument.Parse(bytes);
-            var root = doc.RootElement;
-            int count = 0;
-            if (root.TryGetProperty("added", out var addedEl))
+            using (response)
             {
-                if (addedEl.TryGetProperty("movies", out var m) && m.TryGetInt32(out var mv)) count += mv;
-                if (addedEl.TryGetProperty("shows", out var s) && s.TryGetInt32(out var sv)) count += sv;
-                if (addedEl.TryGetProperty("episodes", out var ep) && ep.TryGetInt32(out var epv)) count += epv;
+                if (response.StatusCode == HttpStatusCode.TooManyRequests ||
+                    response.StatusCode == HttpStatusCode.BadGateway ||
+                    response.StatusCode == HttpStatusCode.ServiceUnavailable ||
+                    response.StatusCode == HttpStatusCode.GatewayTimeout)
+                {
+                    if (attempt >= _options.MaxRateLimitRetries)
+                    {
+                        return new TraktSyncWriteResult(false, 0, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
+                    }
+                    var delay = CalculateRetryDelay(response.Headers.RetryAfter, attempt);
+                    await _delayAsync(delay, ct).ConfigureAwait(false);
+                    attempt++;
+                    continue;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    if (response.StatusCode == HttpStatusCode.Unauthorized)
+                    {
+                        throw new TraktClientException(
+                            TraktFailureKind.Unauthorized,
+                            "Trakt rejected authentication credentials (HTTP 401).",
+                            relativePath,
+                            HttpStatusCode.Unauthorized);
+                    }
+                    return new TraktSyncWriteResult(false, 0, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
+                }
+
+                var bytes = await ReadBoundedStreamAsync(
+                    response.Content, _options.MaxResponseBytesPerPage, relativePath, timeout.Token).ConfigureAwait(false);
+                using var doc = JsonDocument.Parse(bytes);
+                var root = doc.RootElement;
+                int count = 0;
+                if (root.TryGetProperty("added", out var addedEl))
+                {
+                    if (addedEl.TryGetProperty("movies", out var m) && m.TryGetInt32(out var mv)) count += mv;
+                    if (addedEl.TryGetProperty("shows", out var s) && s.TryGetInt32(out var sv)) count += sv;
+                    if (addedEl.TryGetProperty("episodes", out var ep) && ep.TryGetInt32(out var epv)) count += epv;
+                }
+                if (count == 0 && root.TryGetProperty("deleted", out var deletedEl))
+                {
+                    if (deletedEl.TryGetProperty("movies", out var dm) && dm.TryGetInt32(out var dmv)) count += dmv;
+                    if (deletedEl.TryGetProperty("shows", out var ds) && ds.TryGetInt32(out var dsv)) count += dsv;
+                    if (deletedEl.TryGetProperty("episodes", out var dep) && dep.TryGetInt32(out var depv)) count += depv;
+                }
+                if (count == 0 && root.TryGetProperty("existing", out var existingEl))
+                {
+                    if (existingEl.TryGetProperty("movies", out var em) && em.TryGetInt32(out var emv)) count += emv;
+                    if (existingEl.TryGetProperty("shows", out var es) && es.TryGetInt32(out var esv)) count += esv;
+                    if (existingEl.TryGetProperty("episodes", out var eep) && eep.TryGetInt32(out var eepv)) count += eepv;
+                }
+                return new TraktSyncWriteResult(true, count);
             }
-            if (count == 0 && root.TryGetProperty("deleted", out var deletedEl))
-            {
-                if (deletedEl.TryGetProperty("movies", out var dm) && dm.TryGetInt32(out var dmv)) count += dmv;
-                if (deletedEl.TryGetProperty("shows", out var ds) && ds.TryGetInt32(out var dsv)) count += dsv;
-                if (deletedEl.TryGetProperty("episodes", out var dep) && dep.TryGetInt32(out var depv)) count += depv;
-            }
-            if (count == 0 && root.TryGetProperty("existing", out var existingEl))
-            {
-                if (existingEl.TryGetProperty("movies", out var em) && em.TryGetInt32(out var emv)) count += emv;
-                if (existingEl.TryGetProperty("shows", out var es) && es.TryGetInt32(out var esv)) count += esv;
-                if (existingEl.TryGetProperty("episodes", out var eep) && eep.TryGetInt32(out var eepv)) count += eepv;
-            }
-            return new TraktSyncWriteResult(true, count);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            return new TraktSyncWriteResult(false, 0, ex.Message);
         }
     }
 }

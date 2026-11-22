@@ -150,7 +150,6 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             SyncProgressContainer.Visibility = Visibility.Collapsed;
             SyncStatusText.Visibility = Visibility.Visible;
             UpdateSyncStatus();
-            ReloadAfterSync();
         }
     }
 

@@ -1298,9 +1298,13 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         var auth = _authService.GetAuthState();
         if (!HasLinkedTraktAccount(auth)) return false;
         var action = inWatchlist ? "ADD" : "REMOVE";
+        var now = _timeProvider.GetUtcNow();
+
+        // Upfront queueing protects from pruning race while waiting on gate
+        _personalLibraryRepository?.EnqueueTraktPendingWatchlist("MOVIE", (int)tmdbId, action, now);
+
         if (!auth.IsConnected || auth.RequiresReconnect)
         {
-            _personalLibraryRepository?.EnqueueTraktPendingWatchlist("MOVIE", (int)tmdbId, action, _timeProvider.GetUtcNow());
             return false;
         }
 
@@ -1313,9 +1317,11 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
 
             if (!result.Success)
             {
-                _personalLibraryRepository?.EnqueueTraktPendingWatchlist("MOVIE", (int)tmdbId, action, _timeProvider.GetUtcNow());
+                AppDiagnosticsLog.Record("TraktWatchlist", $"PushMovieWatchlistAsync failed: {result.Error}");
                 return false;
             }
+
+            _personalLibraryRepository?.DeleteTraktPendingWatchlistByTmdb(new[] { ("MOVIE", (int)tmdbId) });
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -1324,8 +1330,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] PushMovieWatchlistAsync error, enqueued offline: {ex.Message}");
-            _personalLibraryRepository?.EnqueueTraktPendingWatchlist("MOVIE", (int)tmdbId, action, _timeProvider.GetUtcNow());
+            AppDiagnosticsLog.Record("TraktWatchlist", $"PushMovieWatchlistAsync error: {ex.Message}");
             return false;
         }
         finally
@@ -1342,9 +1347,13 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         var auth = _authService.GetAuthState();
         if (!HasLinkedTraktAccount(auth)) return false;
         var action = inWatchlist ? "ADD" : "REMOVE";
+        var now = _timeProvider.GetUtcNow();
+
+        // Upfront queueing protects from pruning race while waiting on gate
+        _personalLibraryRepository?.EnqueueTraktPendingWatchlist("SHOW", (int)tmdbId, action, now);
+
         if (!auth.IsConnected || auth.RequiresReconnect)
         {
-            _personalLibraryRepository?.EnqueueTraktPendingWatchlist("SHOW", (int)tmdbId, action, _timeProvider.GetUtcNow());
             return false;
         }
 
@@ -1357,9 +1366,11 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
 
             if (!result.Success)
             {
-                _personalLibraryRepository?.EnqueueTraktPendingWatchlist("SHOW", (int)tmdbId, action, _timeProvider.GetUtcNow());
+                AppDiagnosticsLog.Record("TraktWatchlist", $"PushShowWatchlistAsync failed: {result.Error}");
                 return false;
             }
+
+            _personalLibraryRepository?.DeleteTraktPendingWatchlistByTmdb(new[] { ("SHOW", (int)tmdbId) });
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -1368,8 +1379,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"[TraktSyncService] PushShowWatchlistAsync error, enqueued offline: {ex.Message}");
-            _personalLibraryRepository?.EnqueueTraktPendingWatchlist("SHOW", (int)tmdbId, action, _timeProvider.GetUtcNow());
+            AppDiagnosticsLog.Record("TraktWatchlist", $"PushShowWatchlistAsync error: {ex.Message}");
             return false;
         }
         finally
@@ -1935,15 +1945,44 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         }
     }
 
-    private void EnqueuePendingFavoriteAction(string mediaKind, int tmdbId, string action)
+    private void EnqueuePendingFavoriteActionsBatch(IReadOnlyList<(string MediaKind, int TmdbId, string Action)> batch)
     {
+        if (batch == null || batch.Count == 0) return;
         lock (_pendingFavoritesLock)
         {
             var actions = LoadPendingFavoriteActions();
-            actions.RemoveAll(a => string.Equals(a.MediaKind, mediaKind, StringComparison.OrdinalIgnoreCase) && a.TmdbId == tmdbId);
-            actions.Add(new TraktPendingFavoriteAction(mediaKind, tmdbId, action, _timeProvider.GetUtcNow()));
+            var batchKeys = new HashSet<(string Kind, int TmdbId)>();
+            foreach (var item in batch)
+            {
+                if (item.TmdbId <= 0) continue;
+                batchKeys.Add((item.MediaKind.Trim().ToUpperInvariant(), item.TmdbId));
+            }
+            actions.RemoveAll(a => batchKeys.Contains((a.MediaKind.Trim().ToUpperInvariant(), a.TmdbId)));
+            var now = _timeProvider.GetUtcNow();
+            foreach (var item in batch)
+            {
+                if (item.TmdbId <= 0) continue;
+                actions.Add(new TraktPendingFavoriteAction(item.MediaKind.Trim().ToUpperInvariant(), item.TmdbId, item.Action.Trim().ToUpperInvariant(), now));
+            }
             SavePendingFavoriteActions(actions);
         }
+    }
+
+    private void RemovePendingFavoriteActionsBatch(IReadOnlyList<(string MediaKind, int TmdbId)> items)
+    {
+        if (items == null || items.Count == 0) return;
+        lock (_pendingFavoritesLock)
+        {
+            var actions = LoadPendingFavoriteActions();
+            var keys = items.Select(i => (i.MediaKind.Trim().ToUpperInvariant(), i.TmdbId)).ToHashSet();
+            actions.RemoveAll(a => keys.Contains((a.MediaKind.Trim().ToUpperInvariant(), a.TmdbId)));
+            SavePendingFavoriteActions(actions);
+        }
+    }
+
+    private void EnqueuePendingFavoriteAction(string mediaKind, int tmdbId, string action)
+    {
+        EnqueuePendingFavoriteActionsBatch(new[] { (mediaKind, tmdbId, action) });
     }
 
     /// <inheritdoc />
@@ -1953,9 +1992,12 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         var auth = _authService.GetAuthState();
         if (!HasLinkedTraktAccount(auth)) return false;
         var action = isFavorite ? "ADD" : "REMOVE";
+
+        // Upfront queueing protects from pruning race while waiting on gate
+        EnqueuePendingFavoriteAction("MOVIE", (int)tmdbId, action);
+
         if (!auth.IsConnected || auth.RequiresReconnect)
         {
-            EnqueuePendingFavoriteAction("MOVIE", (int)tmdbId, action);
             return false;
         }
 
@@ -1969,9 +2011,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             if (!result.Success)
             {
                 AppDiagnosticsLog.Record("TraktFavorites", $"PushMovieFavoriteAsync write failed: {result.Error}");
-                EnqueuePendingFavoriteAction("MOVIE", (int)tmdbId, action);
                 return false;
             }
+
+            RemovePendingFavoriteActionsBatch(new[] { ("MOVIE", (int)tmdbId) });
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -1981,7 +2024,6 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         catch (Exception ex)
         {
             AppDiagnosticsLog.Record("TraktFavorites", $"PushMovieFavoriteAsync error, enqueued offline: {ex.Message}");
-            EnqueuePendingFavoriteAction("MOVIE", (int)tmdbId, action);
             return false;
         }
         finally
@@ -1998,9 +2040,12 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         var auth = _authService.GetAuthState();
         if (!HasLinkedTraktAccount(auth)) return false;
         var action = isFavorite ? "ADD" : "REMOVE";
+
+        // Upfront queueing protects from pruning race while waiting on gate
+        EnqueuePendingFavoriteAction("SHOW", (int)tmdbId, action);
+
         if (!auth.IsConnected || auth.RequiresReconnect)
         {
-            EnqueuePendingFavoriteAction("SHOW", (int)tmdbId, action);
             return false;
         }
 
@@ -2014,9 +2059,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             if (!result.Success)
             {
                 AppDiagnosticsLog.Record("TraktFavorites", $"PushShowFavoriteAsync write failed: {result.Error}");
-                EnqueuePendingFavoriteAction("SHOW", (int)tmdbId, action);
                 return false;
             }
+
+            RemovePendingFavoriteActionsBatch(new[] { ("SHOW", (int)tmdbId) });
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -2026,7 +2072,6 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         catch (Exception ex)
         {
             AppDiagnosticsLog.Record("TraktFavorites", $"PushShowFavoriteAsync error, enqueued offline: {ex.Message}");
-            EnqueuePendingFavoriteAction("SHOW", (int)tmdbId, action);
             return false;
         }
         finally
@@ -2122,10 +2167,15 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         if (!HasLinkedTraktAccount(auth)) return false;
         var action = isFavorite ? "ADD" : "REMOVE";
 
+        // Upfront queueing protects from pruning race while waiting on gate
+        var batch = new List<(string MediaKind, int TmdbId, string Action)>(movies.Count + shows.Count);
+        var keys = new List<(string MediaKind, int TmdbId)>(movies.Count + shows.Count);
+        foreach (var m in movies) { batch.Add(("MOVIE", (int)m, action)); keys.Add(("MOVIE", (int)m)); }
+        foreach (var s in shows) { batch.Add(("SHOW", (int)s, action)); keys.Add(("SHOW", (int)s)); }
+        EnqueuePendingFavoriteActionsBatch(batch);
+
         if (!auth.IsConnected || auth.RequiresReconnect)
         {
-            foreach (var m in movies) EnqueuePendingFavoriteAction("MOVIE", (int)m, action);
-            foreach (var s in shows) EnqueuePendingFavoriteAction("SHOW", (int)s, action);
             return false;
         }
 
@@ -2139,10 +2189,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             if (!result.Success)
             {
                 AppDiagnosticsLog.Record("TraktFavorites", $"PushBatchFavoritesAsync failed: {result.Error}");
-                foreach (var m in movies) EnqueuePendingFavoriteAction("MOVIE", (int)m, action);
-                foreach (var s in shows) EnqueuePendingFavoriteAction("SHOW", (int)s, action);
                 return false;
             }
+
+            RemovePendingFavoriteActionsBatch(keys);
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -2152,8 +2202,6 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         catch (Exception ex)
         {
             AppDiagnosticsLog.Record("TraktFavorites", $"PushBatchFavoritesAsync error: {ex.Message}");
-            foreach (var m in movies) EnqueuePendingFavoriteAction("MOVIE", (int)m, action);
-            foreach (var s in shows) EnqueuePendingFavoriteAction("SHOW", (int)s, action);
             return false;
         }
         finally
@@ -2174,14 +2222,17 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         if (!HasLinkedTraktAccount(auth)) return false;
         var action = isWatchlisted ? "ADD" : "REMOVE";
 
+        var now = _timeProvider.GetUtcNow();
+        var batch = new List<(string MediaKind, int TmdbId, string Action)>(movies.Count + shows.Count);
+        var keys = new List<(string MediaKind, int TmdbId)>(movies.Count + shows.Count);
+        foreach (var m in movies) { batch.Add(("MOVIE", (int)m, action)); keys.Add(("MOVIE", (int)m)); }
+        foreach (var s in shows) { batch.Add(("SHOW", (int)s, action)); keys.Add(("SHOW", (int)s)); }
+
+        // Upfront queueing protects from pruning race while waiting on gate
+        _personalLibraryRepository?.EnqueueTraktPendingWatchlistBatch(batch, now);
+
         if (!auth.IsConnected || auth.RequiresReconnect)
         {
-            if (_personalLibraryRepository != null)
-            {
-                var now = _timeProvider.GetUtcNow();
-                foreach (var m in movies) _personalLibraryRepository.EnqueueTraktPendingWatchlist("MOVIE", (int)m, action, now);
-                foreach (var s in shows) _personalLibraryRepository.EnqueueTraktPendingWatchlist("SHOW", (int)s, action, now);
-            }
             return false;
         }
 
@@ -2195,14 +2246,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             if (!result.Success)
             {
                 AppDiagnosticsLog.Record("TraktWatchlist", $"PushBatchWatchlistAsync failed: {result.Error}");
-                if (_personalLibraryRepository != null)
-                {
-                    var now = _timeProvider.GetUtcNow();
-                    foreach (var m in movies) _personalLibraryRepository.EnqueueTraktPendingWatchlist("MOVIE", (int)m, action, now);
-                    foreach (var s in shows) _personalLibraryRepository.EnqueueTraktPendingWatchlist("SHOW", (int)s, action, now);
-                }
                 return false;
             }
+
+            _personalLibraryRepository?.DeleteTraktPendingWatchlistByTmdb(keys);
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -2212,12 +2259,6 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         catch (Exception ex)
         {
             AppDiagnosticsLog.Record("TraktWatchlist", $"PushBatchWatchlistAsync error: {ex.Message}");
-            if (_personalLibraryRepository != null)
-            {
-                var now = _timeProvider.GetUtcNow();
-                foreach (var m in movies) _personalLibraryRepository.EnqueueTraktPendingWatchlist("MOVIE", (int)m, action, now);
-                foreach (var s in shows) _personalLibraryRepository.EnqueueTraktPendingWatchlist("SHOW", (int)s, action, now);
-            }
             return false;
         }
         finally
@@ -2711,17 +2752,24 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                     // Authoritative Prune on Subsequent Syncs
                     if (!isInitialSync)
                     {
+                        var pendingWatchlist = _personalLibraryRepository.ListTraktPendingWatchlist();
+                        var pendingAddKeys = pendingWatchlist
+                            .Where(p => string.Equals(p.Action, "ADD", StringComparison.OrdinalIgnoreCase))
+                            .Select(p => (Kind: p.MediaKind.Trim().ToUpperInvariant(), TmdbId: p.TmdbId))
+                            .ToHashSet();
+
                         foreach (var item in localWatchlisted)
                         {
                             if (candidateMap.TryGetValue(item.Movie.Id, out var tmdbId) && tmdbId > 0 && !remoteWatchlistMovieTmdb.Contains(tmdbId))
                             {
+                                if (pendingAddKeys.Contains(("MOVIE", tmdbId))) continue;
                                 try
                                 {
                                     _personalLibraryRepository.RemoveFromWatchlist(item.Movie.Id, now);
                                 }
                                 catch (Exception ex)
                                 {
-                                    System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to remove local movie {item.Movie.Id} from watchlist: {ex.Message}");
+                                    AppDiagnosticsLog.Record("TraktWatchlist", $"Failed to remove local movie {item.Movie.Id} from watchlist: {ex.Message}");
                                 }
                             }
                         }
@@ -2784,17 +2832,24 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                     // Authoritative Prune on Subsequent Syncs
                     if (!isInitialSync)
                     {
+                        var pendingWatchlist = _personalLibraryRepository?.ListTraktPendingWatchlist() ?? Array.Empty<TraktPendingWatchlistAction>();
+                        var pendingAddKeys = pendingWatchlist
+                            .Where(p => string.Equals(p.Action, "ADD", StringComparison.OrdinalIgnoreCase))
+                            .Select(p => (Kind: p.MediaKind.Trim().ToUpperInvariant(), TmdbId: p.TmdbId))
+                            .ToHashSet();
+
                         foreach (var showId in localWatchlistShowIds)
                         {
                             if (showCandidateMap.TryGetValue(showId, out var tmdbId) && tmdbId > 0 && !remoteWatchlistShowTmdb.Contains(tmdbId))
                             {
+                                if (pendingAddKeys.Contains(("SHOW", tmdbId))) continue;
                                 try
                                 {
                                     _showPersonalRepository.SetWatchLater(showId, false, now);
                                 }
                                 catch (Exception ex)
                                 {
-                                    System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to remove local show {showId} from watch later: {ex.Message}");
+                                    AppDiagnosticsLog.Record("TraktWatchlist", $"Failed to remove local show {showId} from watch later: {ex.Message}");
                                 }
                             }
                         }
