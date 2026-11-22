@@ -138,9 +138,14 @@ Before committing changes or proposing a push, verify the following historical C
 ### III. Layer Threshold Alignment Invariant
 - Any persistence filter threshold must align 1:1 with the domain display threshold (`PlaybackModels.HasResumePosition`: `PositionSeconds >= 3.0`) and UI command activations (`SplitButton` / `MenuFlyout`). Never set a display threshold higher than a persistence threshold.
 
-### IV. Asymmetric External Service Parity (Trakt Scrobbling)
-- Trakt marks items as `Watched` upon receiving `scrobble/stop` at `>= 80%`, whereas the application's local completion threshold is **`90%`**.
-- Always issue `Pause` below 90% to record resume position without tripping premature watched status on Trakt, issuing `Stop` strictly at **`>= 90%`**.
+### IV. Trakt Scrobbler Full Lifecycle & External Parity Invariant
+- **Lifecycle Actions**:
+  - Trakt requires `/scrobble/start` on playback start/resume to show "Watching Now", `/scrobble/pause` during paused playback (progress >= 1.0%), and `/scrobble/stop` on playback exit, early termination, or app shutdown.
+  - Sending `Pause` instead of `Stop` on player exit leaves "Watching Now" hanging on Trakt indefinitely; therefore, on player close, early exit, or app shutdown, always issue `/scrobble/stop` (with `0.0%` if duration is unknown or exit is immediate).
+- **Unified 80% Watched Completion Parity**:
+  - Local database completion and Trakt completion are strictly unified at **`80%`**:
+    - Below 80%: Trakt saves resume progress, local database stores `playback_progress`, and neither marks as watched.
+    - At or above 80%: Trakt marks the item as watched in history, local database records `watch_events` (or `episode_watch_events`), and local resume progress is purged.
 
 ### V. WindowsApps Execution & GSMTC Invariants (`[U10]`)
 - Never execute `Process.Start` with `UseShellExecute = false` on paths residing within `WindowsApps` (preventing `Access Denied 0x80070005`); enforce `UseShellExecute = true`.

@@ -37,10 +37,14 @@ public sealed class PlaybackTrackingTests
         Assert.Equal(60.0, p2.ProgressPercentage);
         Assert.Equal("10:00", p2.FormattedResumeTime);
 
-        // Over 92% -> HasResumePosition is false (assumed end credits)
-        var p3 = new PlaybackProgress(1, 950, 1000, DateTimeOffset.UtcNow);
+        // At or over 80% -> HasResumePosition is false (unified watched threshold)
+        var p3 = new PlaybackProgress(1, 800, 1000, DateTimeOffset.UtcNow);
         Assert.False(p3.HasResumePosition);
-        Assert.Equal(95.0, p3.ProgressPercentage);
+        Assert.Equal(80.0, p3.ProgressPercentage);
+
+        // Under 80% (e.g. 79.9%) -> HasResumePosition is true
+        var p3b = new PlaybackProgress(1, 799, 1000, DateTimeOffset.UtcNow);
+        Assert.True(p3b.HasResumePosition);
 
         // Hours formatting
         var p4 = new PlaybackProgress(1, 3665, 7200, DateTimeOffset.UtcNow);
@@ -187,7 +191,7 @@ public sealed class PlaybackTrackingTests
                 MovieId: 20,
                 MovieTitle: "Tracking Movie");
 
-            // Mock launcher simulates user watching to 600 seconds (60% -> under 90% threshold)
+            // Mock launcher simulates user watching to 600 seconds (60% -> under 80% threshold)
             mockLauncher.SimulatedExitPosition = 600;
 
             var started = await service.StartPlaybackAsync(target, resume: false);
@@ -199,17 +203,17 @@ public sealed class PlaybackTrackingTests
             Assert.Equal(600, saved.PositionSeconds);
             Assert.Equal(60.0, saved.ProgressPercentage);
 
-            // Under 90%, scrobble action is "pause" (preventing premature Trakt watch)
+            // Scrobble action on exit is always "stop" to clear "Watching Now" on Trakt
             Assert.Contains(mockTrakt.Calls, c => c.Action == "start");
-            Assert.Contains(mockTrakt.Calls, c => c.Action == "pause" && Math.Abs(c.Progress - 60.0) < 0.1);
+            Assert.Contains(mockTrakt.Calls, c => c.Action == "stop" && Math.Abs(c.Progress - 60.0) < 0.1);
 
-            // Now simulate watching to 910 seconds (91% -> exceeds 90% threshold)
+            // Now simulate watching to 850 seconds (85% -> exceeds unified 80% threshold)
             mockTrakt.Calls.Clear();
-            mockLauncher.SimulatedExitPosition = 910;
+            mockLauncher.SimulatedExitPosition = 850;
             await service.StartPlaybackAsync(target, resume: false);
 
-            // At 90%+, scrobble action is "stop" (marking as watched on both local and Trakt)
-            Assert.Contains(mockTrakt.Calls, c => c.Action == "stop" && Math.Abs(c.Progress - 91.0) < 0.1);
+            // At 80%+, scrobble action is "stop" (marking as watched on both local and Trakt)
+            Assert.Contains(mockTrakt.Calls, c => c.Action == "stop" && Math.Abs(c.Progress - 85.0) < 0.1);
         }
         finally
         {
@@ -300,6 +304,8 @@ public sealed class PlaybackTrackingTests
         public double SimulatedExitPosition { get; set; } = 300;
         public double? SimulatedTickPosition { get; set; }
         public double? SimulatedDiscoveredDuration { get; set; }
+        public int SimulatedExitDelayMs { get; set; }
+        public List<(double Position, double? Duration, bool IsPaused)> SimulatedTicks { get; } = [];
 
         public async Task<bool> LaunchAndTrackAsync(
             string filePath,
@@ -313,9 +319,24 @@ public sealed class PlaybackTrackingTests
             Func<double, double?, bool, Task>? onProgressTick = null)
         {
             var effectiveDuration = SimulatedDiscoveredDuration ?? totalDurationSeconds;
-            if (SimulatedTickPosition.HasValue && onProgressTick != null)
+            if (SimulatedTicks.Count > 0 && onProgressTick != null)
+            {
+                foreach (var tick in SimulatedTicks)
+                {
+                    await onProgressTick(tick.Position, tick.Duration ?? effectiveDuration, tick.IsPaused);
+                }
+            }
+            else if (SimulatedTickPosition.HasValue && onProgressTick != null)
             {
                 await onProgressTick(SimulatedTickPosition.Value, effectiveDuration, false);
+            }
+            if (SimulatedExitDelayMs > 0)
+            {
+                try
+                {
+                    await Task.Delay(SimulatedExitDelayMs, cancellationToken);
+                }
+                catch (OperationCanceledException) { }
             }
             await onPlaybackExit(SimulatedExitPosition, effectiveDuration);
             return true;
@@ -453,7 +474,7 @@ public sealed class PlaybackTrackingTests
     }
 
     [Fact]
-    public async Task PlaybackTrackingService_PropagatesDiscoveredDuration_AndMarksWatchedWhenAbove90Percent()
+    public async Task PlaybackTrackingService_PropagatesDiscoveredDuration_AndMarksWatchedWhenAbove80Percent()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_discovered_dur_{Guid.NewGuid():N}.db");
         var connStr = $"Data Source={dbPath}";
@@ -477,7 +498,7 @@ public sealed class PlaybackTrackingTests
             var mockLauncher = new FakePlayerLauncher
             {
                 SimulatedDiscoveredDuration = 1000,
-                SimulatedExitPosition = 930 // 93% -> above 90% (watched) and above 92% (delete progress)
+                SimulatedExitPosition = 850 // 85% -> above unified 80% (watched & delete progress)
             };
             var mockTrakt = new FakeTraktClient();
 
@@ -499,15 +520,15 @@ public sealed class PlaybackTrackingTests
 
             await service.StartPlaybackAsync(target, resume: false);
 
-            // Watched past 92% -> progress deleted
+            // Watched past 80% -> progress deleted
             Assert.Null(progressRepo.GetByMediaFileId(500));
 
-            // Watched past 90% -> watch event recorded in personal library
+            // Watched past 80% -> watch event recorded in personal library
             var history = personalRepo.GetWatchEvents(50);
             Assert.Single(history);
 
-            // Trakt Scrobble Stop called with ~93%
-            Assert.Contains(mockTrakt.Calls, c => c.Action == "stop" && Math.Abs(c.Progress - 93.0) < 0.1);
+            // Trakt Scrobble Stop called with ~85%
+            Assert.Contains(mockTrakt.Calls, c => c.Action == "stop" && Math.Abs(c.Progress - 85.0) < 0.1);
         }
         finally
         {
@@ -572,8 +593,8 @@ public sealed class PlaybackTrackingTests
             // No watch event recorded because percentage is 0
             Assert.Empty(personalRepo.GetWatchEvents(60));
 
-            // Scrobble is pause (not stop)
-            Assert.Contains(mockTrakt.Calls, c => c.Action == "pause" && c.Progress == 0.0);
+            // Scrobble is stop on exit
+            Assert.Contains(mockTrakt.Calls, c => c.Action == "stop" && c.Progress == 0.0);
         }
         finally
         {
@@ -628,7 +649,7 @@ public sealed class PlaybackTrackingTests
             await service.StartPlaybackAsync(target, resume: false);
 
             // Trakt scrobble payload must report 50% (not 0.0%)
-            Assert.Contains(mockTrakt.Calls, c => c.Action == "pause" && Math.Abs(c.Progress - 50.0) < 0.1);
+            Assert.Contains(mockTrakt.Calls, c => c.Action == "stop" && Math.Abs(c.Progress - 50.0) < 0.1);
         }
         finally
         {
@@ -638,7 +659,7 @@ public sealed class PlaybackTrackingTests
     }
 
     [Fact]
-    public async Task PlaybackTrackingService_WhenPlaybackExitsUnder3Seconds_CleansUpStaleProgress_AndDoesNotSendScrobble()
+    public async Task PlaybackTrackingService_WhenPlaybackExitsUnder3Seconds_CleansUpStaleProgress_AndSendsStopScrobble()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_under_3s_{Guid.NewGuid():N}.db");
         var connStr = $"Data Source={dbPath}";
@@ -689,11 +710,206 @@ public sealed class PlaybackTrackingTests
             // Stale progress must be deleted
             Assert.Null(progressRepo.GetByMediaFileId(800));
 
-            // No pause or stop scrobble should be sent for under 3s exit
-            Assert.DoesNotContain(mockTrakt.Calls, c => c.Action is "pause" or "stop");
+            // Stop scrobble must be sent even for under 3s exit to clear "Watching Now" on Trakt
+            Assert.Contains(mockTrakt.Calls, c => c.Action == "stop" && c.Progress == 0.0);
 
             // PlaybackEnded must still be invoked to refresh UI
             Assert.True(endedFired);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task PlaybackTrackingService_FullScrobbleLifecycle_Start_Pause_Resume_Stop()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_lifecycle_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+
+            using (var conn = new SqliteConnection(connStr))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (90, 'Lifecycle Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (900, 90, 'C:\lifecycle.mkv', 'c:\lifecycle.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
+                ";
+                cmd.ExecuteNonQuery();
+            }
+
+            var progressRepo = new PlaybackProgressRepository(connStr);
+            var mockLauncher = new FakePlayerLauncher
+            {
+                SimulatedDiscoveredDuration = 1000,
+                SimulatedExitPosition = 200 // 20%
+            };
+            // Add ticks: playing -> paused -> resumed
+            mockLauncher.SimulatedTicks.Add((100, 1000, false)); // Playing at 10%
+            mockLauncher.SimulatedTicks.Add((100, 1000, true));  // Transition to pause at 10%
+            mockLauncher.SimulatedTicks.Add((150, 1000, false)); // Transition to resume at 15%
+
+            var mockTrakt = new FakeTraktClient();
+            var service = new PlaybackTrackingService(
+                progressRepo,
+                mockLauncher,
+                traktDataClient: mockTrakt,
+                traktAuthService: new FakeTraktAuthService(),
+                traktClientId: "dummy_client_id");
+
+            var target = new PlaybackMediaTarget(
+                MediaFileId: 900,
+                FilePath: @"C:\lifecycle.mkv",
+                TotalDurationSeconds: 1000,
+                IsMovie: true,
+                MovieId: 90,
+                MovieTitle: "Lifecycle Movie");
+
+            await service.StartPlaybackAsync(target, resume: false);
+
+            // Calls must contain:
+            // 1. Initial start
+            // 2. Pause at 10%
+            // 3. Resume (start) at 15%
+            // 4. Final stop on exit at 20%
+            Assert.Equal(4, mockTrakt.Calls.Count);
+            Assert.Equal("start", mockTrakt.Calls[0].Action);
+            Assert.Equal("pause", mockTrakt.Calls[1].Action);
+            Assert.Equal(10.0, mockTrakt.Calls[1].Progress);
+            Assert.Equal("start", mockTrakt.Calls[2].Action);
+            Assert.Equal(15.0, mockTrakt.Calls[2].Progress);
+            Assert.Equal("stop", mockTrakt.Calls[3].Action);
+            Assert.Equal(20.0, mockTrakt.Calls[3].Progress);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task PlaybackTrackingService_StopActivePlaybackAsync_OnAppExit_SendsStopScrobble()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_appexit_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+
+            using (var conn = new SqliteConnection(connStr))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (91, 'App Exit Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (901, 91, 'C:\appexit.mkv', 'c:\appexit.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
+                ";
+                cmd.ExecuteNonQuery();
+            }
+
+            var progressRepo = new PlaybackProgressRepository(connStr);
+            var mockLauncher = new FakePlayerLauncher
+            {
+                SimulatedDiscoveredDuration = 1000,
+                SimulatedExitDelayMs = 200,
+                SimulatedExitPosition = 300
+            };
+            mockLauncher.SimulatedTicks.Add((250, 1000, false));
+
+            var mockTrakt = new FakeTraktClient();
+            var service = new PlaybackTrackingService(
+                progressRepo,
+                mockLauncher,
+                traktDataClient: mockTrakt,
+                traktAuthService: new FakeTraktAuthService(),
+                traktClientId: "dummy_client_id");
+
+            var target = new PlaybackMediaTarget(
+                MediaFileId: 901,
+                FilePath: @"C:\appexit.mkv",
+                TotalDurationSeconds: 1000,
+                IsMovie: true,
+                MovieId: 91,
+                MovieTitle: "App Exit Movie");
+
+            // Start playback in background
+            var playTask = service.StartPlaybackAsync(target, resume: false);
+
+            // Wait briefly for playback to begin and first tick to register
+            await Task.Delay(50);
+
+            // Explicitly simulate AppServices.Shutdown calling StopActivePlaybackAsync
+            await service.StopActivePlaybackAsync();
+
+            Assert.Contains(mockTrakt.Calls, c => c.Action == "stop");
+
+            await playTask;
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task PlaybackTrackingService_SequentialPlayback_StopsPreviousSessionFirst()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_sequential_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+
+            using (var conn = new SqliteConnection(connStr))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (92, 'Movie 1', 2025, datetime('now'), datetime('now'), datetime('now'));
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (93, 'Movie 2', 2025, datetime('now'), datetime('now'), datetime('now'));
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (902, 92, 'C:\m1.mkv', 'c:\m1.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (903, 93, 'C:\m2.mkv', 'c:\m2.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
+                ";
+                cmd.ExecuteNonQuery();
+            }
+
+            var progressRepo = new PlaybackProgressRepository(connStr);
+            var mockLauncher = new FakePlayerLauncher
+            {
+                SimulatedDiscoveredDuration = 1000,
+                SimulatedExitDelayMs = 200,
+                SimulatedExitPosition = 100
+            };
+            var mockTrakt = new FakeTraktClient();
+            var service = new PlaybackTrackingService(
+                progressRepo,
+                mockLauncher,
+                traktDataClient: mockTrakt,
+                traktAuthService: new FakeTraktAuthService(),
+                traktClientId: "dummy_client_id");
+
+            var target1 = new PlaybackMediaTarget(902, @"C:\m1.mkv", 1000, true, 92, "Movie 1");
+            var target2 = new PlaybackMediaTarget(903, @"C:\m2.mkv", 1000, true, 93, "Movie 2");
+
+            // Play video 1 in background
+            var play1 = service.StartPlaybackAsync(target1, resume: false);
+            await Task.Delay(50);
+
+            // Starting video 2 cleanly stops video 1 first
+            var play2 = service.StartPlaybackAsync(target2, resume: false);
+
+            await Task.WhenAll(play1, play2);
+
+            // Both sessions must have had stop called exactly once
+            var stopCalls = mockTrakt.Calls.FindAll(c => c.Action == "stop");
+            Assert.Equal(2, stopCalls.Count);
         }
         finally
         {

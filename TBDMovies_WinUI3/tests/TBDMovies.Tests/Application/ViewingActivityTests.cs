@@ -418,7 +418,7 @@ public sealed class ViewingActivityTests : IDisposable
         SeedMovie(1, "Movie 1", 2020, MoviePath);
         SeedMovie(2, "Movie 2", 2021, secondMoviePath);
 
-        // Movie 1 has integer 500 / 1000 (50% < 90%)
+        // Movie 1 has integer 500 / 1000 (50% < 80%)
         SeedPlaybackProgress(1, 500, 1000, _t0.AddHours(1));
         // Movie 2 has total_duration = null (should not throw or hide item)
         SeedPlaybackProgress(2, 500, null, _t0.AddHours(2));

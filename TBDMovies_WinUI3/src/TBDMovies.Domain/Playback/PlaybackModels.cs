@@ -21,11 +21,11 @@ public sealed record PlaybackProgress(
             : 0.0;
 
     /// <summary>
-    /// Resumable if at least 3 seconds watched and less than 92% of total duration (before end credits).
+    /// Resumable if at least 3 seconds watched and less than 80% of total duration (before watched threshold).
     /// </summary>
     public bool HasResumePosition =>
         PositionSeconds >= 3.0 &&
-        (TotalDurationSeconds is null || ProgressPercentage < 92.0);
+        (TotalDurationSeconds is null || ProgressPercentage < 80.0);
 
     public string FormattedResumeTime => FormatTime(PositionSeconds);
 

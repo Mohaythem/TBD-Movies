@@ -163,7 +163,7 @@ public sealed class ViewingActivityRepository(string connectionString, ILibraryR
             JOIN media_files mf ON mf.id = p.media_file_id AND mf.status = 'PRESENT'
             JOIN movies m ON m.id = mf.movie_id
             WHERE p.position_seconds >= 3.0
-              AND (p.total_duration_seconds IS NULL OR p.total_duration_seconds <= 0 OR (CAST(p.position_seconds AS REAL) / p.total_duration_seconds) < 0.90)
+              AND (p.total_duration_seconds IS NULL OR p.total_duration_seconds <= 0 OR (CAST(p.position_seconds AS REAL) / p.total_duration_seconds) < 0.80)
               AND NOT EXISTS (
                   SELECT 1 FROM watch_events w 
                    WHERE w.media_kind = 'MOVIE' 
@@ -206,7 +206,7 @@ public sealed class ViewingActivityRepository(string connectionString, ILibraryR
             JOIN tv_seasons se ON se.id = e.season_id
             JOIN tv_shows s ON s.id = se.show_id
             WHERE p.position_seconds >= 3.0
-              AND (p.total_duration_seconds IS NULL OR p.total_duration_seconds <= 0 OR (CAST(p.position_seconds AS REAL) / p.total_duration_seconds) < 0.90)
+              AND (p.total_duration_seconds IS NULL OR p.total_duration_seconds <= 0 OR (CAST(p.position_seconds AS REAL) / p.total_duration_seconds) < 0.80)
               AND NOT EXISTS (
                   SELECT 1 FROM watch_events w 
                    WHERE w.media_kind = 'EPISODE' 

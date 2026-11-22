@@ -246,89 +246,94 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
                 ? process.WaitForExitAsync(cancellationToken)
                 : null;
 
-            while (!cancellationToken.IsCancellationRequested)
+            try
             {
-                if (tracker == null && process == null)
+                while (!cancellationToken.IsCancellationRequested)
                 {
-                    break;
-                }
-
-                if (process != null && !useShell && SafeHasExited(process))
-                {
-                    break;
-                }
-
-                var delayTask = Task.Delay(pollIntervalMs > 0 ? pollIntervalMs : 1000, cancellationToken);
-
-                if (exitTask != null)
-                {
-                    var completed = await Task.WhenAny(exitTask, delayTask).ConfigureAwait(false);
-                    if (completed == exitTask)
+                    if (tracker == null && process == null)
                     {
                         break;
                     }
-                }
-                else
-                {
-                    await delayTask.ConfigureAwait(false);
-                }
 
-                if (tracker != null)
-                {
-                    var snapshot = await tracker.PollAsync(cancellationToken).ConfigureAwait(false);
-                    if (snapshot != null)
+                    if (process != null && !useShell && SafeHasExited(process))
                     {
-                        hadActiveSession = true;
-                        consecutiveNulls = 0;
+                        break;
+                    }
 
-                        if (snapshot.DurationSeconds.HasValue && snapshot.DurationSeconds.Value > 0 && !totalDurationSeconds.HasValue)
-                        {
-                            totalDurationSeconds = snapshot.DurationSeconds;
-                        }
+                    var delayTask = Task.Delay(pollIntervalMs > 0 ? pollIntervalMs : 1000, cancellationToken);
 
-                        var isSeekJump = Math.Abs(snapshot.PositionSeconds - lastReportedPosition) >= 5.0;
-                        var isPauseTransition = (!wasPaused && snapshot.IsPaused);
-                        wasPaused = snapshot.IsPaused;
-                        lastReportedPosition = snapshot.PositionSeconds;
-
-                        if (isPauseTransition || isSeekJump)
+                    if (exitTask != null)
+                    {
+                        var completed = await Task.WhenAny(exitTask, delayTask).ConfigureAwait(false);
+                        if (completed == exitTask)
                         {
-                            await FlushProgressAsync(lastReportedPosition, totalDurationSeconds, snapshot.IsPaused).ConfigureAwait(false);
-                        }
-                        else
-                        {
-                            // Periodic save (every 5 seconds) if not paused and position changed
-                            var elapsedSinceSave = (DateTimeOffset.UtcNow - lastSavedTime).TotalSeconds;
-                            if (!snapshot.IsPaused && Math.Abs(lastReportedPosition - lastSavedPosition) >= 3.0 && elapsedSinceSave >= 5.0)
-                            {
-                                await FlushProgressAsync(lastReportedPosition, totalDurationSeconds, snapshot.IsPaused).ConfigureAwait(false);
-                            }
+                            break;
                         }
                     }
                     else
                     {
-                        consecutiveNulls++;
-                        if (useShell && hadActiveSession && consecutiveNulls >= 4)
+                        await delayTask.ConfigureAwait(false);
+                    }
+
+                    if (tracker != null)
+                    {
+                        var snapshot = await tracker.PollAsync(cancellationToken).ConfigureAwait(false);
+                        if (snapshot != null)
                         {
-                            // In Shell mode (e.g. Windows Media Player), 4 consecutive nulls (~4s of absence) indicates player closed
-                            break;
-                        }
-                        else if (useShell && (DateTimeOffset.UtcNow - startTime).TotalSeconds >= 10.0 && !hadActiveSession)
-                        {
-                            if (process == null || SafeHasExited(process))
+                            hadActiveSession = true;
+                            consecutiveNulls = 0;
+
+                            if (snapshot.DurationSeconds.HasValue && snapshot.DurationSeconds.Value > 0 && !totalDurationSeconds.HasValue)
                             {
-                                break;
+                                totalDurationSeconds = snapshot.DurationSeconds;
+                            }
+
+                            var isSeekJump = Math.Abs(snapshot.PositionSeconds - lastReportedPosition) >= 5.0;
+                            var isPauseTransition = (!wasPaused && snapshot.IsPaused);
+                            var isResumeTransition = (wasPaused && !snapshot.IsPaused);
+                            wasPaused = snapshot.IsPaused;
+                            lastReportedPosition = snapshot.PositionSeconds;
+
+                            if (isPauseTransition || isResumeTransition || isSeekJump)
+                            {
+                                await FlushProgressAsync(lastReportedPosition, totalDurationSeconds, snapshot.IsPaused).ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                // Periodic save (every 5 seconds) if not paused and position changed
+                                var elapsedSinceSave = (DateTimeOffset.UtcNow - lastSavedTime).TotalSeconds;
+                                if (!snapshot.IsPaused && Math.Abs(lastReportedPosition - lastSavedPosition) >= 3.0 && elapsedSinceSave >= 5.0)
+                                {
+                                    await FlushProgressAsync(lastReportedPosition, totalDurationSeconds, snapshot.IsPaused).ConfigureAwait(false);
+                                }
                             }
                         }
-                        // Frozen at lastReportedPosition without blind wall-clock overwrite
+                        else
+                        {
+                            consecutiveNulls++;
+                            if (useShell && hadActiveSession && consecutiveNulls >= 4)
+                            {
+                                // In Shell mode (e.g. Windows Media Player), 4 consecutive nulls (~4s of absence) indicates player closed
+                                break;
+                            }
+                            else if (useShell && (DateTimeOffset.UtcNow - startTime).TotalSeconds >= 10.0 && !hadActiveSession)
+                            {
+                                if (process == null || SafeHasExited(process))
+                                {
+                                    break;
+                                }
+                            }
+                            // Frozen at lastReportedPosition without blind wall-clock overwrite
+                        }
+                    }
+                    else
+                    {
+                        var elapsed = (DateTimeOffset.UtcNow - startTime).TotalSeconds;
+                        lastReportedPosition = startPositionSeconds + elapsed;
                     }
                 }
-                else
-                {
-                    var elapsed = (DateTimeOffset.UtcNow - startTime).TotalSeconds;
-                    lastReportedPosition = startPositionSeconds + elapsed;
-                }
             }
+            catch (OperationCanceledException) { }
 
             // Final poll on exit
             if (tracker != null)

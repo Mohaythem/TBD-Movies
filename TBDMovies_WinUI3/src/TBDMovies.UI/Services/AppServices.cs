@@ -17,6 +17,7 @@ using TBDMovies.Infrastructure.Metadata.Tmdb;
 using TBDMovies.Infrastructure.Security;
 using TBDMovies.Application.Trakt;
 using TBDMovies.Infrastructure.Trakt;
+using System.Diagnostics;
 using System.Text.Json;
 using TBDMovies.Application.Playback;
 using TBDMovies.FileSystem.Playback;
@@ -711,6 +712,15 @@ internal static class AppServices
         lock (Gate)
         {
             _closed = true;
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                Task.Run(() => _playbackTrackingService?.StopActivePlaybackAsync(cts.Token)).GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Trace.WriteLine($"[AppServices] StopActivePlaybackAsync on shutdown timed out or threw: {ex.Message}");
+            }
             _traktSyncService?.Dispose();
             _traktAuthClient?.Dispose();
             _traktDataClient?.Dispose();
