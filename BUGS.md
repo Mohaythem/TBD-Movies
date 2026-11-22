@@ -55,13 +55,42 @@
 
 ### [F1] [Backlog / Scheduled ⏳] Episode Stills & Season Posters (`FEAT-EPISODE-ARTWORK`)
 - **Affected Subsystems**: `ShowModels.cs` (`ArtworkLoader:708-726`), `TVShowDetailsPage.xaml`, `TVShowDetailsPage.xaml.cs`.
-- **Problem & Root Cause**: `ArtworkLoader` defaults to cached series backdrop and skips asynchronous downloading of individual episode still thumbnails (`still_path`).
-- **Required Resolution**: Decouple primary `stillReference` from fallback backdrop; trigger background download for primary still, with smooth UI dispatcher swap on completion.
 - **Specification**: Full details in `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`.
 
 ### [F2] [Backlog / Scheduled ⏳] Inbound Downloads Auto-Scan (`FEAT-INBOUND-AUTOSCAN`)
 - **Affected Subsystems**: `AppSettingsStore.cs`, `AddMediaPage.xaml.cs`, `FileLockGuard.cs` (new).
-- **Feature Scope**: Automatically detect completed downloads/torrents in the configured inbound folder upon opening Add Media, using write-lock guards to skip in-progress files.
+- **Specification**: Full details in `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`.
+
+### [F3] [Backlog / Scheduled ⏳] Immediate Continue Watching on Play Click (`FIX-PLAYBACK-CONTINUE-WATCHING-ON-PLAY`)
+- **Affected Subsystems**: `PlaybackTrackingService.cs` (`StartPlaybackAsync`), `PlayerProcessLauncher.cs`.
+- **Specification**: Full details in `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`.
+
+### [F4] [Backlog / Scheduled ⏳] Reliable Trakt Scrobble Stop/Pause on Player Exit (`FIX-TRAKT-SCROBBLE-STOP-ON-EXIT`)
+- **Affected Subsystems**: `PlaybackTrackingService.cs` (`HandlePlaybackExitAsync`), `PlayerProcessLauncher.cs`.
+- **Specification**: Full details in `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`.
+
+### [F5] [Backlog / Scheduled ⏳] Clear Resume Checkpoint upon Mark as Watched (`FIX-CLEAR-RESUME-ON-WATCHED`)
+- **Affected Subsystems**: `MovieDetailsPage.xaml.cs` (`AddWatch`), `TVShowDetailsPage.xaml.cs`.
+- **Specification**: Full details in `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`.
+
+### [F6] [Backlog / Scheduled ⏳] Two-Way Favorites Synchronization Parity with Trakt (`FIX-TRAKT-FAVORITES-TWO-WAY-SYNC`)
+- **Affected Subsystems**: `TraktSyncService.cs`, `TraktDataClient.FavoritesAndCollection.cs`.
+- **Specification**: Full details in `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`.
+
+### [F7] [Backlog / Scheduled ⏳] Automatic Library Re-Sort & Refresh on Back Navigation (`FIX-LIBRARY-AUTO-REFRESH-ON-ACTIVATE`)
+- **Affected Subsystems**: `LibraryPage.xaml.cs` (`Activate()`).
+- **Specification**: Full details in `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`.
+
+### [F8] [Backlog / Scheduled ⏳] Eliminate Double Animation / Jitter on List Item Removal (`FIX-MYLISTS-REMOVE-DOUBLE-ANIMATION`)
+- **Affected Subsystems**: `MyListsPage.Trakt.cs` (`ScheduleDebouncedSyncReload`), `MyListsPage.xaml.cs`.
+- **Specification**: Full details in `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`.
+
+### [F9] [Backlog / Scheduled ⏳] Enlarge & Clarify List Selector Tab Pills (`UX-ENLARGE-LIST-SELECTOR-PILLS`)
+- **Affected Subsystems**: `MyListsPage.xaml`, `ThemeResources.xaml` (`TabPillItemStyle`).
+- **Specification**: Full details in `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`.
+
+### [F10] [Backlog / Scheduled ⏳] Polished Global Reusable Sync Capsule (`UX-GLOBAL-POLISHED-SYNC-PILL`)
+- **Affected Subsystems**: `MyListsPage.xaml`, `LibraryPage.xaml`, `ThemeResources.xaml`.
 - **Specification**: Full details in `docs/plans/CLIENT_FEEDBACK_EPISODE_ART_AND_AUTOSCAN.md`.
 
 ---
