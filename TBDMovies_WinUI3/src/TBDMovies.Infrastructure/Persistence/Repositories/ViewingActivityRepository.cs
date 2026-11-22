@@ -168,7 +168,7 @@ public sealed class ViewingActivityRepository(string connectionString, ILibraryR
                   SELECT 1 FROM watch_events w 
                    WHERE w.media_kind = 'MOVIE' 
                      AND w.movie_id = mf.movie_id 
-                     AND julianday(w.watched_at) >= julianday(p.last_watched_at)
+                     AND julianday(w.watched_at) > julianday(p.last_watched_at)
               )
         ),
         in_progress_movies AS (
@@ -211,7 +211,7 @@ public sealed class ViewingActivityRepository(string connectionString, ILibraryR
                   SELECT 1 FROM watch_events w 
                    WHERE w.media_kind = 'EPISODE' 
                      AND w.episode_id = ef.episode_id 
-                     AND julianday(w.watched_at) >= julianday(p.last_watched_at)
+                     AND julianday(w.watched_at) > julianday(p.last_watched_at)
               )
         ),
         in_progress_episodes AS (
@@ -305,7 +305,7 @@ public sealed class ViewingActivityRepository(string connectionString, ILibraryR
                    SELECT 1 FROM watch_events w
                     WHERE ((a.media_kind = 'MOVIE' AND a.movie_id IS NOT NULL AND w.movie_id = a.movie_id) 
                         OR (a.media_kind = 'EPISODE' AND a.episode_id IS NOT NULL AND w.episode_id = a.episode_id))
-                      AND julianday(w.watched_at) >= julianday(a.started_at)
+                      AND julianday(w.watched_at) > julianday(a.started_at)
                )
         ),
         all_candidates AS (

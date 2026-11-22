@@ -412,7 +412,7 @@ public sealed class ViewingActivityTests : IDisposable
     }
 
     [Fact]
-    public void ViewingActivityRepository_ListActive_ProtectsAgainstIntegerDivisionAndZeroDuration()
+    public void ViewingActivityRepository_ListActive_ProtectsAgainstIntegerDivisionAndNullDuration()
     {
         var secondMoviePath = Path.Combine(_dir, "movie2.mkv");
         SeedMovie(1, "Movie 1", 2020, MoviePath);
@@ -420,13 +420,13 @@ public sealed class ViewingActivityTests : IDisposable
 
         // Movie 1 has integer 500 / 1000 (50% < 90%)
         SeedPlaybackProgress(1, 500, 1000, _t0.AddHours(1));
-        // Movie 2 has total_duration = 0 (should not throw divide by zero)
-        SeedPlaybackProgress(2, 500, 0, _t0.AddHours(2));
+        // Movie 2 has total_duration = null (should not throw or hide item)
+        SeedPlaybackProgress(2, 500, null, _t0.AddHours(2));
 
         var repo = new ViewingActivityRepository(_cs);
         var active = repo.ListActive(10);
 
-        // Both movies must be safely evaluated; Movie 2 (0 duration) and Movie 1 (50%) both included safely
+        // Both movies must be safely evaluated; Movie 2 (null duration) and Movie 1 (50%) both included safely
         Assert.Equal(2, active.Count);
     }
 
