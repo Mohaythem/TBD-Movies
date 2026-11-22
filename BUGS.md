@@ -41,6 +41,15 @@
   3. ReconcileFavorites upstream/downstream push/pull triggers, caching invalidation, and UI refresh reactivity.
 - **Status**: Registered for in-depth collaborative review with user notes.
 
+### [TRK-09] [Active Investigation 🔍] Custom Lists Stagnation / Trakt Lists Sync Asymmetry
+- **Affected Subsystems**: `TraktSyncService.cs` (`ReconcileCustomListsAsync`), `PersonalLibraryRepository.cs`, `MyListsPage.xaml.cs`, `MyListsPage.Trakt.cs`.
+- **Observed Behavior**: User observed that while Watchlist successfully synchronized downstream/upstream, Custom Lists (`MyListsPage`) remained unchanged without reflecting remote/local mutations.
+- **Investigative Scope**:
+  1. `MyListsPage.Trakt.cs:775` `OnTraktSyncCompleted` only invokes `RebuildTraktTabs()` and does not reload `_customLists` (`LoadCustomLists()`) or invoke `RebuildTabs()` for unified local/cloud lists.
+  2. `MyListsPage.xaml.cs:78` snapshot caching guard returns early without rebuilding tabs if `_lastLoadedSnapshot == currentSnapshot`.
+  3. Check if list item endpoints (`users/me/lists/{id}/items`) or `ReconcileCustomListsAsync` are failing silently or failing to trigger UI cache invalidation.
+- **Status**: Registered for in-depth collaborative review with user notes.
+
 ### [U9] [CLOSED & VERIFIED ✅] Unification of Trakt Custom Lists with Local Lists & Two-Way Sync
 - **Affected Subsystems**: `TraktSyncService.cs`, `PersonalLibraryRepository.cs`, `MyListsPage.xaml.cs`, `MainWindow.xaml.cs`.
 - **Completed Work (Batches 5.1, 5.2, 5.3)**:
