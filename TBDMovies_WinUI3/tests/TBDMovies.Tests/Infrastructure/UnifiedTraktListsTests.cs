@@ -544,23 +544,29 @@ public sealed class UnifiedTraktListsTests : IDisposable
         Assert.False(upgradedItems[0].IsCloudOnly);
         Assert.Equal(550, upgradedItems[0].TmdbId);
 
-        // 4. Alert 1 verification: simulate a duplicate cloud row existing alongside the local row
+        // 4. Alert 1 verification: simulate a duplicate cloud row existing alongside a legacy unlinked local row (tmdb_id IS NULL)
         using (var conn = new SqliteConnection(_connectionString))
         {
             conn.Open();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "INSERT INTO custom_list_members (list_id, media_kind, movie_id, tmdb_id, added_at) VALUES (@list, 'MOVIE', NULL, 550, '2026-01-01');";
+            // Reset local row tmdb_id to NULL to simulate legacy unlinked row before fix
+            cmd.CommandText = "UPDATE custom_list_members SET tmdb_id = NULL WHERE list_id = @list AND movie_id = 101;";
             cmd.Parameters.AddWithValue("@list", listId);
+            cmd.ExecuteNonQuery();
+
+            // Insert duplicate cloud row with tmdb_id 550 (coexists with local row because local has NULL tmdb_id)
+            cmd.CommandText = "INSERT INTO custom_list_members (list_id, media_kind, movie_id, tmdb_id, added_at) VALUES (@list, 'MOVIE', NULL, 550, '2026-01-01');";
             cmd.ExecuteNonQuery();
         }
 
-        // Call UpsertLocalMediaInCustomList again - must NOT throw UNIQUE constraint exception, and must delete the duplicate cloud row
+        // Call UpsertLocalMediaInCustomList again - must purge duplicate cloud row first, link tmdb_id on local row, and NOT throw UNIQUE constraint exception
         repo.UpsertLocalMediaInCustomList(listId, CustomListMediaKind.Movie, 101, 550, Now);
 
         var finalItems = repo.ListCustomListItems(listId);
         Assert.Single(finalItems);
         Assert.Equal(101, finalItems[0].Id);
         Assert.False(finalItems[0].IsCloudOnly);
+        Assert.Equal(550, finalItems[0].TmdbId);
     }
 
     [Fact]
@@ -581,13 +587,16 @@ public sealed class UnifiedTraktListsTests : IDisposable
         // Add local movie
         repo.AddMovieToCustomList(listId, 202, Now);
 
-        // Simulate ghost cloud row inserted before fix
+        // Simulate ghost cloud row inserted before fix (reset local tmdb_id to NULL to simulate legacy unlinked state)
         using (var conn = new SqliteConnection(_connectionString))
         {
             conn.Open();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "INSERT INTO custom_list_members (list_id, media_kind, movie_id, tmdb_id, added_at) VALUES (@list, 'MOVIE', NULL, 603, '2026-01-01');";
+            cmd.CommandText = "UPDATE custom_list_members SET tmdb_id = NULL WHERE list_id = @list AND movie_id = 202;";
             cmd.Parameters.AddWithValue("@list", listId);
+            cmd.ExecuteNonQuery();
+
+            cmd.CommandText = "INSERT INTO custom_list_members (list_id, media_kind, movie_id, tmdb_id, added_at) VALUES (@list, 'MOVIE', NULL, 603, '2026-01-01');";
             cmd.ExecuteNonQuery();
         }
 
@@ -613,13 +622,13 @@ public sealed class UnifiedTraktListsTests : IDisposable
             cmd.ExecuteNonQuery();
         }
 
-        // Insert local row and cloud row
+        // Insert legacy local row (tmdb_id NULL) and cloud row (tmdb_id 27205)
         using (var conn = new SqliteConnection(_connectionString))
         {
             conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
-                INSERT INTO custom_list_members (list_id, media_kind, movie_id, tmdb_id, added_at) VALUES (@list, 'MOVIE', 303, 27205, '2026-01-01');
+                INSERT INTO custom_list_members (list_id, media_kind, movie_id, tmdb_id, added_at) VALUES (@list, 'MOVIE', 303, NULL, '2026-01-01');
                 INSERT INTO custom_list_members (list_id, media_kind, movie_id, tmdb_id, added_at) VALUES (@list, 'MOVIE', NULL, 27205, '2026-01-02');";
             cmd.Parameters.AddWithValue("@list", listId);
             cmd.ExecuteNonQuery();
