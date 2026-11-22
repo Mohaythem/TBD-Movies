@@ -26,6 +26,7 @@ public sealed partial class TraktSyncService
             return new(false, false, "Coordinator is busy with another operation.");
 
         CancellationTokenSource? linked = null;
+        bool notify = false;
         try
         {
             lock (_ctsLock)
@@ -35,7 +36,9 @@ public sealed partial class TraktSyncService
                 linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 _activeNetworkCts = linked;
             }
-            return await RefreshListCoreAsync(listId, expectedAccountId, generation, linked.Token);
+            var result = await RefreshListCoreAsync(listId, expectedAccountId, generation, linked.Token);
+            notify = result.Success;
+            return result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -56,6 +59,10 @@ public sealed partial class TraktSyncService
                 linked.Dispose();
             }
             _operationGate.Release();
+            if (notify)
+            {
+                try { SyncCompleted?.Invoke(this, EventArgs.Empty); } catch { }
+            }
         }
     }
 
@@ -81,6 +88,7 @@ public sealed partial class TraktSyncService
         if (!await _operationGate.WaitAsync(0, cancellationToken))
             return new(TraktListWriteStatus.Failed, false, "Coordinator is busy with another operation.");
         CancellationTokenSource? linked = null;
+        bool notify = false;
         try
         {
             lock (_ctsLock)
@@ -131,6 +139,7 @@ public sealed partial class TraktSyncService
             try
             {
                 var refresh = await RefreshListCoreAsync(listId, expectedAccountId, generation, linked.Token);
+                notify = refresh.Success;
                 return new(status, refresh.Success, refresh.Success ? null : "Movie was confirmed by Trakt, but the local list cache could not be refreshed.");
             }
             catch (Exception) when (status is TraktListWriteStatus.Added or TraktListWriteStatus.AlreadyExists)
@@ -159,6 +168,10 @@ public sealed partial class TraktSyncService
                 linked.Dispose();
             }
             _operationGate.Release();
+            if (notify)
+            {
+                try { SyncCompleted?.Invoke(this, EventArgs.Empty); } catch { }
+            }
         }
     }
 
@@ -178,7 +191,6 @@ public sealed partial class TraktSyncService
             return new(false, false, "Trakt returned an invalid list payload.");
         EnsureOperationValid(generation, accountId, token);
         _cacheRepository.SaveComplete(accountId, spec.ToCacheResourceKey(), payload.GetRawText(), _timeProvider.GetUtcNow(), token);
-        try { SyncCompleted?.Invoke(this, EventArgs.Empty); } catch { }
         return new(true, true);
     }
 

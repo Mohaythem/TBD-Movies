@@ -88,10 +88,34 @@ public static class MediaCardContextMenu
         }
         var state = AppServices.Personal.GetPersonalSnapshot(movie.Id);
         var fav = new ToggleMenuFlyoutItem { Text = LocalizationService.Text(state.Preference == PersonalPreference.Liked ? "InFavorites" : "AddToFavorites"), IsChecked = state.Preference == PersonalPreference.Liked };
-        fav.Click += (_, _) => RunSafe(owner, () => { if (state.Preference == PersonalPreference.Liked) AppServices.Personal.ClearPersonalPreference(movie.Id); else AppServices.Personal.SetPersonalPreference(movie.Id, PersonalPreference.Liked); changed?.Invoke(); });
+        fav.Click += (_, _) => RunSafe(owner, async () =>
+        {
+            var willBeLiked = state.Preference != PersonalPreference.Liked;
+            if (state.Preference == PersonalPreference.Liked) AppServices.Personal.ClearPersonalPreference(movie.Id);
+            else AppServices.Personal.SetPersonalPreference(movie.Id, PersonalPreference.Liked);
+            changed?.Invoke();
+
+            var tmdbId = AppServices.GetMovieTmdbId(movie.Id);
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+            {
+                await trakt.PushMovieFavoriteAsync(tmdbId.Value, willBeLiked).ConfigureAwait(false);
+            }
+        });
         menu.Items.Add(fav);
         var watch = new MenuFlyoutItem { Text = LocalizationService.Text(state.Watchlisted ? "RemoveFromWatchlist" : "AddToWatchlist") };
-        watch.Click += (_, _) => RunSafe(owner, () => { if (state.Watchlisted) AppServices.Personal.RemoveFromWatchlist(movie.Id); else AppServices.Personal.AddToWatchlist(movie.Id); changed?.Invoke(); });
+        watch.Click += (_, _) => RunSafe(owner, async () =>
+        {
+            var willBeWatchlisted = !state.Watchlisted;
+            if (state.Watchlisted) AppServices.Personal.RemoveFromWatchlist(movie.Id);
+            else AppServices.Personal.AddToWatchlist(movie.Id);
+            changed?.Invoke();
+
+            var tmdbId = AppServices.GetMovieTmdbId(movie.Id);
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+            {
+                await trakt.PushMovieWatchlistAsync(tmdbId.Value, willBeWatchlisted).ConfigureAwait(false);
+            }
+        });
         menu.Items.Add(watch);
         AddMovieLists(menu, owner, movie.Id, changed);
         AddRemove(menu, remove);
@@ -109,10 +133,32 @@ public static class MediaCardContextMenu
         }
         var state = AppServices.ShowPersonal.GetState(show.Id);
         var fav = new ToggleMenuFlyoutItem { Text = LocalizationService.Text(state.IsFavorite ? "InFavorites" : "AddToFavorites"), IsChecked = state.IsFavorite };
-        fav.Click += (_, _) => RunSafe(owner, () => { AppServices.ShowPersonal.SetFavorite(show.Id, !state.IsFavorite); changed?.Invoke(); });
+        fav.Click += (_, _) => RunSafe(owner, async () =>
+        {
+            var willBeFavorite = !state.IsFavorite;
+            AppServices.ShowPersonal.SetFavorite(show.Id, willBeFavorite);
+            changed?.Invoke();
+
+            var tmdbId = AppServices.GetShowTmdbId(show.Id);
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+            {
+                await trakt.PushShowFavoriteAsync(tmdbId.Value, willBeFavorite).ConfigureAwait(false);
+            }
+        });
         menu.Items.Add(fav);
         var watch = new MenuFlyoutItem { Text = LocalizationService.Text(state.WatchLater ? "RemoveFromWatchlist" : "AddToWatchlist") };
-        watch.Click += (_, _) => RunSafe(owner, () => { AppServices.ShowPersonal.SetWatchLater(show.Id, !state.WatchLater); changed?.Invoke(); });
+        watch.Click += (_, _) => RunSafe(owner, async () =>
+        {
+            var willBeWatchLater = !state.WatchLater;
+            AppServices.ShowPersonal.SetWatchLater(show.Id, willBeWatchLater);
+            changed?.Invoke();
+
+            var tmdbId = AppServices.GetShowTmdbId(show.Id);
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+            {
+                await trakt.PushShowWatchlistAsync(tmdbId.Value, willBeWatchLater).ConfigureAwait(false);
+            }
+        });
         menu.Items.Add(watch);
         AddShowLists(menu, owner, show.Id, changed);
         AddRemove(menu, remove);
@@ -169,10 +215,34 @@ public static class MediaCardContextMenu
     {
         var state = AppServices.Personal.GetPersonalSnapshot(movie.Id);
         var fav = new ToggleMenuFlyoutItem { Text = LocalizationService.Text(state.Preference == PersonalPreference.Liked ? "InFavorites" : "AddToFavorites"), IsChecked = state.Preference == PersonalPreference.Liked };
-        fav.Click += (_, _) => RunSafe(owner, () => { if (state.Preference == PersonalPreference.Liked) AppServices.Personal.ClearPersonalPreference(movie.Id); else AppServices.Personal.SetPersonalPreference(movie.Id, PersonalPreference.Liked); changed?.Invoke(); });
+        fav.Click += (_, _) => RunSafe(owner, async () =>
+        {
+            var willBeLiked = state.Preference != PersonalPreference.Liked;
+            if (state.Preference == PersonalPreference.Liked) AppServices.Personal.ClearPersonalPreference(movie.Id);
+            else AppServices.Personal.SetPersonalPreference(movie.Id, PersonalPreference.Liked);
+            changed?.Invoke();
+
+            var tmdbId = AppServices.GetMovieTmdbId(movie.Id);
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+            {
+                await trakt.PushMovieFavoriteAsync(tmdbId.Value, willBeLiked).ConfigureAwait(false);
+            }
+        });
         menu.Items.Add(fav);
         var watch = new MenuFlyoutItem { Text = LocalizationService.Text(state.Watchlisted ? "RemoveFromWatchlist" : "AddToWatchlist") };
-        watch.Click += (_, _) => RunSafe(owner, () => { if (state.Watchlisted) AppServices.Personal.RemoveFromWatchlist(movie.Id); else AppServices.Personal.AddToWatchlist(movie.Id); changed?.Invoke(); });
+        watch.Click += (_, _) => RunSafe(owner, async () =>
+        {
+            var willBeWatchlisted = !state.Watchlisted;
+            if (state.Watchlisted) AppServices.Personal.RemoveFromWatchlist(movie.Id);
+            else AppServices.Personal.AddToWatchlist(movie.Id);
+            changed?.Invoke();
+
+            var tmdbId = AppServices.GetMovieTmdbId(movie.Id);
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+            {
+                await trakt.PushMovieWatchlistAsync(tmdbId.Value, willBeWatchlisted).ConfigureAwait(false);
+            }
+        });
         menu.Items.Add(watch);
         AddMovieLists(menu, owner, movie.Id, changed);
     }
@@ -181,10 +251,32 @@ public static class MediaCardContextMenu
     {
         var state = AppServices.ShowPersonal.GetState(show.Id);
         var fav = new ToggleMenuFlyoutItem { Text = LocalizationService.Text(state.IsFavorite ? "InFavorites" : "AddToFavorites"), IsChecked = state.IsFavorite };
-        fav.Click += (_, _) => RunSafe(owner, () => { AppServices.ShowPersonal.SetFavorite(show.Id, !state.IsFavorite); changed?.Invoke(); });
+        fav.Click += (_, _) => RunSafe(owner, async () =>
+        {
+            var willBeFavorite = !state.IsFavorite;
+            AppServices.ShowPersonal.SetFavorite(show.Id, willBeFavorite);
+            changed?.Invoke();
+
+            var tmdbId = AppServices.GetShowTmdbId(show.Id);
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+            {
+                await trakt.PushShowFavoriteAsync(tmdbId.Value, willBeFavorite).ConfigureAwait(false);
+            }
+        });
         menu.Items.Add(fav);
         var watch = new MenuFlyoutItem { Text = LocalizationService.Text(state.WatchLater ? "RemoveFromWatchlist" : "AddToWatchlist") };
-        watch.Click += (_, _) => RunSafe(owner, () => { AppServices.ShowPersonal.SetWatchLater(show.Id, !state.WatchLater); changed?.Invoke(); });
+        watch.Click += (_, _) => RunSafe(owner, async () =>
+        {
+            var willBeWatchLater = !state.WatchLater;
+            AppServices.ShowPersonal.SetWatchLater(show.Id, willBeWatchLater);
+            changed?.Invoke();
+
+            var tmdbId = AppServices.GetShowTmdbId(show.Id);
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+            {
+                await trakt.PushShowWatchlistAsync(tmdbId.Value, willBeWatchLater).ConfigureAwait(false);
+            }
+        });
         menu.Items.Add(watch);
         AddShowLists(menu, owner, show.Id, changed);
     }
@@ -237,33 +329,6 @@ public static class MediaCardContextMenu
             sub.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("NoCustomLists"), IsEnabled = false });
         }
 
-        var trakt = AppServices.Trakt;
-        var traktState = trakt?.GetSyncState();
-        var tmdbId = AppServices.GetMovieTmdbId(id);
-        if (trakt is not null && traktState?.AuthState.IsConnected == true && !string.IsNullOrWhiteSpace(traktState.CurrentAccountId) && tmdbId is > 0)
-        {
-            sub.Items.Add(new MenuFlyoutSeparator());
-            sub.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("Trakt") ?? "Trakt", IsEnabled = false });
-
-            var accountId = traktState.CurrentAccountId;
-            var inTraktWatchlist = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == tmdbId.Value);
-            var watchlistItem = new ToggleMenuFlyoutItem
-            {
-                Text = LocalizationService.Text("TraktWatchlist") ?? "Watchlist",
-                IsChecked = inTraktWatchlist
-            };
-            watchlistItem.Click += (_, _) => RunSafe(owner, async () =>
-            {
-                var currentlyIn = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == tmdbId.Value);
-                await trakt.PushMovieWatchlistAsync(tmdbId.Value, !currentlyIn).ConfigureAwait(false);
-                if (changed is not null)
-                {
-                    owner.DispatcherQueue.TryEnqueue(() => changed());
-                }
-            });
-            sub.Items.Add(watchlistItem);
-        }
-
         menu.Items.Add(sub);
     }
 
@@ -298,33 +363,6 @@ public static class MediaCardContextMenu
         catch (Exception)
         {
             sub.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("NoCustomLists"), IsEnabled = false });
-        }
-
-        var trakt = AppServices.Trakt;
-        var traktState = trakt?.GetSyncState();
-        var showTmdbId = AppServices.GetShowTmdbId(id);
-        if (trakt is not null && traktState?.AuthState.IsConnected == true && !string.IsNullOrWhiteSpace(traktState.CurrentAccountId) && showTmdbId is > 0)
-        {
-            sub.Items.Add(new MenuFlyoutSeparator());
-            sub.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("Trakt") ?? "Trakt", IsEnabled = false });
-
-            var accountId = traktState.CurrentAccountId;
-            var inTraktWatchlist = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == showTmdbId.Value);
-            var watchlistItem = new ToggleMenuFlyoutItem
-            {
-                Text = LocalizationService.Text("TraktWatchlist") ?? "Watchlist",
-                IsChecked = inTraktWatchlist
-            };
-            watchlistItem.Click += (_, _) => RunSafe(owner, async () =>
-            {
-                var currentlyIn = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == showTmdbId.Value);
-                await trakt.PushShowWatchlistAsync(showTmdbId.Value, !currentlyIn).ConfigureAwait(false);
-                if (changed is not null)
-                {
-                    owner.DispatcherQueue.TryEnqueue(() => changed());
-                }
-            });
-            sub.Items.Add(watchlistItem);
         }
 
         menu.Items.Add(sub);
@@ -428,66 +466,5 @@ internal static class ArtworkViewer
 
     private static Style? FindStyle<T>(FrameworkElement owner, string key) where T : FrameworkElement
         => owner.Resources.TryGetValue(key, out var local) && local is Style style ? style : Microsoft.UI.Xaml.Application.Current.Resources[key] as Style;
-}
-
-internal static class TraktItemExtensions
-{
-    public static int? GetTmdbId(this TraktWatchlistItem item) => GetTmdbIdFromRaw(item.RawElement, item.Type);
-
-    public static int? GetTmdbId(this TraktListItem item) => GetTmdbIdFromRaw(item.RawElement, item.Type);
-
-    private static int? GetTmdbIdFromRaw(System.Text.Json.JsonElement rawElement, string? type)
-    {
-        if (rawElement.ValueKind != System.Text.Json.JsonValueKind.Object) return null;
-
-        if (!string.IsNullOrEmpty(type) &&
-            rawElement.TryGetProperty(type, out var mediaObj) &&
-            mediaObj.ValueKind == System.Text.Json.JsonValueKind.Object &&
-            mediaObj.TryGetProperty("ids", out var idsObj) &&
-            idsObj.ValueKind == System.Text.Json.JsonValueKind.Object &&
-            idsObj.TryGetProperty("tmdb", out var tmdbProp) &&
-            tmdbProp.ValueKind == System.Text.Json.JsonValueKind.Number &&
-            tmdbProp.TryGetInt32(out var tmdbVal) &&
-            tmdbVal > 0)
-        {
-            return tmdbVal;
-        }
-
-        if (rawElement.TryGetProperty("movie", out var mObj) &&
-            mObj.ValueKind == System.Text.Json.JsonValueKind.Object &&
-            mObj.TryGetProperty("ids", out var mIds) &&
-            mIds.ValueKind == System.Text.Json.JsonValueKind.Object &&
-            mIds.TryGetProperty("tmdb", out var mTmdb) &&
-            mTmdb.ValueKind == System.Text.Json.JsonValueKind.Number &&
-            mTmdb.TryGetInt32(out var mVal) &&
-            mVal > 0)
-        {
-            return mVal;
-        }
-
-        if (rawElement.TryGetProperty("show", out var sObj) &&
-            sObj.ValueKind == System.Text.Json.JsonValueKind.Object &&
-            sObj.TryGetProperty("ids", out var sIds) &&
-            sIds.ValueKind == System.Text.Json.JsonValueKind.Object &&
-            sIds.TryGetProperty("tmdb", out var sTmdb) &&
-            sTmdb.ValueKind == System.Text.Json.JsonValueKind.Number &&
-            sTmdb.TryGetInt32(out var sVal) &&
-            sVal > 0)
-        {
-            return sVal;
-        }
-
-        if (rawElement.TryGetProperty("ids", out var directIds) &&
-            directIds.ValueKind == System.Text.Json.JsonValueKind.Object &&
-            directIds.TryGetProperty("tmdb", out var directTmdb) &&
-            directTmdb.ValueKind == System.Text.Json.JsonValueKind.Number &&
-            directTmdb.TryGetInt32(out var directVal) &&
-            directVal > 0)
-        {
-            return directVal;
-        }
-
-        return null;
-    }
 }
 

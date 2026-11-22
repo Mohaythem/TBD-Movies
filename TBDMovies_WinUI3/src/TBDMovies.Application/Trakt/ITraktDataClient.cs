@@ -99,6 +99,46 @@ public interface ITraktDataClient
         CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, 1));
 
     /// <summary>
+    /// Adds a batch of movies and shows to the user's favorites via POST sync/favorites.
+    /// </summary>
+    Task<TraktSyncWriteResult> AddFavoritesBatchAsync(
+        IReadOnlyList<long>? movieTmdbIds,
+        IReadOnlyList<long>? showTmdbIds,
+        string token,
+        string? clientId = null,
+        CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, 0));
+
+    /// <summary>
+    /// Removes a batch of movies and shows from the user's favorites via POST sync/favorites/remove.
+    /// </summary>
+    Task<TraktSyncWriteResult> RemoveFavoritesBatchAsync(
+        IReadOnlyList<long>? movieTmdbIds,
+        IReadOnlyList<long>? showTmdbIds,
+        string token,
+        string? clientId = null,
+        CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, 0));
+
+    /// <summary>
+    /// Adds a batch of movies and shows to the user's watchlist via POST sync/watchlist.
+    /// </summary>
+    Task<TraktSyncWriteResult> AddWatchlistBatchAsync(
+        IReadOnlyList<long>? movieTmdbIds,
+        IReadOnlyList<long>? showTmdbIds,
+        string token,
+        string? clientId = null,
+        CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, 0));
+
+    /// <summary>
+    /// Removes a batch of movies and shows from the user's watchlist via POST sync/watchlist/remove.
+    /// </summary>
+    Task<TraktSyncWriteResult> RemoveWatchlistBatchAsync(
+        IReadOnlyList<long>? movieTmdbIds,
+        IReadOnlyList<long>? showTmdbIds,
+        string token,
+        string? clientId = null,
+        CancellationToken ct = default) => Task.FromResult(new TraktSyncWriteResult(true, 0));
+
+    /// <summary>
     /// Adds batch movies or shows to the user's collection via POST sync/collection.
     /// </summary>
     Task<TraktSyncWriteResult> AddCollectionBatchAsync(

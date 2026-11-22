@@ -308,6 +308,35 @@ public sealed class DatabaseMigrationHardeningTests : IDisposable
             Exec(upgraded, "INSERT INTO custom_list_pending_actions (list_id, media_kind, tmdb_id, action_type, created_at) VALUES (1, 'MOVIE', 550, 'INVALID_ACTION', '2026-01-02');"));
     }
 
+    [Fact]
+    public void V23_To_V24_Migration_CreatesTraktPendingTables_WithoutDataLoss()
+    {
+        new DatabaseMigrator(_cs).Migrate(23);
+        using (var db = Open())
+        {
+            Exec(db, "INSERT INTO custom_lists (id, display_name, created_at) VALUES (1, 'Test List', '2026-01-01');");
+        }
+
+        // Run migration to v24
+        new DatabaseMigrator(_cs).Migrate(24);
+
+        using var upgraded = Open();
+        Assert.Equal(24L, Scalar(upgraded, "PRAGMA user_version"));
+        Assert.Equal("Test List", Scalar(upgraded, "SELECT display_name FROM custom_lists WHERE id = 1"));
+
+        // Positive verification on v24: Insert into trakt_pending_watched_actions & trakt_pending_watchlist_actions
+        Exec(upgraded, "INSERT INTO trakt_pending_watched_actions (media_kind, tmdb_id, season_number, episode_number, watched_at, is_watched, created_at) VALUES ('MOVIE', 550, NULL, NULL, '2026-01-01T00:00:00Z', 1, '2026-01-01T00:00:00Z');");
+        Exec(upgraded, "INSERT INTO trakt_pending_watchlist_actions (media_kind, tmdb_id, action, created_at) VALUES ('SHOW', 1234, 'ADD', '2026-01-01T00:00:00Z');");
+        Assert.Equal(1L, Scalar(upgraded, "SELECT COUNT(*) FROM trakt_pending_watched_actions"));
+        Assert.Equal(1L, Scalar(upgraded, "SELECT COUNT(*) FROM trakt_pending_watchlist_actions"));
+
+        // Negative verification on v24: CHECK constraints guard against invalid values
+        Assert.Throws<SqliteException>(() =>
+            Exec(upgraded, "INSERT INTO trakt_pending_watched_actions (media_kind, tmdb_id, season_number, episode_number, watched_at, is_watched, created_at) VALUES ('INVALID', 550, NULL, NULL, '2026-01-01T00:00:00Z', 1, '2026-01-01T00:00:00Z');"));
+        Assert.Throws<SqliteException>(() =>
+            Exec(upgraded, "INSERT INTO trakt_pending_watchlist_actions (media_kind, tmdb_id, action, created_at) VALUES ('MOVIE', 550, 'INVALID', '2026-01-01T00:00:00Z');"));
+    }
+
     private SqliteConnection Open()
     {
         var db = new SqliteConnection(_cs);

@@ -6,7 +6,7 @@ namespace TBDMovies.Infrastructure.Persistence.Migrations;
 
 public class DatabaseMigrator
 {
-    public const int LatestVersion = 23;
+    public const int LatestVersion = 24;
     private readonly string _connectionString;
 
     public DatabaseMigrator(string connectionString)
@@ -731,6 +731,30 @@ public class DatabaseMigrator
             DROP TABLE custom_list_pending_actions;
             ALTER TABLE custom_list_pending_actions_new RENAME TO custom_list_pending_actions;
             CREATE INDEX idx_pending_actions_list ON custom_list_pending_actions(list_id);
+        ",
+
+        // 0024_trakt_pending_watched_and_watchlist_actions
+        @"
+            CREATE TABLE trakt_pending_watched_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                media_kind TEXT NOT NULL CHECK(media_kind IN ('MOVIE', 'EPISODE')),
+                tmdb_id INTEGER NOT NULL CHECK(tmdb_id > 0),
+                season_number INTEGER CHECK(season_number IS NULL OR season_number >= 0),
+                episode_number INTEGER CHECK(episode_number IS NULL OR episode_number > 0),
+                watched_at TEXT NOT NULL,
+                is_watched INTEGER NOT NULL CHECK(is_watched IN (0, 1)),
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX idx_trakt_pending_watched ON trakt_pending_watched_actions(media_kind, tmdb_id);
+
+            CREATE TABLE trakt_pending_watchlist_actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                media_kind TEXT NOT NULL CHECK(media_kind IN ('MOVIE', 'SHOW')),
+                tmdb_id INTEGER NOT NULL CHECK(tmdb_id > 0),
+                action TEXT NOT NULL CHECK(action IN ('ADD', 'REMOVE')),
+                created_at TEXT NOT NULL
+            );
+            CREATE INDEX idx_trakt_pending_watchlist ON trakt_pending_watchlist_actions(media_kind, tmdb_id);
         "
     };
 
@@ -804,7 +828,8 @@ public class DatabaseMigrator
                         includeTrakt: i + 1 >= 18, includeCustomTitle: i + 1 >= 19,
                         includeScaleIndexes: i + 1 >= 20, includePlaybackProgress: i + 1 >= 21,
                         includeUnifiedTraktLists: i + 1 >= 22,
-                        includeRelaxedPendingActions: i + 1 >= 23);
+                        includeRelaxedPendingActions: i + 1 >= 23,
+                        includeTraktPendingActions: i + 1 >= 24);
 
                 cmd.CommandText = $"PRAGMA user_version = {i + 1};";
                 cmd.ExecuteNonQuery();
@@ -831,7 +856,8 @@ public class DatabaseMigrator
         bool includeActivity = true, bool includeViewing = true, bool includeShowPersonal = true,
         bool includeTrakt = true, bool includeCustomTitle = true, bool includeScaleIndexes = true,
         bool includePlaybackProgress = true, bool includeUnifiedTraktLists = true,
-        bool includeRelaxedPendingActions = true, bool exhaustive = true)
+        bool includeRelaxedPendingActions = true, bool includeTraktPendingActions = true,
+        bool exhaustive = true)
     {
         var requiredTables = new[]
         {
@@ -917,6 +943,20 @@ public class DatabaseMigrator
                     RequireColumnNullable(connection, "custom_list_pending_actions", "media_kind", transaction);
                     RequireColumnNullable(connection, "custom_list_pending_actions", "tmdb_id", transaction);
                 }
+            }
+        }
+        if (includeTraktPendingActions)
+        {
+            RequireSchemaObject(connection, "table", "trakt_pending_watched_actions", transaction);
+            RequireSchemaObject(connection, "table", "trakt_pending_watchlist_actions", transaction);
+            RequireSchemaObject(connection, "index", "idx_trakt_pending_watched", transaction);
+            RequireSchemaObject(connection, "index", "idx_trakt_pending_watchlist", transaction);
+            if (exhaustive)
+            {
+                RequireTableColumns(connection, "trakt_pending_watched_actions", transaction,
+                    "media_kind", "tmdb_id", "season_number", "episode_number", "watched_at", "is_watched", "created_at");
+                RequireTableColumns(connection, "trakt_pending_watchlist_actions", transaction,
+                    "media_kind", "tmdb_id", "action", "created_at");
             }
         }
         if (exhaustive)

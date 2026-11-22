@@ -55,7 +55,25 @@ public sealed record TraktWatchlistItem(
     long? MediaTraktId,
     string? Title,
     int? Year,
-    JsonElement RawElement);
+    JsonElement RawElement)
+{
+    public int? GetTmdbId()
+    {
+        if (RawElement.ValueKind == JsonValueKind.Object &&
+            RawElement.TryGetProperty(Type, out var mediaObj) &&
+            mediaObj.ValueKind == JsonValueKind.Object &&
+            mediaObj.TryGetProperty("ids", out var idsObj) &&
+            idsObj.ValueKind == JsonValueKind.Object &&
+            idsObj.TryGetProperty("tmdb", out var tmdbProp) &&
+            tmdbProp.ValueKind == JsonValueKind.Number &&
+            tmdbProp.TryGetInt32(out var parsedTmdb) &&
+            parsedTmdb > 0)
+        {
+            return parsedTmdb;
+        }
+        return null;
+    }
+}
 
 /// <summary>
 /// Record for a watched movie with play count and timestamps.
@@ -161,18 +179,18 @@ public static class TraktDataProjections
             throw new FormatException("Expected JSON object for account profile.");
         }
 
-        if (!root.TryGetProperty("user", out var userEl))
+        if (!root.TryGetProperty("user", out var userEl) || userEl.ValueKind != JsonValueKind.Object)
         {
             throw new FormatException("Account profile missing 'user' object.");
         }
 
-        var username = userEl.TryGetProperty("username", out var uProp) ? uProp.GetString() ?? "" : "";
-        var name = userEl.TryGetProperty("name", out var nProp) ? nProp.GetString() : null;
-        var isPrivate = userEl.TryGetProperty("private", out var pProp) && pProp.GetBoolean();
-        var isVip = userEl.TryGetProperty("vip", out var vProp) && vProp.GetBoolean();
+        var username = userEl.TryGetProperty("username", out var uProp) && uProp.ValueKind == JsonValueKind.String ? uProp.GetString() ?? "" : "";
+        var name = userEl.TryGetProperty("name", out var nProp) && nProp.ValueKind == JsonValueKind.String ? nProp.GetString() : null;
+        var isPrivate = userEl.TryGetProperty("private", out var pProp) && pProp.ValueKind == JsonValueKind.True;
+        var isVip = userEl.TryGetProperty("vip", out var vProp) && vProp.ValueKind == JsonValueKind.True;
 
         string? uuid = null;
-        if (userEl.TryGetProperty("ids", out var idsEl) && idsEl.TryGetProperty("uuid", out var uuidEl))
+        if (userEl.TryGetProperty("ids", out var idsEl) && idsEl.ValueKind == JsonValueKind.Object && idsEl.TryGetProperty("uuid", out var uuidEl) && uuidEl.ValueKind == JsonValueKind.String)
         {
             uuid = uuidEl.GetString();
         }

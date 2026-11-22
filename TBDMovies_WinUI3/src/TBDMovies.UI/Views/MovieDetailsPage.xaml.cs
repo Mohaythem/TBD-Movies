@@ -1021,7 +1021,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
             _inWatchlist = snapshot.Watchlisted;
 
             var tmdbId = AppServices.GetMovieTmdbId(_movie.Id);
-            if (tmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
             {
                 _ = Task.Run(async () =>
                 {
@@ -1076,31 +1076,6 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         catch (Exception)
         {
             AddToListFlyout.Items.Add(DisabledItem(LocalizationService.Text("NoCustomLists")));
-        }
-
-        var trakt = AppServices.Trakt;
-        var traktState = trakt?.GetSyncState();
-        var tmdbId = AppServices.GetMovieTmdbId(_movie.Id);
-        if (trakt is not null && traktState?.AuthState.IsConnected == true && !string.IsNullOrWhiteSpace(traktState.CurrentAccountId) && tmdbId is > 0)
-        {
-            AddToListFlyout.Items.Add(new MenuFlyoutSeparator());
-            AddToListFlyout.Items.Add(DisabledItem(LocalizationService.Text("Trakt") ?? "Trakt"));
-
-            var accountId = traktState.CurrentAccountId;
-            var inTraktWatchlist = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == tmdbId.Value);
-            var watchlistItem = BuildListItem(LocalizationService.Text("TraktWatchlist") ?? "Watchlist", inTraktWatchlist, async (_, _) =>
-            {
-                try
-                {
-                    var currentlyIn = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == tmdbId.Value);
-                    await trakt.PushMovieWatchlistAsync(tmdbId.Value, !currentlyIn).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[MovieDetailsPage] Trakt watchlist toggle failed: {ex.Message}");
-                }
-            });
-            AddToListFlyout.Items.Add(watchlistItem);
         }
     }
 
@@ -1166,7 +1141,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         {
             AppServices.Personal.RemoveWatchEvent(eventId);
             var tmdbId = AppServices.GetMovieTmdbId(_movie.Id);
-            if (tmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
             {
                 var watchedAt = DateTimeOffset.TryParse(entry.Entry.Date, out var parsedDt) ? parsedDt : DateTimeOffset.UtcNow;
                 _ = Task.Run(async () =>
@@ -1202,7 +1177,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         {
             AppServices.Personal.RecordWatch(_movie.Id, date);
             var tmdbId = AppServices.GetMovieTmdbId(_movie.Id);
-            if (tmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+            if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
             {
                 _ = Task.Run(async () =>
                 {

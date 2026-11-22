@@ -844,7 +844,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 {
                     AppServices.ShowPersonal.SetWatchLater(show.Id, false);
                     int? showTmdbId = (int.TryParse(show.ExternalId, out var parsedId) && parsedId > 0 ? (int?)parsedId : null) ?? AppServices.GetShowTmdbId(show.Id);
-                    if (showTmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+                    if (showTmdbId is > 0 && AppServices.Trakt is { } trakt)
                     {
                         _ = Task.Run(async () =>
                         {
@@ -863,7 +863,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 {
                     AppServices.Personal.RemoveFromWatchlist(movie.Id);
                     var tmdbId = AppServices.GetMovieTmdbId(movie.Id);
-                    if (tmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+                    if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
                     {
                         _ = Task.Run(async () =>
                         {
@@ -881,8 +881,44 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             }
             else if (destinationKey == "favorites")
             {
-                if (item.Show is { } show) AppServices.ShowPersonal.SetFavorite(show.Id, false);
-                else if (item.Movie is { } movie) AppServices.Personal.ClearPersonalPreference(movie.Id);
+                if (item.Show is { } show)
+                {
+                    AppServices.ShowPersonal.SetFavorite(show.Id, false);
+                    int? showTmdbId = (int.TryParse(show.ExternalId, out var parsedId) && parsedId > 0 ? (int?)parsedId : null) ?? AppServices.GetShowTmdbId(show.Id);
+                    if (showTmdbId is > 0 && AppServices.Trakt is { } trakt)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await trakt.PushShowFavoriteAsync(showTmdbId.Value, false).ConfigureAwait(false);
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[MyListsPage] Trakt PushShowFavoriteAsync(false) failed: {ex.Message}");
+                            }
+                        });
+                    }
+                }
+                else if (item.Movie is { } movie)
+                {
+                    AppServices.Personal.ClearPersonalPreference(movie.Id);
+                    var tmdbId = AppServices.GetMovieTmdbId(movie.Id);
+                    if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await trakt.PushMovieFavoriteAsync(tmdbId.Value, false).ConfigureAwait(false);
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[MyListsPage] Trakt PushMovieFavoriteAsync(false) failed: {ex.Message}");
+                            }
+                        });
+                    }
+                }
             }
         }
         catch (Exception error)
@@ -1138,7 +1174,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                     {
                         AppServices.ShowPersonal.SetWatchLater(pick.Id, true);
                         int? showTmdbId = AppServices.GetShowTmdbId(pick.Id);
-                        if (showTmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+                        if (showTmdbId is > 0 && AppServices.Trakt is { } trakt)
                         {
                             _ = Task.Run(async () =>
                             {
@@ -1157,7 +1193,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                     {
                         AppServices.Personal.AddToWatchlist(pick.Id);
                         var tmdbId = AppServices.GetMovieTmdbId(pick.Id);
-                        if (tmdbId is > 0 && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
+                        if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
                         {
                             _ = Task.Run(async () =>
                             {
@@ -1175,8 +1211,44 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 }
                 else if (destinationKey == "favorites")
                 {
-                    if (pick.Kind == CustomListMediaKind.Show) AppServices.ShowPersonal.SetFavorite(pick.Id, true);
-                    else AppServices.Personal.SetPersonalPreference(pick.Id, PersonalPreference.Liked);
+                    if (pick.Kind == CustomListMediaKind.Show)
+                    {
+                        AppServices.ShowPersonal.SetFavorite(pick.Id, true);
+                        int? showTmdbId = AppServices.GetShowTmdbId(pick.Id);
+                        if (showTmdbId is > 0 && AppServices.Trakt is { } trakt)
+                        {
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await trakt.PushShowFavoriteAsync(showTmdbId.Value, true).ConfigureAwait(false);
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[MyListsPage] Trakt PushShowFavoriteAsync(true) failed: {ex.Message}");
+                                }
+                            });
+                        }
+                    }
+                    else
+                    {
+                        AppServices.Personal.SetPersonalPreference(pick.Id, PersonalPreference.Liked);
+                        var tmdbId = AppServices.GetMovieTmdbId(pick.Id);
+                        if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+                        {
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await trakt.PushMovieFavoriteAsync(tmdbId.Value, true).ConfigureAwait(false);
+                                }
+                                catch (Exception ex)
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"[MyListsPage] Trakt PushMovieFavoriteAsync(true) failed: {ex.Message}");
+                                }
+                            });
+                        }
+                    }
                 }
             }
         }

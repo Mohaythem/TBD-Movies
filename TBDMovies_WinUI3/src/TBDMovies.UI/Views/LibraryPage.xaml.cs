@@ -1141,9 +1141,218 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
 
     private void LibraryGrid_ContextRequested(UIElement sender, ContextRequestedEventArgs e)
     {
-        if (sender is GridView grid)
-            MediaCardContextMenu.ShowForContext(grid, e, _viewMode == LibraryViewMode.Compact,
-                onChanged: () => { if (_filterWatchedOnly) Refresh(); });
+        if (sender is not GridView grid) return;
+
+        var selectedItems = GetDisplayedItems().Where(item => item.IsSelected).ToList();
+        if (selectedItems.Count > 1)
+        {
+            LibraryCardItem? clickedCard = null;
+            if (e.OriginalSource is DependencyObject dep)
+            {
+                for (DependencyObject? current = dep; current is not null; current = VisualTreeHelper.GetParent(current))
+                {
+                    if (current is FrameworkElement { DataContext: LibraryCardItem card })
+                    {
+                        clickedCard = card;
+                        break;
+                    }
+                }
+            }
+
+            if (clickedCard is not null && clickedCard.IsSelected)
+            {
+                ShowBatchContextMenu(grid, e, selectedItems);
+                return;
+            }
+        }
+
+        MediaCardContextMenu.ShowForContext(grid, e, _viewMode == LibraryViewMode.Compact,
+            onChanged: () => { if (_filterWatchedOnly) Refresh(); });
+    }
+
+    private void ShowBatchContextMenu(GridView grid, ContextRequestedEventArgs e, List<LibraryCardItem> selectedItems)
+    {
+        var menu = new MenuFlyout();
+        var options = e.TryGetPosition(grid, out var position)
+            ? new FlyoutShowOptions { Position = position }
+            : new FlyoutShowOptions();
+
+        int count = selectedItems.Count;
+        bool isRtl = LocalizationService.FlowDirection == FlowDirection.RightToLeft;
+
+        bool anyNotFav = selectedItems.Any(item =>
+        {
+            if (item.IsShow)
+                return !AppServices.ShowPersonal.GetState(item.Id).IsFavorite;
+            return AppServices.Personal.GetPersonalSnapshot(item.Id).Preference != PersonalPreference.Liked;
+        });
+
+        bool anyNotWatchlist = selectedItems.Any(item =>
+        {
+            if (item.IsShow)
+                return !AppServices.ShowPersonal.GetState(item.Id).WatchLater;
+            return !AppServices.Personal.GetPersonalSnapshot(item.Id).Watchlisted;
+        });
+
+        var favItem = new MenuFlyoutItem
+        {
+            Text = anyNotFav
+                ? (isRtl ? $"إضافة {count} إلى المفضلة" : $"Add {count} to Favorites")
+                : (isRtl ? $"إزالة {count} من المفضلة" : $"Remove {count} from Favorites"),
+            Icon = new FontIcon { Glyph = anyNotFav ? "\uEB51" : "\uEB52" }
+        };
+        favItem.Click += async (_, _) => await SetSelectedFavoritesAsync(anyNotFav);
+        menu.Items.Add(favItem);
+
+        var watchlistItem = new MenuFlyoutItem
+        {
+            Text = anyNotWatchlist
+                ? (isRtl ? $"إضافة {count} إلى قائمة الانتظار" : $"Add {count} to Watchlist")
+                : (isRtl ? $"إزالة {count} من قائمة الانتظار" : $"Remove {count} from Watchlist"),
+            Icon = new FontIcon { Glyph = "\uE8FD" }
+        };
+        watchlistItem.Click += async (_, _) => await SetSelectedWatchlistAsync(anyNotWatchlist);
+        menu.Items.Add(watchlistItem);
+
+        var addToListSub = new MenuFlyoutSubItem
+        {
+            Text = isRtl ? $"إضافة {count} إلى قائمة" : $"Add {count} to List",
+            Icon = new FontIcon { Glyph = "\uE710" }
+        };
+
+        try
+        {
+            var customLists = AppServices.Personal.ListCustomLists();
+            if (customLists.Count > 0)
+            {
+                foreach (var list in customLists)
+                {
+                    var listItem = new MenuFlyoutItem
+                    {
+                        Text = list.Name,
+                        Icon = new FontIcon { Glyph = "\uE8B7" }
+                    };
+                    listItem.Click += async (_, _) => await AddSelectedToCustomListAsync(list.Id, list.Name);
+                    addToListSub.Items.Add(listItem);
+                }
+                addToListSub.Items.Add(new MenuFlyoutSeparator());
+            }
+        }
+        catch { }
+
+        var createNewItem = new MenuFlyoutItem
+        {
+            Text = LocalizationService.Text("NewList") ?? (isRtl ? "قائمة جديدة…" : "New list…"),
+            Icon = new FontIcon { Glyph = "\uE710" }
+        };
+        createNewItem.Click += async (_, _) => await CreateNewListAndAddSelectedAsync();
+        addToListSub.Items.Add(createNewItem);
+
+        menu.Items.Add(addToListSub);
+        menu.Items.Add(new MenuFlyoutSeparator());
+
+        var clearItem = new MenuFlyoutItem
+        {
+            Text = isRtl ? "إلغاء التحديد" : "Clear selection",
+            Icon = new FontIcon { Glyph = "\uE711" }
+        };
+        clearItem.Click += (_, _) => ClearSelection();
+        menu.Items.Add(clearItem);
+
+        e.Handled = true;
+        menu.ShowAt(grid, options);
+    }
+
+    private async Task SetSelectedFavoritesAsync(bool setFavorite)
+    {
+        var selected = GetDisplayedItems().Where(item => item.IsSelected).ToList();
+        if (selected.Count == 0) return;
+
+        int count = selected.Count;
+        bool isRtl = LocalizationService.FlowDirection == FlowDirection.RightToLeft;
+
+        await Task.Run(() =>
+        {
+            foreach (var item in selected)
+            {
+                if (item.IsShow)
+                {
+                    AppServices.ShowPersonal.SetFavorite(item.Id, setFavorite);
+                    var tmdbId = AppServices.GetShowTmdbId(item.Id);
+                    if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+                    {
+                        _ = trakt.PushShowFavoriteAsync(tmdbId.Value, setFavorite);
+                    }
+                }
+                else
+                {
+                    if (setFavorite)
+                        AppServices.Personal.SetPersonalPreference(item.Id, PersonalPreference.Liked);
+                    else
+                        AppServices.Personal.ClearPersonalPreference(item.Id);
+
+                    var tmdbId = AppServices.GetMovieTmdbId(item.Id);
+                    if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+                    {
+                        _ = trakt.PushMovieFavoriteAsync(tmdbId.Value, setFavorite);
+                    }
+                }
+            }
+        });
+
+        ClearSelection();
+        Refresh();
+
+        string msg = setFavorite
+            ? (isRtl ? $"تمت إضافة {count} إلى المفضلة" : $"Added {count} items to Favorites")
+            : (isRtl ? $"تمت إزالة {count} من المفضلة" : $"Removed {count} items from Favorites");
+        ShowHeaderNotification(msg, isSuccess: true);
+    }
+
+    private async Task SetSelectedWatchlistAsync(bool setWatchlist)
+    {
+        var selected = GetDisplayedItems().Where(item => item.IsSelected).ToList();
+        if (selected.Count == 0) return;
+
+        int count = selected.Count;
+        bool isRtl = LocalizationService.FlowDirection == FlowDirection.RightToLeft;
+
+        await Task.Run(() =>
+        {
+            foreach (var item in selected)
+            {
+                if (item.IsShow)
+                {
+                    AppServices.ShowPersonal.SetWatchLater(item.Id, setWatchlist);
+                    var tmdbId = AppServices.GetShowTmdbId(item.Id);
+                    if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+                    {
+                        _ = trakt.PushShowWatchlistAsync(tmdbId.Value, setWatchlist);
+                    }
+                }
+                else
+                {
+                    if (setWatchlist)
+                        AppServices.Personal.AddToWatchlist(item.Id);
+                    else
+                        AppServices.Personal.RemoveFromWatchlist(item.Id);
+
+                    var tmdbId = AppServices.GetMovieTmdbId(item.Id);
+                    if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
+                    {
+                        _ = trakt.PushMovieWatchlistAsync(tmdbId.Value, setWatchlist);
+                    }
+                }
+            }
+        });
+
+        ClearSelection();
+        Refresh();
+
+        string msg = setWatchlist
+            ? (isRtl ? $"تمت إضافة {count} إلى قائمة الانتظار" : $"Added {count} items to Watchlist")
+            : (isRtl ? $"تمت إزالة {count} من قائمة الانتظار" : $"Removed {count} items from Watchlist");
+        ShowHeaderNotification(msg, isSuccess: true);
     }
 
     #region Batch Selection & Marquee

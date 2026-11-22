@@ -421,4 +421,94 @@ public sealed class UnifiedTraktListsTests : IDisposable
 
         Assert.Empty(compactedToReplay);
     }
+
+    [Fact]
+    public void RemoveMemberByTmdbDirect_RemovesMemberWithoutEnqueuingPendingAction()
+    {
+        var repo = Repo();
+        var traktListId = 777888L;
+        var listId = repo.UpsertTraktCustomList("Direct Remove Test", traktListId, "direct-remove-test", Now);
+
+        // Add a cloud item
+        repo.AddCloudMediaToCustomList(listId, CustomListMediaKind.Movie, 550, Now, "Fight Club", 1999);
+        Assert.Single(repo.ListCustomListItems(listId));
+
+        // Use RemoveMemberByTmdbDirect
+        repo.RemoveMemberByTmdbDirect(listId, CustomListMediaKind.Movie, 550);
+        Assert.Empty(repo.ListCustomListItems(listId));
+
+        // CRITICAL INVARIANT: Direct removal must NOT enqueue a pending REMOVE action
+        var pending = repo.ListPendingActions(listId).Where(a => a.ActionType != "CREATE_LIST").ToList();
+        Assert.Empty(pending);
+    }
+
+    [Fact]
+    public void TraktPendingWatched_Enqueue_List_Delete_PersistsAndDrains()
+    {
+        var repo = Repo();
+        var watchedAt = new DateTimeOffset(2026, 11, 20, 18, 30, 0, TimeSpan.Zero);
+
+        // 1. Enqueue movie watched action
+        repo.EnqueueTraktPendingWatched("MOVIE", 550, null, null, watchedAt, isWatched: true, Now);
+
+        // 2. Enqueue episode unwatched action
+        repo.EnqueueTraktPendingWatched("EPISODE", 1399, 1, 1, watchedAt, isWatched: false, Now);
+
+        // 3. List pending actions
+        var pending = repo.ListTraktPendingWatched();
+        Assert.Equal(2, pending.Count);
+
+        var movieAction = Assert.Single(pending.Where(p => p.MediaKind == "MOVIE"));
+        Assert.Equal(550, movieAction.TmdbId);
+        Assert.Null(movieAction.SeasonNumber);
+        Assert.Null(movieAction.EpisodeNumber);
+        Assert.Equal(watchedAt, movieAction.WatchedAt);
+        Assert.True(movieAction.IsWatched);
+
+        var epAction = Assert.Single(pending.Where(p => p.MediaKind == "EPISODE"));
+        Assert.Equal(1399, epAction.TmdbId);
+        Assert.Equal(1, epAction.SeasonNumber);
+        Assert.Equal(1, epAction.EpisodeNumber);
+        Assert.Equal(watchedAt, epAction.WatchedAt);
+        Assert.False(epAction.IsWatched);
+
+        // 4. Delete one action
+        repo.DeleteTraktPendingWatched(movieAction.Id);
+        var remaining = repo.ListTraktPendingWatched();
+        Assert.Single(remaining);
+        Assert.Equal(epAction.Id, remaining[0].Id);
+
+        // 5. Delete remaining action
+        repo.DeleteTraktPendingWatched(epAction.Id);
+        Assert.Empty(repo.ListTraktPendingWatched());
+    }
+
+    [Fact]
+    public void TraktPendingWatchlist_Enqueue_List_Delete_PersistsAndDrains()
+    {
+        var repo = Repo();
+
+        // 1. Enqueue add movie to watchlist
+        repo.EnqueueTraktPendingWatchlist("MOVIE", 550, "ADD", Now);
+
+        // 2. Enqueue remove show from watchlist
+        repo.EnqueueTraktPendingWatchlist("SHOW", 1399, "REMOVE", Now);
+
+        // 3. List pending actions
+        var pending = repo.ListTraktPendingWatchlist();
+        Assert.Equal(2, pending.Count);
+
+        var movieAction = Assert.Single(pending.Where(p => p.MediaKind == "MOVIE"));
+        Assert.Equal(550, movieAction.TmdbId);
+        Assert.Equal("ADD", movieAction.Action);
+
+        var showAction = Assert.Single(pending.Where(p => p.MediaKind == "SHOW"));
+        Assert.Equal(1399, showAction.TmdbId);
+        Assert.Equal("REMOVE", showAction.Action);
+
+        // 4. Delete actions
+        repo.DeleteTraktPendingWatchlist(movieAction.Id);
+        repo.DeleteTraktPendingWatchlist(showAction.Id);
+        Assert.Empty(repo.ListTraktPendingWatchlist());
+    }
 }

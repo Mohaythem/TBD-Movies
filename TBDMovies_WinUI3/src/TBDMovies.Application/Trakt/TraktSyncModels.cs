@@ -131,3 +131,27 @@ public sealed record TraktSyncHistoryPayload(
     [property: System.Text.Json.Serialization.JsonPropertyName("shows")] IReadOnlyList<TraktSyncShowItem>? Shows = null,
     [property: System.Text.Json.Serialization.JsonPropertyName("episodes")] IReadOnlyList<TraktSyncEpisodeItem>? Episodes = null);
 
+/// <summary>
+/// Pending watched history mutation queued while offline.
+/// </summary>
+public sealed record TraktPendingWatchedAction(
+    int Id,
+    string MediaKind,
+    int TmdbId,
+    int? SeasonNumber,
+    int? EpisodeNumber,
+    DateTimeOffset WatchedAt,
+    bool IsWatched,
+    DateTimeOffset CreatedAt);
+
+/// <summary>
+/// Pending watchlist mutation queued while offline.
+/// </summary>
+public sealed record TraktPendingWatchlistAction(
+    int Id,
+    string MediaKind,
+    int TmdbId,
+    string Action,
+    DateTimeOffset CreatedAt);
+
+

@@ -1,5 +1,6 @@
 using System.Globalization;
 using TBDMovies.Application.Repositories;
+using TBDMovies.Application.Trakt;
 using TBDMovies.Domain.Library.Personal;
 using Microsoft.Data.Sqlite;
 
@@ -894,6 +895,126 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         using var gate = DatabaseWriteGate.Enter(_connectionString);
         using var connection = SqliteConnections.Open(_connectionString);
         using var command = Command(connection, null, "DELETE FROM custom_list_pending_actions WHERE id = $id;");
+        command.Parameters.AddWithValue("$id", actionId);
+        command.ExecuteNonQuery();
+        _tracker?.IncrementPersonal();
+    }
+
+    public void RemoveMemberByTmdbDirect(int listId, CustomListMediaKind kind, int tmdbId)
+    {
+        ValidateId(listId, nameof(listId));
+        if (tmdbId <= 0) return;
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var deleteCmd = Command(connection, null, """
+            DELETE FROM custom_list_members
+             WHERE list_id = $list
+               AND media_kind = $kind
+               AND (tmdb_id = $tmdb OR movie_id IN (SELECT id FROM movies WHERE provider = 'tmdb' AND external_id = $tmdbStr) OR show_id IN (SELECT id FROM tv_shows WHERE provider = 'tmdb' AND external_id = $tmdbStr));
+            """);
+        deleteCmd.Parameters.AddWithValue("$list", listId);
+        deleteCmd.Parameters.AddWithValue("$kind", kind == CustomListMediaKind.Show ? "SHOW" : "MOVIE");
+        deleteCmd.Parameters.AddWithValue("$tmdb", tmdbId);
+        deleteCmd.Parameters.AddWithValue("$tmdbStr", tmdbId.ToString(CultureInfo.InvariantCulture));
+        deleteCmd.ExecuteNonQuery();
+        _tracker?.IncrementPersonal();
+    }
+
+    public void EnqueueTraktPendingWatched(string mediaKind, int tmdbId, int? seasonNumber, int? episodeNumber, DateTimeOffset watchedAt, bool isWatched, DateTimeOffset now)
+    {
+        if (tmdbId <= 0) return;
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = Command(connection, null, """
+            INSERT INTO trakt_pending_watched_actions (media_kind, tmdb_id, season_number, episode_number, watched_at, is_watched, created_at)
+            VALUES ($kind, $tmdb, $season, $ep, $watched, $isWatched, $now);
+            """);
+        command.Parameters.AddWithValue("$kind", mediaKind.Trim().ToUpperInvariant());
+        command.Parameters.AddWithValue("$tmdb", tmdbId);
+        command.Parameters.AddWithValue("$season", seasonNumber.HasValue ? seasonNumber.Value : DBNull.Value);
+        command.Parameters.AddWithValue("$ep", episodeNumber.HasValue ? episodeNumber.Value : DBNull.Value);
+        command.Parameters.AddWithValue("$watched", watchedAt.ToString("O"));
+        command.Parameters.AddWithValue("$isWatched", isWatched ? 1 : 0);
+        command.Parameters.AddWithValue("$now", now.ToString("O"));
+        command.ExecuteNonQuery();
+        _tracker?.IncrementPersonal();
+    }
+
+    public IReadOnlyList<TraktPendingWatchedAction> ListTraktPendingWatched()
+    {
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT id, media_kind, tmdb_id, season_number, episode_number, watched_at, is_watched, created_at FROM trakt_pending_watched_actions ORDER BY created_at ASC, id ASC;";
+        var list = new List<TraktPendingWatchedAction>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            list.Add(new TraktPendingWatchedAction(
+                reader.GetInt32(0),
+                reader.GetString(1),
+                reader.GetInt32(2),
+                reader.IsDBNull(3) ? null : reader.GetInt32(3),
+                reader.IsDBNull(4) ? null : reader.GetInt32(4),
+                DateTimeOffset.Parse(reader.GetString(5), CultureInfo.InvariantCulture),
+                reader.GetInt32(6) == 1,
+                DateTimeOffset.Parse(reader.GetString(7), CultureInfo.InvariantCulture)));
+        }
+        return list;
+    }
+
+    public void DeleteTraktPendingWatched(int actionId)
+    {
+        ValidateId(actionId, nameof(actionId));
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = Command(connection, null, "DELETE FROM trakt_pending_watched_actions WHERE id = $id;");
+        command.Parameters.AddWithValue("$id", actionId);
+        command.ExecuteNonQuery();
+        _tracker?.IncrementPersonal();
+    }
+
+    public void EnqueueTraktPendingWatchlist(string mediaKind, int tmdbId, string action, DateTimeOffset now)
+    {
+        if (tmdbId <= 0) return;
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = Command(connection, null, """
+            INSERT INTO trakt_pending_watchlist_actions (media_kind, tmdb_id, action, created_at)
+            VALUES ($kind, $tmdb, $action, $now);
+            """);
+        command.Parameters.AddWithValue("$kind", mediaKind.Trim().ToUpperInvariant());
+        command.Parameters.AddWithValue("$tmdb", tmdbId);
+        command.Parameters.AddWithValue("$action", action.Trim().ToUpperInvariant());
+        command.Parameters.AddWithValue("$now", now.ToString("O"));
+        command.ExecuteNonQuery();
+        _tracker?.IncrementPersonal();
+    }
+
+    public IReadOnlyList<TraktPendingWatchlistAction> ListTraktPendingWatchlist()
+    {
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT id, media_kind, tmdb_id, action, created_at FROM trakt_pending_watchlist_actions ORDER BY created_at ASC, id ASC;";
+        var list = new List<TraktPendingWatchlistAction>();
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            list.Add(new TraktPendingWatchlistAction(
+                reader.GetInt32(0),
+                reader.GetString(1),
+                reader.GetInt32(2),
+                reader.GetString(3),
+                DateTimeOffset.Parse(reader.GetString(4), CultureInfo.InvariantCulture)));
+        }
+        return list;
+    }
+
+    public void DeleteTraktPendingWatchlist(int actionId)
+    {
+        ValidateId(actionId, nameof(actionId));
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = Command(connection, null, "DELETE FROM trakt_pending_watchlist_actions WHERE id = $id;");
         command.Parameters.AddWithValue("$id", actionId);
         command.ExecuteNonQuery();
         _tracker?.IncrementPersonal();

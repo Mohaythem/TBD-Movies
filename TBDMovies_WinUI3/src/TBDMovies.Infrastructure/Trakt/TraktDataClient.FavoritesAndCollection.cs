@@ -34,6 +34,73 @@ public sealed partial class TraktDataClient
         return await SendFavoriteMutationAsync("sync/favorites/remove", tmdbId, kind, token, clientId, ct).ConfigureAwait(false);
     }
 
+    public async Task<TraktSyncWriteResult> AddFavoritesBatchAsync(
+        IReadOnlyList<long>? movieTmdbIds,
+        IReadOnlyList<long>? showTmdbIds,
+        string token,
+        string? clientId = null,
+        CancellationToken ct = default)
+    {
+        return await SendChunkedBatchPayloadAsync("sync/favorites", movieTmdbIds, showTmdbIds, token, clientId, ct).ConfigureAwait(false);
+    }
+
+    public async Task<TraktSyncWriteResult> RemoveFavoritesBatchAsync(
+        IReadOnlyList<long>? movieTmdbIds,
+        IReadOnlyList<long>? showTmdbIds,
+        string token,
+        string? clientId = null,
+        CancellationToken ct = default)
+    {
+        return await SendChunkedBatchPayloadAsync("sync/favorites/remove", movieTmdbIds, showTmdbIds, token, clientId, ct).ConfigureAwait(false);
+    }
+
+    private async Task<TraktSyncWriteResult> SendChunkedBatchPayloadAsync(
+        string relativePath,
+        IReadOnlyList<long>? movieTmdbIds,
+        IReadOnlyList<long>? showTmdbIds,
+        string token,
+        string? clientId,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return new TraktSyncWriteResult(false, 0, "Missing token");
+        var movies = movieTmdbIds?.Where(id => id > 0).Distinct().ToList() ?? [];
+        var shows = showTmdbIds?.Where(id => id > 0).Distinct().ToList() ?? [];
+        if (movies.Count == 0 && shows.Count == 0)
+            return new TraktSyncWriteResult(true, 0);
+
+        const int chunkSize = 100;
+        int totalAffected = 0;
+        int movieIdx = 0;
+        int showIdx = 0;
+
+        while (movieIdx < movies.Count || showIdx < shows.Count)
+        {
+            ct.ThrowIfCancellationRequested();
+            var moviesTake = Math.Min(chunkSize, movies.Count - movieIdx);
+            var chunkMovies = movies.GetRange(movieIdx, moviesTake);
+            movieIdx += moviesTake;
+
+            var showsTake = Math.Min(chunkSize - moviesTake, shows.Count - showIdx);
+            var chunkShows = showsTake > 0 ? shows.GetRange(showIdx, showsTake) : [];
+            showIdx += showsTake;
+
+            var payload = new
+            {
+                movies = chunkMovies.Select(id => new { ids = new { tmdb = id } }).ToArray(),
+                shows = chunkShows.Select(id => new { ids = new { tmdb = id } }).ToArray()
+            };
+
+            var res = await SendBatchSyncPayloadAsync(relativePath, payload, token, clientId, ct).ConfigureAwait(false);
+            if (!res.Success)
+            {
+                return new TraktSyncWriteResult(false, totalAffected, res.Error);
+            }
+            totalAffected += res.AddedOrRemovedCount;
+        }
+
+        return new TraktSyncWriteResult(true, totalAffected);
+    }
+
     public async Task<TraktSyncWriteResult> AddCollectionBatchAsync(
         IReadOnlyList<long>? movieTmdbIds,
         IReadOnlyList<long>? showTmdbIds,
@@ -41,35 +108,7 @@ public sealed partial class TraktDataClient
         string? clientId = null,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(token)) return new TraktSyncWriteResult(false, 0, "Missing token");
-        if ((movieTmdbIds == null || movieTmdbIds.Count == 0) && (showTmdbIds == null || showTmdbIds.Count == 0))
-            return new TraktSyncWriteResult(true, 0);
-
-        var moviesPayload = new List<object>();
-        if (movieTmdbIds != null)
-        {
-            foreach (var id in movieTmdbIds)
-            {
-                if (id > 0) moviesPayload.Add(new { ids = new { tmdb = id } });
-            }
-        }
-
-        var showsPayload = new List<object>();
-        if (showTmdbIds != null)
-        {
-            foreach (var id in showTmdbIds)
-            {
-                if (id > 0) showsPayload.Add(new { ids = new { tmdb = id } });
-            }
-        }
-
-        var payload = new
-        {
-            movies = moviesPayload,
-            shows = showsPayload
-        };
-
-        return await SendBatchSyncPayloadAsync("sync/collection", payload, token, clientId, ct).ConfigureAwait(false);
+        return await SendChunkedBatchPayloadAsync("sync/collection", movieTmdbIds, showTmdbIds, token, clientId, ct).ConfigureAwait(false);
     }
 
     private async Task<TraktSyncWriteResult> SendFavoriteMutationAsync(
@@ -121,6 +160,14 @@ public sealed partial class TraktDataClient
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
+                if (response.StatusCode == HttpStatusCode.Unauthorized)
+                {
+                    throw new TraktClientException(
+                        TraktFailureKind.Unauthorized,
+                        "Trakt rejected authentication credentials (HTTP 401).",
+                        relativePath,
+                        HttpStatusCode.Unauthorized);
+                }
                 return new TraktSyncWriteResult(false, 0, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
             }
 

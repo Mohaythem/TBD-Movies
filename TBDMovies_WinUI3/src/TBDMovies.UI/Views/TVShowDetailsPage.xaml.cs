@@ -474,7 +474,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
                         {
                             await trakt.PushShowFavoriteAsync(showTmdbId.Value, _showFavorite).ConfigureAwait(false);
                         }
-                        else if (trakt.GetSyncState().AuthState.IsConnected)
+                        else
                         {
                             await trakt.PushShowWatchlistAsync(showTmdbId.Value, _showWatchLater).ConfigureAwait(false);
                         }
@@ -659,32 +659,6 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         catch (Exception)
         {
             AddToListFlyout.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("NoCustomLists"), IsEnabled = false });
-        }
-
-        var trakt = AppServices.Trakt;
-        var traktState = trakt?.GetSyncState();
-        int? showTmdbId = (int.TryParse(_show.ExternalId, out var parsedId) && parsedId > 0 ? (int?)parsedId : null) ?? AppServices.GetShowTmdbId(_show.Id);
-        if (trakt is not null && traktState?.AuthState.IsConnected == true && !string.IsNullOrWhiteSpace(traktState.CurrentAccountId) && showTmdbId is > 0)
-        {
-            AddToListFlyout.Items.Add(new MenuFlyoutSeparator());
-            AddToListFlyout.Items.Add(new MenuFlyoutItem { Text = LocalizationService.Text("Trakt") ?? "Trakt", IsEnabled = false });
-
-            var accountId = traktState.CurrentAccountId;
-            var inTraktWatchlist = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == showTmdbId.Value);
-            var watchlistItem = new ToggleMenuFlyoutItem { Text = LocalizationService.Text("TraktWatchlist") ?? "Watchlist", IsChecked = inTraktWatchlist };
-            watchlistItem.Click += async (_, _) =>
-            {
-                try
-                {
-                    var currentlyIn = trakt.GetWatchlist(accountId).Any(w => w.GetTmdbId() == showTmdbId.Value);
-                    await trakt.PushShowWatchlistAsync(showTmdbId.Value, !currentlyIn).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[TVShowDetailsPage] Trakt watchlist toggle failed: {ex.Message}");
-                }
-            };
-            AddToListFlyout.Items.Add(watchlistItem);
         }
     }
 

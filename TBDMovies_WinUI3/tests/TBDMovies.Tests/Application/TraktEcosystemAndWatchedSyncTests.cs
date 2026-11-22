@@ -464,6 +464,107 @@ public sealed class TraktEcosystemAndWatchedSyncTests
         Assert.Contains("movies", capturedBody);
     }
 
+    [Fact]
+    public async Task PushMovieWatchedAsync_WhenOffline_EnqueuesToPendingQueueWithOriginalWatchedAtTimestamp()
+    {
+        var authService = new TestTraktAuthService();
+        authService.SetConnected("uuid-123", "valid-token");
+        var dataClient = new TestTraktDataClient();
+        dataClient.ThrowOnPush = new HttpRequestException("Network failure simulating offline state");
+        var cacheRepo = new TestTraktCacheRepository();
+        var settingsRepo = new TestSettingsRepository();
+        var personalRepo = new TestPersonalLibraryRepository();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero));
+        var config = TraktDefaults.CreateDefaultConfig();
+
+        using var syncService = new TraktSyncService(
+            authService,
+            dataClient,
+            cacheRepo,
+            config,
+            settingsRepo,
+            timeProvider,
+            snapshotBuilder: null,
+            personalLibraryRepository: personalRepo);
+
+        var watchedAt = new DateTimeOffset(2026, 10, 25, 14, 0, 0, TimeSpan.Zero);
+        var result = await syncService.PushMovieWatchedAsync(550, watchedAt, isWatched: true);
+
+        // Result indicates push could not complete remotely
+        Assert.False(result);
+
+        // CRITICAL INVARIANT: The mutation must be safely captured in the offline pending queue
+        // with the original playback timestamp
+        Assert.Single(personalRepo.EnqueuedWatched);
+        var pending = personalRepo.EnqueuedWatched[0];
+        Assert.Equal("MOVIE", pending.MediaKind);
+        Assert.Equal(550, pending.TmdbId);
+        Assert.Null(pending.Season);
+        Assert.Null(pending.Episode);
+        Assert.Equal(watchedAt, pending.WatchedAt);
+        Assert.True(pending.IsWatched);
+    }
+
+    [Fact]
+    public async Task PushMovieWatchlistAsync_WhenOffline_EnqueuesToPendingQueue()
+    {
+        var authService = new TestTraktAuthService();
+        authService.SetConnected("uuid-123", "valid-token");
+        var dataClient = new TestTraktDataClient();
+        dataClient.ThrowOnPush = new HttpRequestException("Network connection lost");
+        var cacheRepo = new TestTraktCacheRepository();
+        var settingsRepo = new TestSettingsRepository();
+        var personalRepo = new TestPersonalLibraryRepository();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero));
+        var config = TraktDefaults.CreateDefaultConfig();
+
+        using var syncService = new TraktSyncService(
+            authService,
+            dataClient,
+            cacheRepo,
+            config,
+            settingsRepo,
+            timeProvider,
+            snapshotBuilder: null,
+            personalLibraryRepository: personalRepo);
+
+        var result = await syncService.PushMovieWatchlistAsync(550, inWatchlist: true);
+        Assert.False(result);
+
+        // Verify offline enqueue
+        Assert.Single(personalRepo.EnqueuedWatchlist);
+        var action = personalRepo.EnqueuedWatchlist[0];
+        Assert.Equal("MOVIE", action.MediaKind);
+        Assert.Equal(550, action.TmdbId);
+        Assert.Equal("ADD", action.Action);
+    }
+
+    [Fact]
+    public async Task MutateWithAuthRetry_When401Unauthorized_RefreshesTokenAndRetries()
+    {
+        var authService = new TestTraktAuthService();
+        authService.SetConnected("uuid-123", "expired-token");
+        var dataClient = new TestTraktDataClient();
+        // First push will throw 401 Unauthorized, then ThrowOnPush is reset to null for retry
+        dataClient.ThrowOnPush = new HttpRequestException("401 Unauthorized", null, HttpStatusCode.Unauthorized);
+
+        var cacheRepo = new TestTraktCacheRepository();
+        var settingsRepo = new TestSettingsRepository();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero));
+        var config = TraktDefaults.CreateDefaultConfig();
+
+        using var syncService = new TraktSyncService(authService, dataClient, cacheRepo, config, settingsRepo, timeProvider);
+
+        var watchedAt = new DateTimeOffset(2026, 11, 1, 10, 0, 0, TimeSpan.Zero);
+        var result = await syncService.PushMovieWatchedAsync(550, watchedAt, isWatched: true);
+
+        // Should succeed on second attempt
+        Assert.True(result);
+        Assert.Equal(2, dataClient.PushHistoryCallCount);
+        // Auth service was commanded to force-refresh its token
+        Assert.Equal(1, authService.ForceRefreshCalls);
+    }
+
     // --- Helpers and Fakes ---
 
     private sealed class SimpleHttpMessageHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler) : HttpMessageHandler
@@ -498,8 +599,15 @@ public sealed class TraktEcosystemAndWatchedSyncTests
             return Task.FromResult(_state);
         }
 
+        public int GetAccessTokenCalls { get; private set; }
+        public int ForceRefreshCalls { get; private set; }
+
         public Task<string> GetAccessTokenAsync(bool forceRefresh = false, string? rejectedAccessToken = null, CancellationToken cancellationToken = default)
-            => Task.FromResult(_token);
+        {
+            GetAccessTokenCalls++;
+            if (forceRefresh) ForceRefreshCalls++;
+            return Task.FromResult(_token);
+        }
 
         public Task<bool> RecordVerifiedAccountAsync(string accountId, string expectedAccessToken, CancellationToken cancellationToken = default)
             => Task.FromResult(true);
@@ -520,6 +628,9 @@ public sealed class TraktEcosystemAndWatchedSyncTests
         public Dictionary<TraktResourceType, Func<JsonElement>> ResourceHandlers { get; } = new();
         public TraktSyncHistoryPayload? LastAddPayload { get; private set; }
         public TraktSyncHistoryPayload? LastRemovePayload { get; private set; }
+        public Exception? ThrowOnPush { get; set; }
+        public int PushHistoryCallCount { get; private set; }
+        public int PushWatchlistCallCount { get; private set; }
 
         public Task<JsonElement> GetAccountAsync(string clientId, string accessToken, CancellationToken cancellationToken = default)
         {
@@ -537,12 +648,26 @@ public sealed class TraktEcosystemAndWatchedSyncTests
 
         public Task<JsonElement> AddHistoryAsync(TraktSyncHistoryPayload payload, string clientId, string accessToken, CancellationToken cancellationToken = default)
         {
+            PushHistoryCallCount++;
+            if (ThrowOnPush != null)
+            {
+                var ex = ThrowOnPush;
+                ThrowOnPush = null;
+                throw ex;
+            }
             LastAddPayload = payload;
             return Task.FromResult(JsonDocument.Parse("""{"added":{"movies":1}}""").RootElement);
         }
 
         public Task<JsonElement> RemoveHistoryAsync(TraktSyncHistoryPayload payload, string clientId, string accessToken, CancellationToken cancellationToken = default)
         {
+            PushHistoryCallCount++;
+            if (ThrowOnPush != null)
+            {
+                var ex = ThrowOnPush;
+                ThrowOnPush = null;
+                throw ex;
+            }
             LastRemovePayload = payload;
             return Task.FromResult(JsonDocument.Parse("""{"deleted":{"movies":1}}""").RootElement);
         }
@@ -551,12 +676,26 @@ public sealed class TraktEcosystemAndWatchedSyncTests
 
         public Task<TraktSyncWriteResult> AddWatchlistAsync(long tmdbId, TraktMediaKind kind, string token, string? clientId = null, CancellationToken ct = default)
         {
+            PushWatchlistCallCount++;
+            if (ThrowOnPush != null)
+            {
+                var ex = ThrowOnPush;
+                ThrowOnPush = null;
+                throw ex;
+            }
             LastWatchlistCall = (tmdbId, kind, true);
             return Task.FromResult(new TraktSyncWriteResult(true, 1));
         }
 
         public Task<TraktSyncWriteResult> RemoveWatchlistAsync(long tmdbId, TraktMediaKind kind, string token, string? clientId = null, CancellationToken ct = default)
         {
+            PushWatchlistCallCount++;
+            if (ThrowOnPush != null)
+            {
+                var ex = ThrowOnPush;
+                ThrowOnPush = null;
+                throw ex;
+            }
             LastWatchlistCall = (tmdbId, kind, false);
             return Task.FromResult(new TraktSyncWriteResult(true, 1));
         }
@@ -600,6 +739,18 @@ public sealed class TraktEcosystemAndWatchedSyncTests
     {
         public List<(int MovieId, DateTimeOffset WatchedAt)> AddedWatchEvents { get; } = new();
         public List<int> CreatedMovies { get; } = new();
+        public List<(string MediaKind, int TmdbId, int? Season, int? Episode, DateTimeOffset WatchedAt, bool IsWatched)> EnqueuedWatched { get; } = new();
+        public List<(string MediaKind, int TmdbId, string Action)> EnqueuedWatchlist { get; } = new();
+
+        public void EnqueueTraktPendingWatched(string mediaKind, int tmdbId, int? seasonNumber, int? episodeNumber, DateTimeOffset watchedAt, bool isWatched, DateTimeOffset now)
+        {
+            EnqueuedWatched.Add((mediaKind, tmdbId, seasonNumber, episodeNumber, watchedAt, isWatched));
+        }
+
+        public void EnqueueTraktPendingWatchlist(string mediaKind, int tmdbId, string action, DateTimeOffset now)
+        {
+            EnqueuedWatchlist.Add((mediaKind, tmdbId, action));
+        }
 
         public WatchEvent AddWatchEvent(int movieId, DateTimeOffset watchedAt, DateTimeOffset createdAt)
         {

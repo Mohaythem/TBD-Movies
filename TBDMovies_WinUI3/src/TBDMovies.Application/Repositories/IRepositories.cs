@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TBDMovies.Application.Trakt;
 using TBDMovies.Domain.Library.Movies;
 using TBDMovies.Domain.Library.Personal;
 using TBDMovies.Domain.Core.Operations;
@@ -151,6 +152,27 @@ public interface IPersonalLibraryRepository
 
     /// <summary>Gets local members of a custom list that have a known TMDB ID.</summary>
     IReadOnlyList<(int MovieOrShowId, CustomListMediaKind Kind, int TmdbId)> ListLocalMembersWithTmdb(int listId) => Array.Empty<(int, CustomListMediaKind, int)>();
+
+    /// <summary>Removes a member from a custom list by TMDB ID directly without queuing a pending action.</summary>
+    void RemoveMemberByTmdbDirect(int listId, CustomListMediaKind kind, int tmdbId) { }
+
+    /// <summary>Enqueues an offline action into trakt_pending_watched_actions.</summary>
+    void EnqueueTraktPendingWatched(string mediaKind, int tmdbId, int? seasonNumber, int? episodeNumber, DateTimeOffset watchedAt, bool isWatched, DateTimeOffset now) { }
+
+    /// <summary>Lists all pending watched actions ordered by created_at.</summary>
+    IReadOnlyList<TraktPendingWatchedAction> ListTraktPendingWatched() => Array.Empty<TraktPendingWatchedAction>();
+
+    /// <summary>Deletes a pending watched action by its primary key.</summary>
+    void DeleteTraktPendingWatched(int actionId) { }
+
+    /// <summary>Enqueues an offline action into trakt_pending_watchlist_actions.</summary>
+    void EnqueueTraktPendingWatchlist(string mediaKind, int tmdbId, string action, DateTimeOffset now) { }
+
+    /// <summary>Lists all pending watchlist actions ordered by created_at.</summary>
+    IReadOnlyList<TraktPendingWatchlistAction> ListTraktPendingWatchlist() => Array.Empty<TraktPendingWatchlistAction>();
+
+    /// <summary>Deletes a pending watchlist action by its primary key.</summary>
+    void DeleteTraktPendingWatchlist(int actionId) { }
 }
 
 public interface IWatchHistoryRepository
