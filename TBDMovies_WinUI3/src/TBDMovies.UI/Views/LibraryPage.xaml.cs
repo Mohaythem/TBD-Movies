@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Threading.Tasks;
+using TBDMovies.Application.Diagnostics;
 using TBDMovies.Application.Repositories;
 using TBDMovies.UI.Models;
 using TBDMovies.UI.Services;
@@ -1354,7 +1355,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[LibraryPage] PushBatchFavoritesAsync failed: {ex.Message}");
+                    AppDiagnosticsLog.Record("LibraryBatch", $"PushBatchFavoritesAsync failed: {ex.Message}");
                 }
             });
         }
@@ -1410,7 +1411,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[LibraryPage] PushBatchWatchlistAsync failed: {ex.Message}");
+                    AppDiagnosticsLog.Record("LibraryBatch", $"PushBatchWatchlistAsync failed: {ex.Message}");
                 }
             });
         }
@@ -1849,7 +1850,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
                         }
                         catch (Exception ex)
                         {
-                            System.Diagnostics.Debug.WriteLine($"[LibraryPage] PushBatchCustomListItemsAsync failed: {ex.Message}");
+                            AppDiagnosticsLog.Record("LibraryBatch", $"PushBatchCustomListItemsAsync failed: {ex.Message}");
                         }
                     });
                 }
