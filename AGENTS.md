@@ -83,7 +83,7 @@ This standardized protocol governs all engineering workflows across the reposito
 - **Minimal Defensible Edits & Scope Freeze**: Implement the most direct, defensive modifications adhering to database-first architecture and lifecycle guards (`_isActivated`, `IsLoaded`). During a declared Scope Freeze, touching files outside the designated boundary is strictly forbidden.
 
 ### Step 4.1: Mandatory Pre-Commit Checklist
-Before committing changes or proposing a push, verify the following ten historical CI failure vectors:
+Before committing changes or proposing a push, verify the following historical CI failure vectors:
 1. **Cross-Assembly Accessibility**: Verify that invocations from `TBDMovies.UI` to `Infrastructure` or `Application` target members declared explicitly as `public`, free of `internal` parameters (preventing `CS1739`).
 2. **Foreign Key Constraint Integrity**: Ensure unit tests writing to dependent tables (`playback_progress`, `watch_events`, `custom_list_items`) seed parent records in `movies` and `media_files` first (preventing SQLite Error 19 FK failures).
 3. **Exact Property Match for Records**: Ensure property access matches record definitions exactly (`.Catalog`, `.Personal`, `.Playback` in `LibrarySnapshotToken`).
@@ -95,6 +95,9 @@ Before committing changes or proposing a push, verify the following ten historic
 9. **Diagnostics Namespace Import Check**: Explicitly import `using System.Diagnostics;` whenever referencing `Trace.WriteLine` or diagnostic classes (preventing `CS0103`).
 10. **Init-Only Properties & Required Constructor Arguments**: Initialize `init`-only properties via object initializers (`new Foo { Bar = ... }`, preventing `CS8852`), and strictly provide all required constructor arguments in correct order (such as all eight required parameters for `MovieCandidate`, preventing `CS7036`).
 11. **Application Namespace Collision (CS0234)**: Never write `Application.Current` unqualified in `TBDMovies.UI` code-behind, as C# resolves `Application` to `TBDMovies.Application` rather than `Microsoft.UI.Xaml.Application`. For `FontIcon`, omit `FontFamily` (it defaults to `SymbolThemeFontFamily`), or use the fully qualified `Microsoft.UI.Xaml.Application.Current`.
+12. **GitHub PAT Workflow Scope Barrier**: Exclude all `.github/workflows/*.yml` modifications from automated agent commits; agent Personal Access Tokens lack the elevated `workflow` OAuth scope (preventing HTTP 403 push rejections).
+13. **Unpackaged WinUI 3 Payload Target (Build vs. Publish)**: Target the self-contained `dotnet build` output directory (`bin\Release\net10.0-windows10.0.22621\win-x64\`) in packaging scripts (`TBD-Movies.iss`), never `dotnet publish` (preventing missing `TBDMovies.UI.pri` / `*.xbf` resources and silent application exit).
+14. **CsWinRT1032 ABI Collection Marshaling**: Refactor collection expressions (`[...]`) assigning to non-mutable WinRT interfaces (`IReadOnlyList<T>`, `IVectorView<T>`) into concrete arrays (`Array.Empty<T>()`, `new[] { ... }`, `.ToArray()`); never suppress `CsWinRT1032` via `<NoWarn>` (preventing ABI marshaling runtime faults and compiler warnings).
 
 ### Step 5: Automated Verification & Strict Test Baseline
 - **Clean Solution Build (`dotnet build`)**: Build must produce exit code `0` with zero warnings and zero errors (`0 Warning(s), 0 Error(s)`).
@@ -162,3 +165,15 @@ Before committing changes or proposing a push, verify the following ten historic
 ### XI. CI Concurrency Timeout Tolerance & ThreadPool Starvation Invariant
 - Concurrency test barriers (`Barrier`, `ManualResetEventSlim`, `CountdownEvent`) must use generous timeouts (`>= 5s..10s`) and static wait handles (`WaitHandle.WaitAny`) rather than CPU-spinning loops (`SpinWait.SpinUntil`).
 - Set `ThreadPool.SetMinThreads(16, 16)` during parallel test suites exceeding 4 threads to prevent 500ms Hill-Climbing thread-pool allocation delays.
+
+### XII. True LRU Touch-Time Ordering & Prune Watermark Arithmetic
+- **Touch-Time Evaluation**: Cache eviction logic (e.g. `DiskPosterCache`) must evaluate entry freshness via `Math.Max(LastAccessTimeUtc, LastWriteTimeUtc)`. Comparing with `<` mistakenly inverts LRU into FIFO, evicting recently touched assets with older file creation dates.
+- **Watermark Sizing in Tests**: Cache pruning targets a 90% threshold (`maxBytes * 0.90`). When crafting test cases to assert single-item eviction from a set of two, set `maxBytes` high enough so that the surviving item fits comfortably under the watermark (e.g., `1200` bytes for two `1000`-byte files leaves 1000 <= 1080 bytes).
+
+### XIII. Structured Log CRLF Injection Sanitization
+- **Newline Sanitization**: All user-controlled tokens, categories, and dynamic prefixes logged in `AppDiagnosticsLog` and `SecurityDiagnostics` must sanitize `\r` and `\n` via `.Replace('\r', ' ').Replace('\n', ' ')`.
+- **Log Integrity**: Prevents malicious or unescaped strings from forging new timestamped log lines or splitting security audit records.
+
+### XIV. Workspace Provenance & Stash-First Branch Discipline
+- **Stash Before Checkout**: When switching branches on local developer or runner machines with uncommitted changes, never assume modified working tree files represent newer code.
+- **Authoritative Branch Synchronization**: Always isolate dirty working trees safely via `git stash push -u -m "<description>"` before switching to or synchronizing with the authoritative branch (`codex`).
