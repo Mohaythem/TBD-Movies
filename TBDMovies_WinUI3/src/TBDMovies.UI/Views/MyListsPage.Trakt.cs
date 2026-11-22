@@ -57,10 +57,6 @@ public sealed partial class MyListsPage
         Refresh();
     }
 
-    private void RebuildTraktTabs()
-    {
-    }
-
     private void TraktPlaylistTab_Checked(object sender, RoutedEventArgs e)
     {
         if (!_isReady || _rebuilding || _syncing) return;
@@ -510,78 +506,6 @@ public sealed partial class MyListsPage
             return LocalizationService.Text("TraktList");
         }
         catch { return LocalizationService.Text("TraktList"); }
-    }
-
-    private void NewTraktListButton_Click(object sender, RoutedEventArgs e) => _ = ShowCreateTraktListDialogAsync();
-
-    private async Task ShowCreateTraktListDialogAsync()
-    {
-        var trakt = AppServices.Trakt;
-        var state = trakt?.GetSyncState();
-        if (trakt is null || state?.AuthState.IsConnected != true || string.IsNullOrWhiteSpace(state.CurrentAccountId))
-        {
-            await ShowMessageAsync(
-                LocalizationService.Text("Trakt") ?? "Trakt",
-                LocalizationService.Text("TraktDisconnectedFeedback") ?? "Trakt is not connected. Connect your Trakt account in Settings.");
-            return;
-        }
-
-        var nameBox = new TextBox
-        {
-            PlaceholderText = LocalizationService.Text("ListNamePlaceholder") ?? "List name",
-            Style = (Style)App.Current.Resources["FormInputTextBoxStyle"],
-        };
-
-        var descBox = new TextBox
-        {
-            PlaceholderText = LocalizationService.Text("Description") ?? "Description (optional)",
-            Style = (Style)App.Current.Resources["FormInputTextBoxStyle"],
-            AcceptsReturn = true,
-            Height = 72,
-            Margin = new Thickness(0, 8, 0, 0),
-        };
-
-        var content = new StackPanel
-        {
-            Spacing = 8,
-            Children = { nameBox, descBox }
-        };
-
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            FlowDirection = LocalizationService.FlowDirection,
-            RequestedTheme = ThemeService.ElementTheme,
-            Title = LocalizationService.Text("NewList") ?? "New Trakt List",
-            Content = content,
-            PrimaryButtonText = LocalizationService.Text("Save") ?? "Save",
-            CloseButtonText = LocalizationService.Text("Cancel") ?? "Cancel",
-            DefaultButton = ContentDialogButton.Primary,
-        };
-
-        if (await ContentDialogCoordinator.ShowAsync(dialog) != ContentDialogResult.Primary)
-        {
-            return;
-        }
-
-        var name = nameBox.Text?.Trim();
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return;
-        }
-
-        var desc = descBox.Text?.Trim();
-        using var doc = JsonDocument.Parse("{}");
-        var rawElement = doc.RootElement.Clone();
-        var newId = 90000000L + (_localTraktLists.Count + 1);
-        var slug = name.ToLowerInvariant().Replace(' ', '-');
-        var newList = new TraktCustomList(newId, slug, name, string.IsNullOrWhiteSpace(desc) ? null : desc, "private", 0, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, rawElement);
-        _localTraktLists.Add(newList);
-
-        _selectedTraktKey = $"trakt:list:{newList.TraktId}";
-        _selectedKey = _selectedTraktKey;
-        RebuildTraktTabs();
-        Refresh();
     }
 
     private async void SyncTraktButton_Click(object sender, RoutedEventArgs e)
