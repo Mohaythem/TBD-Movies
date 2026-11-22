@@ -50,6 +50,19 @@
   3. Check if list item endpoints (`users/me/lists/{id}/items`) or `ReconcileCustomListsAsync` are failing silently or failing to trigger UI cache invalidation.
 - **Status**: Registered for in-depth collaborative review with user notes.
 
+### [TRK-10] [Active Investigation 🔍] Custom List Add-Push Failure, Duplicate Cloud Card Remnants, and Dead Click on Cloud Items
+- **Affected Subsystems**: `PersonalLibraryRepository.cs` (`AddMovieToCustomList`, `RemoveMovieFromCustomList`, `AddCloudMediaToCustomList`), `MyListsPage.xaml.cs` (`ListGrid_ItemClick`), `TraktSyncService.cs`.
+- **Observed Behavior**:
+  1. Adding a movie to a list from within the app does not sync upstream to Trakt.
+  2. If an item is added from Trakt while present locally, deleting it from the app removes the local entry but leaves a duplicate "سحابي" (Cloud) card behind.
+  3. Clicking on the leftover "سحابي" card is a dead click (`id == 0`, blocked by `if (movie.Id <= 0) return;`), unable to open movie details by TMDB ID.
+- **Investigative Scope**:
+  1. Unify membership deletion: `RemoveMovieFromCustomList` must delete both `movie_id = $id` and matching `tmdb_id` rows, preventing zombie cloud orphans.
+  2. Case-insensitive provider matching: use `lower(provider) = 'tmdb'` across `AddMovieToCustomList` and `AddCloudMediaToCustomList` to ensure seamless single-row linkage.
+  3. Wire active upstream push on `AddMovieToCustomList` and `RemoveMovieFromCustomList` (matching watchlist/favorites parity).
+  4. Enable `ListGrid_ItemClick` to open details via TMDB ID even for cloud-only items, eliminating dead unclickable cards.
+- **Status**: Registered for in-depth collaborative review with user notes.
+
 ### [U9] [CLOSED & VERIFIED ✅] Unification of Trakt Custom Lists with Local Lists & Two-Way Sync
 - **Affected Subsystems**: `TraktSyncService.cs`, `PersonalLibraryRepository.cs`, `MyListsPage.xaml.cs`, `MainWindow.xaml.cs`.
 - **Completed Work (Batches 5.1, 5.2, 5.3)**:
