@@ -17,7 +17,7 @@
   - Wave 6 (Batch 6.1): `SEC-17..18`, `SEC-24..25`, UI Crash Relocation, AppDiagnosticsLog, UI Error Sanitization & Startup Telemetry (`1,435` tests).
   - Polish Pass: LRU Sorting Logic Fix, Reparse Guards, `CsWinRT1032` Concrete Collection Refactoring & GitHub Actions v7/v6 Upgrade (`1,438+` tests).
   - Wave 8: Trakt Favorites Sync (`TRK-08`), Custom Lists Immediate Push & Stagnation Fix (`TRK-09`), Cloud Card Deduplication & TMDB Launch (`TRK-10`), Native WinUI 3 Progress Bar & Step Counter (`TRK-UI-01`), Analyzer xUnit2031 Cleanup (`TEST-WARN-01`) (`1,447+` tests).
-- **Baseline Test Suite**: **`1,447+`** tests passing in Release (100% Green on Windows CI with `0 Warning(s), 0 Error(s)`).
+- **Baseline Test Suite**: **`1,458 / 1,458`** tests passing in Release (100% Green on Windows CI with `0 Warning(s), 0 Error(s)`).
 - **Upcoming Feature Backlog (User Feedback Intake)**:
   - `FEAT-EPISODE-ARTWORK` (`[F1]`): Episode Stills & Season Posters in WinUI 3 via `ArtworkLoader` decoupling.
   - `FEAT-INBOUND-AUTOSCAN` (`[F2]`): Inbound Downloads Auto-Scan with FileLock Guard on `AddMediaPage`.
