@@ -209,30 +209,46 @@ public sealed partial class TraktDataClient
                     return new TraktSyncWriteResult(false, 0, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
                 }
 
-                var bytes = await ReadBoundedStreamAsync(
-                    response.Content, _options.MaxResponseBytesPerPage, relativePath, timeout.Token).ConfigureAwait(false);
-                using var doc = JsonDocument.Parse(bytes);
-                var root = doc.RootElement;
-                int count = 0;
-                if (root.TryGetProperty("added", out var addedEl))
+                byte[] bytes;
+                try
                 {
-                    if (addedEl.TryGetProperty("movies", out var m) && m.TryGetInt32(out var mv)) count += mv;
-                    if (addedEl.TryGetProperty("shows", out var s) && s.TryGetInt32(out var sv)) count += sv;
-                    if (addedEl.TryGetProperty("episodes", out var ep) && ep.TryGetInt32(out var epv)) count += epv;
+                    bytes = await ReadBoundedStreamAsync(
+                        response.Content, _options.MaxResponseBytesPerPage, relativePath, timeout.Token).ConfigureAwait(false);
                 }
-                if (count == 0 && root.TryGetProperty("deleted", out var deletedEl))
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
-                    if (deletedEl.TryGetProperty("movies", out var dm) && dm.TryGetInt32(out var dmv)) count += dmv;
-                    if (deletedEl.TryGetProperty("shows", out var ds) && ds.TryGetInt32(out var dsv)) count += dsv;
-                    if (deletedEl.TryGetProperty("episodes", out var dep) && dep.TryGetInt32(out var depv)) count += depv;
+                    return new TraktSyncWriteResult(false, 0, "Trakt response timed out.");
                 }
-                if (count == 0 && root.TryGetProperty("existing", out var existingEl))
+
+                try
                 {
-                    if (existingEl.TryGetProperty("movies", out var em) && em.TryGetInt32(out var emv)) count += emv;
-                    if (existingEl.TryGetProperty("shows", out var es) && es.TryGetInt32(out var esv)) count += esv;
-                    if (existingEl.TryGetProperty("episodes", out var eep) && eep.TryGetInt32(out var eepv)) count += eepv;
+                    using var doc = JsonDocument.Parse(bytes);
+                    var root = doc.RootElement;
+                    int count = 0;
+                    if (root.TryGetProperty("added", out var addedEl))
+                    {
+                        if (addedEl.TryGetProperty("movies", out var m) && m.TryGetInt32(out var mv)) count += mv;
+                        if (addedEl.TryGetProperty("shows", out var s) && s.TryGetInt32(out var sv)) count += sv;
+                        if (addedEl.TryGetProperty("episodes", out var ep) && ep.TryGetInt32(out var epv)) count += epv;
+                    }
+                    if (count == 0 && root.TryGetProperty("deleted", out var deletedEl))
+                    {
+                        if (deletedEl.TryGetProperty("movies", out var dm) && dm.TryGetInt32(out var dmv)) count += dmv;
+                        if (deletedEl.TryGetProperty("shows", out var ds) && ds.TryGetInt32(out var dsv)) count += dsv;
+                        if (deletedEl.TryGetProperty("episodes", out var dep) && dep.TryGetInt32(out var depv)) count += depv;
+                    }
+                    if (count == 0 && root.TryGetProperty("existing", out var existingEl))
+                    {
+                        if (existingEl.TryGetProperty("movies", out var em) && em.TryGetInt32(out var emv)) count += emv;
+                        if (existingEl.TryGetProperty("shows", out var es) && es.TryGetInt32(out var esv)) count += esv;
+                        if (existingEl.TryGetProperty("episodes", out var eep) && eep.TryGetInt32(out var eepv)) count += eepv;
+                    }
+                    return new TraktSyncWriteResult(true, count);
                 }
-                return new TraktSyncWriteResult(true, count);
+                catch (JsonException ex)
+                {
+                    return new TraktSyncWriteResult(false, 0, $"Malformed JSON: {ex.Message}");
+                }
             }
         }
     }

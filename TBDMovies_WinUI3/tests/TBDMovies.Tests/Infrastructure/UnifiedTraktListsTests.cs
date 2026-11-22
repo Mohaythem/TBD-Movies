@@ -705,7 +705,7 @@ public sealed class UnifiedTraktListsTests : IDisposable
         {
             conn.Open();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "INSERT INTO custom_list_pending_actions (list_id, media_kind, tmdb_id, action_type, enqueued_at) VALUES (@list, 'MOVIE', 550, 'ADD', '2026-01-01');";
+            cmd.CommandText = "INSERT INTO custom_list_pending_actions (list_id, media_kind, tmdb_id, action_type, created_at) VALUES (@list, 'MOVIE', 550, 'ADD', '2026-01-01');";
             cmd.Parameters.AddWithValue("@list", listId);
             cmd.ExecuteNonQuery();
         }
