@@ -109,7 +109,7 @@ Before committing changes or proposing a push, verify the following historical C
 ### Step 5: Automated Verification & Strict Test Baseline
 - **Clean Solution Build (`dotnet build`)**: Build must produce exit code `0` with zero warnings and zero errors (`0 Warning(s), 0 Error(s)`).
 - **Test Suite Execution (`dotnet test`)**:
-  - 100% of the active reference baseline (**`1,467` automated tests**) must pass without regression (`Failed: 0, Total == Passed`).
+  - 100% of the active reference baseline (**`1,470` automated tests**) must pass without regression (`Failed: 0, Total == Passed`).
   - Never equate `Passed` to total test count without verifying `Failed: 0`.
 - **Verifiable Log Evidence**: Provide physical terminal command output logs from the Windows runner.
 
