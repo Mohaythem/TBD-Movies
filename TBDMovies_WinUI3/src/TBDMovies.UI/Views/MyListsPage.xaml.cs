@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using TBDMovies.Application.Dto;
 using TBDMovies.Application.Repositories;
+using TBDMovies.Application.Trakt;
 using TBDMovies.Domain.Library.Personal;
 using TBDMovies.UI.Models;
 using TBDMovies.UI.Services;

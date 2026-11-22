@@ -682,7 +682,7 @@ public sealed class UnifiedTraktListsTests : IDisposable
     [Fact]
     public void TraktResourceSpec_FavoriteMoviesAndShows_DoNotRequirePaginationHeaders()
     {
-        Assert.False(TraktResourceSpec.FavoriteMovies.RequiresPaginationHeaders());
-        Assert.False(TraktResourceSpec.FavoriteShows.RequiresPaginationHeaders());
+        Assert.False(TraktResourceSpec.FavoriteMovies().RequiresPaginationHeaders());
+        Assert.False(TraktResourceSpec.FavoriteShows().RequiresPaginationHeaders());
     }
 }
