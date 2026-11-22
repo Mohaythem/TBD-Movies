@@ -895,8 +895,21 @@ public sealed class PlaybackTrackingTests
                 traktAuthService: new FakeTraktAuthService(),
                 traktClientId: "dummy_client_id");
 
-            var target1 = new PlaybackMediaTarget(902, @"C:\m1.mkv", 1000, true, 92, "Movie 1");
-            var target2 = new PlaybackMediaTarget(903, @"C:\m2.mkv", 1000, true, 93, "Movie 2");
+            var target1 = new PlaybackMediaTarget(
+                MediaFileId: 902,
+                FilePath: @"C:\m1.mkv",
+                TotalDurationSeconds: 1000,
+                IsMovie: true,
+                MovieId: 92,
+                MovieTitle: "Movie 1");
+
+            var target2 = new PlaybackMediaTarget(
+                MediaFileId: 903,
+                FilePath: @"C:\m2.mkv",
+                TotalDurationSeconds: 1000,
+                IsMovie: true,
+                MovieId: 93,
+                MovieTitle: "Movie 2");
 
             // Play video 1 in background
             var play1 = service.StartPlaybackAsync(target1, resume: false);
