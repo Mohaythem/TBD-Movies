@@ -173,6 +173,9 @@ public interface IPersonalLibraryRepository
 
     /// <summary>Deletes a pending watchlist action by its primary key.</summary>
     void DeleteTraktPendingWatchlist(int actionId) { }
+
+    /// <summary>Clears all pending offline actions from trakt_pending_watched_actions and trakt_pending_watchlist_actions.</summary>
+    void ClearTraktPendingActions() { }
 }
 
 public interface IWatchHistoryRepository

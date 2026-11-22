@@ -1178,7 +1178,6 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
             : new FlyoutShowOptions();
 
         int count = selectedItems.Count;
-        bool isRtl = LocalizationService.FlowDirection == FlowDirection.RightToLeft;
 
         bool anyNotFav = selectedItems.Any(item =>
         {
@@ -1197,26 +1196,46 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         var favItem = new MenuFlyoutItem
         {
             Text = anyNotFav
-                ? (isRtl ? $"إضافة {count} إلى المفضلة" : $"Add {count} to Favorites")
-                : (isRtl ? $"إزالة {count} من المفضلة" : $"Remove {count} from Favorites"),
+                ? LocalizationService.Format("AddSelectedToFavoritesFormat", count)
+                : LocalizationService.Format("RemoveSelectedFromFavoritesFormat", count),
             Icon = new FontIcon { Glyph = anyNotFav ? "\uEB51" : "\uEB52" }
         };
-        favItem.Click += async (_, _) => await SetSelectedFavoritesAsync(anyNotFav);
+        favItem.Click += async (_, _) =>
+        {
+            try
+            {
+                await SetSelectedFavoritesAsync(anyNotFav);
+            }
+            catch (Exception ex)
+            {
+                ShowHeaderNotification(MetadataErrorText.For(ex), isSuccess: false);
+            }
+        };
         menu.Items.Add(favItem);
 
         var watchlistItem = new MenuFlyoutItem
         {
             Text = anyNotWatchlist
-                ? (isRtl ? $"إضافة {count} إلى قائمة الانتظار" : $"Add {count} to Watchlist")
-                : (isRtl ? $"إزالة {count} من قائمة الانتظار" : $"Remove {count} from Watchlist"),
+                ? LocalizationService.Format("AddSelectedToWatchlistFormat", count)
+                : LocalizationService.Format("RemoveSelectedFromWatchlistFormat", count),
             Icon = new FontIcon { Glyph = "\uE8FD" }
         };
-        watchlistItem.Click += async (_, _) => await SetSelectedWatchlistAsync(anyNotWatchlist);
+        watchlistItem.Click += async (_, _) =>
+        {
+            try
+            {
+                await SetSelectedWatchlistAsync(anyNotWatchlist);
+            }
+            catch (Exception ex)
+            {
+                ShowHeaderNotification(MetadataErrorText.For(ex), isSuccess: false);
+            }
+        };
         menu.Items.Add(watchlistItem);
 
         var addToListSub = new MenuFlyoutSubItem
         {
-            Text = isRtl ? $"إضافة {count} إلى قائمة" : $"Add {count} to List",
+            Text = LocalizationService.Format("AddSelectedToListFormat", count),
             Icon = new FontIcon { Glyph = "\uE710" }
         };
 
@@ -1232,7 +1251,17 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
                         Text = list.Name,
                         Icon = new FontIcon { Glyph = "\uE8B7" }
                     };
-                    listItem.Click += async (_, _) => await AddSelectedToCustomListAsync(list.Id, list.Name);
+                    listItem.Click += async (_, _) =>
+                    {
+                        try
+                        {
+                            await AddSelectedToCustomListAsync(list.Id, list.Name);
+                        }
+                        catch (Exception ex)
+                        {
+                            ShowHeaderNotification(MetadataErrorText.For(ex), isSuccess: false);
+                        }
+                    };
                     addToListSub.Items.Add(listItem);
                 }
                 addToListSub.Items.Add(new MenuFlyoutSeparator());
@@ -1242,10 +1271,20 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
 
         var createNewItem = new MenuFlyoutItem
         {
-            Text = LocalizationService.Text("NewList") ?? (isRtl ? "قائمة جديدة…" : "New list…"),
+            Text = LocalizationService.Text("NewList") ?? "New list…",
             Icon = new FontIcon { Glyph = "\uE710" }
         };
-        createNewItem.Click += async (_, _) => await CreateNewListAndAddSelectedAsync();
+        createNewItem.Click += async (_, _) =>
+        {
+            try
+            {
+                await CreateNewListAndAddSelectedAsync();
+            }
+            catch (Exception ex)
+            {
+                ShowHeaderNotification(MetadataErrorText.For(ex), isSuccess: false);
+            }
+        };
         addToListSub.Items.Add(createNewItem);
 
         menu.Items.Add(addToListSub);
@@ -1253,10 +1292,20 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
 
         var clearItem = new MenuFlyoutItem
         {
-            Text = isRtl ? "إلغاء التحديد" : "Clear selection",
+            Text = LocalizationService.Text("ClearSelection"),
             Icon = new FontIcon { Glyph = "\uE711" }
         };
-        clearItem.Click += (_, _) => ClearSelection();
+        clearItem.Click += (_, _) =>
+        {
+            try
+            {
+                ClearSelection();
+            }
+            catch (Exception ex)
+            {
+                ShowHeaderNotification(MetadataErrorText.For(ex), isSuccess: false);
+            }
+        };
         menu.Items.Add(clearItem);
 
         e.Handled = true;
@@ -1269,7 +1318,6 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         if (selected.Count == 0) return;
 
         int count = selected.Count;
-        bool isRtl = LocalizationService.FlowDirection == FlowDirection.RightToLeft;
 
         await Task.Run(() =>
         {
@@ -1304,8 +1352,8 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         Refresh();
 
         string msg = setFavorite
-            ? (isRtl ? $"تمت إضافة {count} إلى المفضلة" : $"Added {count} items to Favorites")
-            : (isRtl ? $"تمت إزالة {count} من المفضلة" : $"Removed {count} items from Favorites");
+            ? LocalizationService.Format("AddedToFavoritesFormat", count)
+            : LocalizationService.Format("RemovedFromFavoritesFormat", count);
         ShowHeaderNotification(msg, isSuccess: true);
     }
 
@@ -1315,7 +1363,6 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         if (selected.Count == 0) return;
 
         int count = selected.Count;
-        bool isRtl = LocalizationService.FlowDirection == FlowDirection.RightToLeft;
 
         await Task.Run(() =>
         {
@@ -1350,8 +1397,8 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         Refresh();
 
         string msg = setWatchlist
-            ? (isRtl ? $"تمت إضافة {count} إلى قائمة الانتظار" : $"Added {count} items to Watchlist")
-            : (isRtl ? $"تمت إزالة {count} من قائمة الانتظار" : $"Removed {count} items from Watchlist");
+            ? LocalizationService.Format("AddedToWatchlistFormat", count)
+            : LocalizationService.Format("RemovedFromWatchlistFormat", count);
         ShowHeaderNotification(msg, isSuccess: true);
     }
 

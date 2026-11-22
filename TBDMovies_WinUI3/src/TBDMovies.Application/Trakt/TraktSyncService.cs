@@ -279,6 +279,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             // Clear current account connection, but retain explicit last account ID for offline cache browsing.
             _currentAccountId = null;
             UpdateState(auth: _authService.GetAuthState(), isSyncing: false, clearError: true);
+
+            // 5. Clear pending offline actions to prevent cross-account leak
+            _personalLibraryRepository?.ClearTraktPendingActions();
+            SavePendingFavoriteActions(new List<TraktPendingFavoriteAction>());
         }
         finally
         {
@@ -1148,11 +1152,15 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             nextFailureKind);
     }
 
+    private bool HasLinkedTraktAccount(TraktAuthState auth) =>
+        auth.IsConnected || auth.RequiresReconnect || !string.IsNullOrWhiteSpace(_currentAccountId) || !string.IsNullOrWhiteSpace(auth.AccountId);
+
     /// <inheritdoc />
     public async Task<bool> PushMovieWatchedAsync(int tmdbId, DateTimeOffset watchedAt, bool isWatched, CancellationToken ct = default)
     {
         if (tmdbId <= 0) return false;
         var auth = _authService.GetAuthState();
+        if (!HasLinkedTraktAccount(auth)) return false;
         if (!auth.IsConnected || auth.RequiresReconnect)
         {
             _personalLibraryRepository?.EnqueueTraktPendingWatched("MOVIE", tmdbId, null, null, watchedAt, isWatched, _timeProvider.GetUtcNow());
@@ -1202,6 +1210,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
     {
         if (showTmdbId <= 0 || seasonNumber < 0 || episodeNumber <= 0) return false;
         var auth = _authService.GetAuthState();
+        if (!HasLinkedTraktAccount(auth)) return false;
         if (!auth.IsConnected || auth.RequiresReconnect)
         {
             _personalLibraryRepository?.EnqueueTraktPendingWatched("EPISODE", showTmdbId, seasonNumber, episodeNumber, watchedAt, isWatched, _timeProvider.GetUtcNow());
@@ -1258,8 +1267,9 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
     public async Task<bool> PushMovieWatchlistAsync(long tmdbId, bool inWatchlist, CancellationToken ct = default)
     {
         if (tmdbId <= 0) return false;
-        var action = inWatchlist ? "ADD" : "REMOVE";
         var auth = _authService.GetAuthState();
+        if (!HasLinkedTraktAccount(auth)) return false;
+        var action = inWatchlist ? "ADD" : "REMOVE";
         if (!auth.IsConnected || auth.RequiresReconnect)
         {
             _personalLibraryRepository?.EnqueueTraktPendingWatchlist("MOVIE", (int)tmdbId, action, _timeProvider.GetUtcNow());
@@ -1301,8 +1311,9 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
     public async Task<bool> PushShowWatchlistAsync(long tmdbId, bool inWatchlist, CancellationToken ct = default)
     {
         if (tmdbId <= 0) return false;
-        var action = inWatchlist ? "ADD" : "REMOVE";
         var auth = _authService.GetAuthState();
+        if (!HasLinkedTraktAccount(auth)) return false;
+        var action = inWatchlist ? "ADD" : "REMOVE";
         if (!auth.IsConnected || auth.RequiresReconnect)
         {
             _personalLibraryRepository?.EnqueueTraktPendingWatchlist("SHOW", (int)tmdbId, action, _timeProvider.GetUtcNow());
@@ -1896,8 +1907,9 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
     public async Task<bool> PushMovieFavoriteAsync(long tmdbId, bool isFavorite, CancellationToken ct = default)
     {
         if (tmdbId <= 0) return false;
-        var action = isFavorite ? "ADD" : "REMOVE";
         var auth = _authService.GetAuthState();
+        if (!HasLinkedTraktAccount(auth)) return false;
+        var action = isFavorite ? "ADD" : "REMOVE";
         if (!auth.IsConnected || auth.RequiresReconnect)
         {
             EnqueuePendingFavoriteAction("MOVIE", (int)tmdbId, action);
@@ -1939,8 +1951,9 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
     public async Task<bool> PushShowFavoriteAsync(long tmdbId, bool isFavorite, CancellationToken ct = default)
     {
         if (tmdbId <= 0) return false;
-        var action = isFavorite ? "ADD" : "REMOVE";
         var auth = _authService.GetAuthState();
+        if (!HasLinkedTraktAccount(auth)) return false;
+        var action = isFavorite ? "ADD" : "REMOVE";
         if (!auth.IsConnected || auth.RequiresReconnect)
         {
             EnqueuePendingFavoriteAction("SHOW", (int)tmdbId, action);
@@ -2347,7 +2360,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                             try
                             {
                                 var current = _personalLibraryRepository.GetState(cand.LocalId);
-                                if (!current.Watchlisted)
+                                if (!current.IsWatchlisted)
                                 {
                                     _personalLibraryRepository.AddToWatchlist(cand.LocalId, now);
                                 }
@@ -2373,7 +2386,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                             {
                                 try
                                 {
-                                    _personalLibraryRepository.RemoveFromWatchlist(item.Movie.Id);
+                                    _personalLibraryRepository.RemoveFromWatchlist(item.Movie.Id, now);
                                 }
                                 catch (Exception ex)
                                 {

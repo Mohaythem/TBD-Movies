@@ -776,6 +776,16 @@ public static class LocalizationService
         ["CloudItem"] = "Cloud",
         ["BrowseEllipsis"] = "Browse…",
         ["AddSub"] = "+ Sub",
+        ["ClearSelection"] = "Clear selection",
+        ["AddSelectedToFavoritesFormat"] = "Add {0} to Favorites",
+        ["RemoveSelectedFromFavoritesFormat"] = "Remove {0} from Favorites",
+        ["AddSelectedToWatchlistFormat"] = "Add {0} to Watchlist",
+        ["RemoveSelectedFromWatchlistFormat"] = "Remove {0} from Watchlist",
+        ["AddSelectedToListFormat"] = "Add {0} to List",
+        ["AddedToFavoritesFormat"] = "Added {0} items to Favorites",
+        ["RemovedFromFavoritesFormat"] = "Removed {0} items from Favorites",
+        ["AddedToWatchlistFormat"] = "Added {0} items to Watchlist",
+        ["RemovedFromWatchlistFormat"] = "Removed {0} items from Watchlist",
     };
 
     private static readonly IReadOnlyDictionary<string, string> Arabic = new Dictionary<string, string>
@@ -1550,6 +1560,16 @@ public static class LocalizationService
         ["CloudItem"] = "سحابي",
         ["BrowseEllipsis"] = "استعراض…",
         ["AddSub"] = "+ ترجمة",
+        ["ClearSelection"] = "إلغاء التحديد",
+        ["AddSelectedToFavoritesFormat"] = "إضافة {0} إلى المفضلة",
+        ["RemoveSelectedFromFavoritesFormat"] = "إزالة {0} من المفضلة",
+        ["AddSelectedToWatchlistFormat"] = "إضافة {0} إلى قائمة الانتظار",
+        ["RemoveSelectedFromWatchlistFormat"] = "إزالة {0} من قائمة الانتظار",
+        ["AddSelectedToListFormat"] = "إضافة {0} إلى قائمة",
+        ["AddedToFavoritesFormat"] = "تمت إضافة {0} إلى المفضلة",
+        ["RemovedFromFavoritesFormat"] = "تمت إزالة {0} من المفضلة",
+        ["AddedToWatchlistFormat"] = "تمت إضافة {0} إلى قائمة الانتظار",
+        ["RemovedFromWatchlistFormat"] = "تمت إزالة {0} من قائمة الانتظار",
     };
 
     public static UiLanguage CurrentLanguage { get; private set; } = UiLanguage.English;

@@ -565,6 +565,65 @@ public sealed class TraktEcosystemAndWatchedSyncTests
         Assert.Equal(1, authService.ForceRefreshCalls);
     }
 
+    [Fact]
+    public async Task PushMovieWatchedAsync_WhenAccountNotConfigured_DoesNotEnqueueToPendingQueue()
+    {
+        var authService = new TestTraktAuthService(); // NotConfigured by default
+        var dataClient = new TestTraktDataClient();
+        var cacheRepo = new TestTraktCacheRepository();
+        var settingsRepo = new TestSettingsRepository();
+        var personalRepo = new TestPersonalLibraryRepository();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero));
+        var config = TraktDefaults.CreateDefaultConfig();
+
+        using var syncService = new TraktSyncService(
+            authService,
+            dataClient,
+            cacheRepo,
+            config,
+            settingsRepo,
+            timeProvider,
+            snapshotBuilder: null,
+            personalLibraryRepository: personalRepo);
+
+        var watchedAt = new DateTimeOffset(2026, 10, 25, 14, 0, 0, TimeSpan.Zero);
+        var result = await syncService.PushMovieWatchedAsync(550, watchedAt, isWatched: true);
+
+        Assert.False(result);
+        Assert.Empty(personalRepo.EnqueuedWatched);
+    }
+
+    [Fact]
+    public async Task DisconnectAsync_ClearsPendingActionsAndPendingFavorites()
+    {
+        var authService = new TestTraktAuthService();
+        authService.SetConnected("uuid-123", "token");
+        var dataClient = new TestTraktDataClient();
+        var cacheRepo = new TestTraktCacheRepository();
+        var settingsRepo = new TestSettingsRepository();
+        var personalRepo = new TestPersonalLibraryRepository();
+        var timeProvider = new TestTimeProvider(new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero));
+        var config = TraktDefaults.CreateDefaultConfig();
+
+        settingsRepo.Set("trakt_pending_favorite_actions", "[{\"MediaKind\":\"MOVIE\",\"TmdbId\":550,\"Action\":\"ADD\"}]", timeProvider.GetUtcNow());
+
+        using var syncService = new TraktSyncService(
+            authService,
+            dataClient,
+            cacheRepo,
+            config,
+            settingsRepo,
+            timeProvider,
+            snapshotBuilder: null,
+            personalLibraryRepository: personalRepo);
+
+        await syncService.DisconnectAsync();
+
+        Assert.True(personalRepo.ClearTraktPendingActionsCalled);
+        var favoritesJson = settingsRepo.Get("trakt_pending_favorite_actions");
+        Assert.Equal("[]", favoritesJson);
+    }
+
     // --- Helpers and Fakes ---
 
     private sealed class SimpleHttpMessageHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> handler) : HttpMessageHandler
@@ -741,6 +800,14 @@ public sealed class TraktEcosystemAndWatchedSyncTests
         public List<int> CreatedMovies { get; } = new();
         public List<(string MediaKind, int TmdbId, int? Season, int? Episode, DateTimeOffset WatchedAt, bool IsWatched)> EnqueuedWatched { get; } = new();
         public List<(string MediaKind, int TmdbId, string Action)> EnqueuedWatchlist { get; } = new();
+        public bool ClearTraktPendingActionsCalled { get; private set; }
+
+        public void ClearTraktPendingActions()
+        {
+            ClearTraktPendingActionsCalled = true;
+            EnqueuedWatched.Clear();
+            EnqueuedWatchlist.Clear();
+        }
 
         public void EnqueueTraktPendingWatched(string mediaKind, int tmdbId, int? seasonNumber, int? episodeNumber, DateTimeOffset watchedAt, bool isWatched, DateTimeOffset now)
         {

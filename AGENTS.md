@@ -98,11 +98,15 @@ Before committing changes or proposing a push, verify the following historical C
 12. **GitHub PAT Workflow Scope Barrier**: Exclude all `.github/workflows/*.yml` modifications from automated agent commits; agent Personal Access Tokens lack the elevated `workflow` OAuth scope (preventing HTTP 403 push rejections).
 13. **Unpackaged WinUI 3 Payload Target (Build vs. Publish)**: Target the self-contained `dotnet build` output directory (`bin\Release\net10.0-windows10.0.22621\win-x64\`) in packaging scripts (`TBD-Movies.iss`), never `dotnet publish` (preventing missing `TBDMovies.UI.pri` / `*.xbf` resources and silent application exit).
 14. **CsWinRT1032 ABI Collection Marshaling**: Refactor collection expressions (`[...]`) assigning to non-mutable WinRT interfaces (`IReadOnlyList<T>`, `IVectorView<T>`) into concrete arrays (`Array.Empty<T>()`, `new[] { ... }`, `.ToArray()`); never suppress `CsWinRT1032` via `<NoWarn>` (preventing ABI marshaling runtime faults and compiler warnings).
+15. **Domain/Snapshot Property Asymmetry & Sync Queue Account Isolation**:
+    - Distinguish between UI snapshot models (`PersonalMovieSnapshot.Watchlisted`) and underlying domain state entities (`PersonalMovieState.IsWatchlisted`, preventing `CS1061`).
+    - Verify interface method signatures for mandatory temporal parameters (`DateTimeOffset now` on `RemoveFromWatchlist(int movieId, DateTimeOffset now)`, preventing `CS7036`).
+    - Gate third-party offline pending queues behind verified linked account status (`HasLinkedTraktAccount`), and purge queues on explicit session disconnect to prevent cross-account mutation leakage.
 
 ### Step 5: Automated Verification & Strict Test Baseline
 - **Clean Solution Build (`dotnet build`)**: Build must produce exit code `0` with zero warnings and zero errors (`0 Warning(s), 0 Error(s)`).
 - **Test Suite Execution (`dotnet test`)**:
-  - 100% of the active reference baseline (**`1,438` automated tests**) must pass without regression (`Failed: 0, Total == Passed`).
+  - 100% of the active reference baseline (**`1,440` automated tests**) must pass without regression (`Failed: 0, Total == Passed`).
   - Never equate `Passed` to total test count without verifying `Failed: 0`.
 - **Verifiable Log Evidence**: Provide physical terminal command output logs from the Windows runner.
 

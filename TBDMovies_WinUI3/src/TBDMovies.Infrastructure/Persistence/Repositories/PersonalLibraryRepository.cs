@@ -1020,6 +1020,16 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         _tracker?.IncrementPersonal();
     }
 
+    public void ClearTraktPendingActions()
+    {
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM trakt_pending_watched_actions; DELETE FROM trakt_pending_watchlist_actions;";
+        command.ExecuteNonQuery();
+        _tracker?.IncrementPersonal();
+    }
+
     public void SetListLastSynced(int listId, DateTimeOffset syncedAt)
     {
         using var gate = DatabaseWriteGate.Enter(_connectionString);
