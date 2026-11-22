@@ -323,7 +323,7 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
         DiscoveredMedia replacement;
         if (item.Classification == DiscoveryClassification.MovieCandidate)
         {
-            _ = CorrectTvRowsAsync([row], singleFile: true);
+            _ = CorrectTvRowsAsync(new[] { row }, singleFile: true);
             return;
         }
         else
@@ -359,7 +359,7 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
 
             _rows[index].PropertyChanged -= SelectionChanged;
             var candidate = newItem.Classification == DiscoveryClassification.TvEpisodeCandidate
-                ? new TvBatchAnalysisService().Analyze(Path.GetDirectoryName(newItem.Path)!, [newItem]).AllFiles.FirstOrDefault() : null;
+                ? new TvBatchAnalysisService().Analyze(Path.GetDirectoryName(newItem.Path)!, new[] { newItem }).AllFiles.FirstOrDefault() : null;
             var replacement = new DetectedMediaDisplayRecord(newItem, candidate, Path.GetDirectoryName(newItem.Path));
             if (replacement.CanAdd)
             {

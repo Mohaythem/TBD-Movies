@@ -162,17 +162,17 @@ public sealed partial class OperationsLogPage : Page, ILocalizableView, IActivat
         {
             _readError = error;
             System.Diagnostics.Debug.WriteLine($"[OperationsLogPage] Failed to load operation history: {error.Message}");
-            items = [];
+            items = Array.Empty<OperationHistoryItem>();
         }
 
-        _visible = [.. items.Where(item => _statusFilter switch
+        _visible = items.Where(item => _statusFilter switch
         {
             "success" => IsSuccess(item),
             "attention" => !IsSuccess(item),
             _ => true,
-        })];
+        }).ToArray();
 
-        return [.. _visible.Select(ToRecord)];
+        return _visible.Select(ToRecord).ToArray();
     }
 
     /// <summary>Only a fully committed operation is final success.</summary>

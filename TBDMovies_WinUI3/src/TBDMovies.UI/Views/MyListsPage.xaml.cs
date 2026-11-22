@@ -415,11 +415,8 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             return all;
         }
 
-        return
-        [
-            .. all.Where(item =>
-                MediaTitleSearch.Matches(item.Title, item.CanonicalTitle, item.Year, _query)),
-        ];
+        return all.Where(item =>
+            MediaTitleSearch.Matches(item.Title, item.CanonicalTitle, item.Year, _query)).ToArray();
     }
 
     private string FormatCount(int count) => count == 1
@@ -488,15 +485,15 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
     private IReadOnlyList<HomeActivityCard> BuildContinueItems()
     {
         if (_continueItems is not null) return _continueItems;
-        try { return _continueItems = [.. AppServices.ViewingActivity.ListActive(int.MaxValue).Select(item => new HomeActivityCard(item))]; }
-        catch (Exception error) { _activityReadError = error; return []; }
+        try { return _continueItems = AppServices.ViewingActivity.ListActive(int.MaxValue).Select(item => new HomeActivityCard(item)).ToArray(); }
+        catch (Exception error) { _activityReadError = error; return Array.Empty<HomeActivityCard>(); }
     }
 
     private IReadOnlyList<WatchHistoryCardRecord> BuildHistoryItems()
     {
         if (_historyItems is not null) return _historyItems;
-        try { return _historyItems = [.. AppServices.ViewingActivity.ListRecentCompleted(int.MaxValue).Select(ToHistoryCard)]; }
-        catch (Exception error) { _activityReadError = error; return []; }
+        try { return _historyItems = AppServices.ViewingActivity.ListRecentCompleted(int.MaxValue).Select(ToHistoryCard).ToArray(); }
+        catch (Exception error) { _activityReadError = error; return Array.Empty<WatchHistoryCardRecord>(); }
     }
 
     private IEnumerable<object> FilterActivity<T>(IReadOnlyList<T> source) where T : class
@@ -519,7 +516,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             : item.Year is int year ? LocalizationService.Digits(year.ToString(CultureInfo.InvariantCulture)) : string.Empty,
         LocalizationService.Digits(item.WatchedAt.ToLocalTime().ToString("d", LocalizationService.Culture)), item.IsAvailable,
         item.IsAvailable ? string.Empty : LocalizationService.Text("Unavailable"),
-        [item.PosterReference, item.ArtworkReference, item.BackdropReference]);
+        new[] { item.PosterReference, item.ArtworkReference, item.BackdropReference });
 
     private void ActivityGrid_ItemClick(object sender, ItemClickEventArgs e)
     {
@@ -606,32 +603,30 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                     "watch-later" => PersonalLibrarySection.Watchlist,
                     _ => (PersonalLibrarySection?)null,
                 };
-                if (section is null) return [];
-                return
-                [
-                    .. AppServices.Personal.ListPersonalMovies(section.Value)
-                        .Select(LibraryProjection.ToCard)
-                        .Select(movie => new ListMediaItem(
-                            movie,
-                            true,
-                            movie.HasLocalFile,
-                            LocalizationService.Text(movie.HasLocalFile ? "Local" : "Unavailable"))),
-                    .. AppServices.ShowPersonal.ListShows(section.Value)
-                        .Select(TvProjection.ToCard)
-                        .Select(show => new ListMediaItem(
-                            show,
-                            true,
-                            show.LocalEpisodeCount > 0,
-                            LocalizationService.Text(show.LocalEpisodeCount > 0 ? "Local" : "Unavailable"))),
-                ];
+                if (section is null) return Array.Empty<ListMediaItem>();
+                var movies = AppServices.Personal.ListPersonalMovies(section.Value)
+                    .Select(LibraryProjection.ToCard)
+                    .Select(movie => new ListMediaItem(
+                        movie,
+                        true,
+                        movie.HasLocalFile,
+                        LocalizationService.Text(movie.HasLocalFile ? "Local" : "Unavailable")));
+                var shows = AppServices.ShowPersonal.ListShows(section.Value)
+                    .Select(TvProjection.ToCard)
+                    .Select(show => new ListMediaItem(
+                        show,
+                        true,
+                        show.LocalEpisodeCount > 0,
+                        LocalizationService.Text(show.LocalEpisodeCount > 0 ? "Local" : "Unavailable")));
+                return movies.Concat(shows).ToArray();
             }
 
             if (ParseCustomKey(definition.Key) is int id)
             {
-                return [.. AppServices.Personal.ListCustomListItems(id).Select(ToListItem)];
+                return AppServices.Personal.ListCustomListItems(id).Select(ToListItem).ToArray();
             }
 
-            return [];
+            return Array.Empty<ListMediaItem>();
         }
         catch (Exception)
         {
@@ -1219,7 +1214,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 }
             }
 
-            _sectionItems = [.. _sectionItems, .. addedItems];
+            _sectionItems = _sectionItems.Concat(addedItems).ToArray();
             foreach (var card in addedItems)
             {
                 bool matchesQuery = string.IsNullOrEmpty(_query) ||

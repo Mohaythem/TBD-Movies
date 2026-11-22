@@ -505,7 +505,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         {
             movies = LoadMovies();
         }
-        return [.. movies.Where(m => m.HasLocalFile)];
+        return movies.Where(m => m.HasLocalFile).ToArray();
     }
 
     private IReadOnlyList<TVShowRecord> GetShowsForRandomPicker()
@@ -515,15 +515,15 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         {
             try
             {
-                shows = [.. AppServices.Tv.ListShows().Select(TvProjection.ToCard)];
+                shows = AppServices.Tv.ListShows().Select(TvProjection.ToCard).ToArray();
                 _shows = shows;
             }
             catch
             {
-                shows = [];
+                shows = Array.Empty<TVShowRecord>();
             }
         }
-        return [.. shows.Where(s => s.LocalEpisodeCount > 0)];
+        return shows.Where(s => s.LocalEpisodeCount > 0).ToArray();
     }
 
     private void PickRandomMovie(IReadOnlyList<MovieRecord> movies)

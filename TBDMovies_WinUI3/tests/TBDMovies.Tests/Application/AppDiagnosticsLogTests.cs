@@ -79,6 +79,20 @@ public sealed class AppDiagnosticsLogTests : IDisposable
     }
 
     [Fact]
+    public void Record_StripsNewlinesFromCategory_PreventingLogInjection()
+    {
+        AppDiagnosticsLog.Record("Forged\r\n[CRITICAL] FakeEntry", "Actual message", _testRoot);
+
+        var logPath = Path.Combine(_testRoot, "logs", "ui_crash.log");
+        Assert.True(File.Exists(logPath));
+
+        var content = File.ReadAllText(logPath);
+        var lines = content.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+        Assert.Single(lines);
+        Assert.Contains("[Forged  [CRITICAL] FakeEntry]", lines[0]);
+    }
+
+    [Fact]
     public void RecordError_LogsCategoryAndExceptionTypeWithoutThrowing()
     {
         var ex = new TimeoutException("Network timed out");

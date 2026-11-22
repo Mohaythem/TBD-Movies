@@ -1643,13 +1643,9 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         var allEpisodeIds = show.Seasons.SelectMany(s => s.Episodes).Select(e => e.Id).ToList();
         var progressMap = AppServices.PlaybackProgress.GetForEpisodes(allEpisodeIds);
 
-        return
-        [
-            // Requirement 3: Ensure Season 0 ("Specials") is ONLY shown if season.LocalCount > 0.
-            // If season.LocalCount == 0, exclude it completely! Do NOT show it even if MissingCount > 0.
-            .. show.Seasons
-                .Where(season => season.Number != 0 || season.LocalCount > 0)
-                .Select(season => new SeasonDisplayRecord(
+        return show.Seasons
+            .Where(season => season.Number != 0 || season.LocalCount > 0)
+            .Select(season => new SeasonDisplayRecord(
                 show.Id,
                 season.Number,
                 ShowFormatting.SeasonArtLabel(season.Number),
@@ -1657,30 +1653,27 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
                 SeasonMeta(season),
                 season.Episodes.Count == 0 ? 0 : 100.0 * season.LocalCount / season.Episodes.Count,
                 isExpanded: false,
-                [
-                    .. season.Episodes.Select(episode => new EpisodeDisplayRecord(
-                        show.Id,
-                        season.Number,
-                        episode.Number,
-                        episode.Id,
-                        ShowFormatting.EpisodeThumbnailLabel(episode.Number),
-                        episode.Title,
-                        EpisodeMeta(season.Number, episode),
-                        episode.Watched,
-                        episode.HasLocalFile,
-                        episode.IsFileMissing,
-                        labels,
-                        StorageUnavailable: episode.HasLocalFile
-                            && episode.FilePath is { Length: > 0 } path
-                            && unavailablePaths?.Contains(path) == true,
-                        stillReference: episode.StillReference,
-                        overview: episode.Overview,
-                        airDate: episode.AirDate,
-                        fallbackArtReferences: [show.BackdropReference, show.PosterReference],
-                        filePath: episode.FilePath,
-                        playbackProgress: progressMap.GetValueOrDefault(episode.Id))),
-                ])),
-        ];
+                season.Episodes.Select(episode => new EpisodeDisplayRecord(
+                    show.Id,
+                    season.Number,
+                    episode.Number,
+                    episode.Id,
+                    ShowFormatting.EpisodeThumbnailLabel(episode.Number),
+                    episode.Title,
+                    EpisodeMeta(season.Number, episode),
+                    episode.Watched,
+                    episode.HasLocalFile,
+                    episode.IsFileMissing,
+                    labels,
+                    StorageUnavailable: episode.HasLocalFile
+                        && episode.FilePath is { Length: > 0 } path
+                        && unavailablePaths?.Contains(path) == true,
+                    stillReference: episode.StillReference,
+                    overview: episode.Overview,
+                    airDate: episode.AirDate,
+                    fallbackArtReferences: new[] { show.BackdropReference, show.PosterReference },
+                    filePath: episode.FilePath,
+                    playbackProgress: progressMap.GetValueOrDefault(episode.Id))).ToArray())).ToArray();
     }
 
     /// <summary>The season line names the missing files only when there are some.</summary>

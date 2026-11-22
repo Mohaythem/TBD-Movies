@@ -52,7 +52,7 @@ public static partial class SecurityDiagnostics
 
     public static void Record(string category, string message, string? dataFolder = null)
     {
-        var safeCategory = string.IsNullOrWhiteSpace(category) ? "General" : category.Trim();
+        var safeCategory = string.IsNullOrWhiteSpace(category) ? "General" : category.Trim().Replace('\r', ' ').Replace('\n', ' ');
         var safeMessage = Redact(message).Replace('\r', ' ').Replace('\n', ' ');
         var line = $"{DateTimeOffset.UtcNow:O} [{safeCategory}] {safeMessage}{Environment.NewLine}";
 

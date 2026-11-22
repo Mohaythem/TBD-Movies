@@ -127,7 +127,7 @@ internal static class AppSettingsStore
         }
 
         // One-time in-memory import of the legacy movie/show folder settings; persisted on first mutation.
-        return Normalize([Read(MovieFolderKey), Read(ShowFolderKey)]);
+        return Normalize(new[] { Read(MovieFolderKey), Read(ShowFolderKey) });
     }
 
     private static List<string> LoadFoldersOrThrow()
@@ -138,7 +138,7 @@ internal static class AppSettingsStore
             return Normalize(raw.Split('\n'));
         }
 
-        return Normalize([ReadOrThrow(MovieFolderKey), ReadOrThrow(ShowFolderKey)]);
+        return Normalize(new[] { ReadOrThrow(MovieFolderKey), ReadOrThrow(ShowFolderKey) });
     }
 
     private static List<string> Normalize(IEnumerable<string?> paths) =>

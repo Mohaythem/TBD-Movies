@@ -4,9 +4,9 @@
 **Current Version**: `v0.12.5` (`TBD-Movies.exe` / `TBDMoviesSetup.exe`)  
 **Current Branch**: `codex` (Up to date and verified on GitHub Actions CI — **100% Green**)  
 **Tech Stack**: WinUI 3 / **C# 14** / .NET 10 (`net10.0-windows10.0.22621`) / Windows App SDK `1.7.260224002` / SQLite WAL (`library.db` — **`DatabaseMigrator.LatestVersion = 23`**) / Unpackaged mode (`win-x64`).  
-**Windows Release Baseline**: Clean `Release` build (`0 Warning(s), 0 Error(s)`).  
-**Automated Test Baseline**: **`1,435 / 1,435`** test cases (100% pass without regression: `Failed: 0, Passed: 1,435, Skipped: 0`; all CI runs green).  
-**Overall Development State**: **All 7 Remediation Waves Fully Closed & Verified**. All security vectors (`SEC-01..SEC-26`), codebase findings (`C-01..C-17`), engine optimizations (`ENG-NEW-01..07`), dead packages (`S-DEAD`), and architectural invariants are completely remediated, audited by Goldfish Pro subagents, and verified on GitHub Actions CI runners.
+**Windows Release Baseline**: Clean `Release` build (`0 Warning(s), 0 Error(s)` verified on Windows runner).  
+**Automated Test Baseline**: **`1,438 / 1,438`** test cases (100% pass without regression: `Failed: 0, Passed: 1,438, Skipped: 0`; all CI runs green).  
+**Overall Development State**: **All 7 Remediation Waves & Pre-Release Polish Pass Closed & Verified**. All security vectors (`SEC-01..SEC-26`), codebase findings (`C-01..C-17`), engine optimizations (`ENG-NEW-01..07`), dead packages (`S-DEAD`), `DiskPosterCache` LRU sorting, and `CsWinRT1032` concrete collection refactoring are completely remediated, audited by Goldfish Pro subagents, and verified on GitHub Actions CI runners.
 
 ---
 
@@ -70,7 +70,8 @@ Before taking any action, review and strictly adhere to the following root repos
   - Wave 7 (Batch 7.1): `1,418 / 1,418` tests passing.
   - Wave 7 (Batch 7.2): `1,421 / 1,421` tests passing.
   - Wave 6 (Batch 6.2): `1,429 / 1,429` tests passing.
-  - Wave 6 (Batch 6.1): **`1,435 / 1,435`** tests passing (100% green on CI Run `44962428501`).
+  - Wave 6 (Batch 6.1): `1,435 / 1,435` tests passing.
+  - Pre-Release Polish Pass: **`1,438 / 1,438`** tests passing (LRU sorting fix, CRLF diagnostics sanitization, `CsWinRT1032` zero-warnings refactoring).
 
 • **Standard Verification Command (Windows PowerShell)**:
 ```powershell

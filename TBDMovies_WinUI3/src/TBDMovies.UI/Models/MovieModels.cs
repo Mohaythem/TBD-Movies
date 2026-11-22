@@ -229,7 +229,7 @@ public sealed record MovieRecord(
         : Visibility.Collapsed;
 
     private ArtworkLoader HorizontalArtwork => _horizontalArtwork ??= new ArtworkLoader(
-        [BackdropReference],
+        new[] { BackdropReference },
         () =>
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HorizontalArtworkSource)));

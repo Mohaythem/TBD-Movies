@@ -166,11 +166,11 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     {
         try
         {
-            return [.. AppServices.Library.ListMovies().Select(LibraryProjection.ToCard)];
+            return AppServices.Library.ListMovies().Select(LibraryProjection.ToCard).ToArray();
         }
         catch (Exception)
         {
-            return [];
+            return Array.Empty<MovieRecord>();
         }
     }
 
@@ -179,11 +179,11 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     {
         try
         {
-            return [.. AppServices.Tv.ListShows().Select(TvProjection.ToCard)];
+            return AppServices.Tv.ListShows().Select(TvProjection.ToCard).ToArray();
         }
         catch (Exception)
         {
-            return [];
+            return Array.Empty<TVShowRecord>();
         }
     }
 
@@ -232,7 +232,7 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
                 catch { }
             }
 
-            return [.. items.Select(item =>
+            return items.Select(item =>
             {
                 PlaybackProgress? progress = null;
                 if (item.EpisodeId is int epId && epProgress.TryGetValue(epId, out var epProg))
@@ -245,9 +245,9 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
                 }
 
                 return new HomeActivityCard(item, progress);
-            })];
+            }).ToArray();
         }
-        catch { return []; }
+        catch { return Array.Empty<HomeActivityCard>(); }
     }
 
     public static string HistoryTypeLabel(WatchEventMediaKind mediaKind) =>
@@ -258,7 +258,7 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     public static string HistoryAutomationId(int eventId) => $"HomeHistoryCard_{eventId}";
 
     private IReadOnlyList<WatchHistoryCardRecord> BuildHistoryCards() =>
-        [.. _history.Select(item => new WatchHistoryCardRecord(
+        _history.Select(item => new WatchHistoryCardRecord(
             item.Id,
             item.MediaKind,
             item.MovieId,
@@ -268,11 +268,11 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
             LocalizationService.Digits(item.WatchedAt.ToLocalTime().ToString("d", LocalizationService.Culture)),
             item.IsAvailable,
             item.IsAvailable ? string.Empty : LocalizationService.Text("Unavailable"),
-            HistoryArtwork(item)))];
+            HistoryArtwork(item))).ToArray();
 
     // Completed-viewing cards use the same landscape artwork priority as Continue Watching.
     private static IEnumerable<string?> HistoryArtwork(WatchHistoryItem item) =>
-        [item.BackdropReference, item.ArtworkReference, item.PosterReference];
+        new[] { item.BackdropReference, item.ArtworkReference, item.PosterReference };
 
     public static string HistoryMetaLine(string watchedAt, WatchEventMediaKind mediaKind) =>
         $"{watchedAt} · {HistoryTypeLabel(mediaKind)}";
@@ -461,14 +461,14 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
             ? new(LocalizationService.Text("StatWatchedThisMonth"), Count(watchedThisMonth), "\uE787")
             : new(LocalizationService.Text("StatCompletionRate"), LocalizationService.Digits($"{LocalizationService.Number(completionPercent)}%"), "\uE73E");
 
-        return
-        [
+        return new StatCardRecord[]
+        {
             new(LocalizationService.Text("StatMovies"), Count(_movies.Count), "\uE8B2"),
             new(LocalizationService.Text("StatShows"), Count(_shows.Count), "\uE7F4"),
             new(LocalizationService.Text("StatEpisodesOnDisk"), Count(onDisk), "\uEDA2"),
             new(LocalizationService.Text("StatWatchTime"), watchTimeText, "\uE823"),
             fifthStat,
-        ];
+        };
     }
 
     private static int ParseRuntimeMinutes(string? runtime, int defaultMinutes)

@@ -854,6 +854,51 @@ public class TmdbClientAndPosterCacheTests : IDisposable
         Assert.True(File.Exists(file3));
     }
 
+    [Fact]
+    public void DiskPosterCache_PruneToSize_EvictsLeastRecentlyAccessedFilesFirst_EvenIfWrittenEarlier()
+    {
+        var handler = new MockHttpMessageHandler();
+        using var cache = new DiskPosterCache(_testCacheDir, new HttpClient(handler));
+
+        var oldWriteRecentlyAccessed = Path.Combine(_testCacheDir, "recent_access.jpg");
+        var newerWriteNeverAccessed = Path.Combine(_testCacheDir, "never_accessed.jpg");
+
+        // File 1: written 60m ago, but accessed 2m ago (active!)
+        File.WriteAllBytes(oldWriteRecentlyAccessed, new byte[1000]);
+        File.SetLastWriteTimeUtc(oldWriteRecentlyAccessed, DateTime.UtcNow.AddMinutes(-60));
+        File.SetLastAccessTimeUtc(oldWriteRecentlyAccessed, DateTime.UtcNow.AddMinutes(-2));
+
+        // File 2: written 20m ago, accessed 20m ago (stale!)
+        File.WriteAllBytes(newerWriteNeverAccessed, new byte[1000]);
+        File.SetLastWriteTimeUtc(newerWriteNeverAccessed, DateTime.UtcNow.AddMinutes(-20));
+        File.SetLastAccessTimeUtc(newerWriteNeverAccessed, DateTime.UtcNow.AddMinutes(-20));
+
+        // Total = 2000 bytes. Max = 1200 bytes (90% = 1080 bytes).
+        // Removing stale file (1000) leaves 1000 bytes (<= 1080 bytes watermark), so loop terminates.
+        var pruned = cache.PruneToSize(1200);
+        Assert.Equal(1, pruned);
+        Assert.False(File.Exists(newerWriteNeverAccessed), "Stale file must be evicted");
+        Assert.True(File.Exists(oldWriteRecentlyAccessed), "Recently accessed file must be preserved");
+    }
+
+    [Fact]
+    public void DiskPosterCache_GetCacheSizeBytes_CalculatesSizeAccurately()
+    {
+        var handler = new MockHttpMessageHandler();
+        using var cache = new DiskPosterCache(_testCacheDir, new HttpClient(handler));
+
+        var file1 = Path.Combine(_testCacheDir, "posterA.jpg");
+        var file2 = Path.Combine(_testCacheDir, "posterB.jpg");
+        var dotFile = Path.Combine(_testCacheDir, ".ignored.tmp");
+
+        File.WriteAllBytes(file1, new byte[1234]);
+        File.WriteAllBytes(file2, new byte[2345]);
+        File.WriteAllBytes(dotFile, new byte[9999]); // ignored
+
+        var size = cache.GetCacheSizeBytes();
+        Assert.Equal(1234 + 2345, size);
+    }
+
     private static byte[] CreateValidJpegBytes()
     {
         var bytes = new byte[150];

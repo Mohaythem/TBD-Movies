@@ -50,12 +50,10 @@ internal static class TvProjection
         details.Year ?? 0,
         details.Genres,
         details.Overview ?? string.Empty,
-        [
-            .. details.Seasons.Select(season => new SeasonRecord(
-                season.Id,
-                season.Number,
-                [.. season.Episodes.Select(episode => ToEpisode(season.Number, episode))])),
-        ],
+        details.Seasons.Select(season => new SeasonRecord(
+            season.Id,
+            season.Number,
+            season.Episodes.Select(episode => ToEpisode(season.Number, episode)).ToArray())).ToArray(),
         PosterReference: details.PosterReference,
         ExternalId: details.ExternalId,
         MetadataStatus: details.MetadataStatus,

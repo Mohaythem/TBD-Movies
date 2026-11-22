@@ -1,7 +1,7 @@
 # TBD Movies — Active Progress & Status Checkpoint
 
 ## Current Goal
-- **Active Track / Current Priority**: Wave 6 Complete (Batches 6.2 and 6.1 Complete & Approved by Goldfish Pro; all 7 remediation waves fully closed!).
+- **Active Track / Current Priority**: Pre-Release Polish Pass & LRU Cache Fix Complete (Zero Warnings, 100% Green CI, Ready for Release Tagging).
 - **Batches Approved & Closed**: 
   - Wave 1 (Batches 1.1, 1.2, 1.3): `SEC-19`, `C-06`, `SEC-20`, `C-03`, `SEC-01..05`, `SEC-14..15`, `SEC-21..22`, `C-13`, `[L6]` (`1,295` tests).
   - Wave 2 (Batches 2.1, 2.2, 2.3): `C-01`, `[P3]`, `C-04`, `[U8]`, `C-05` (`1,295` tests).
@@ -14,10 +14,27 @@
   - Wave 7 (Batch 7.1): `S-DEAD`, `S-ARCH`, Decision 3 UndoOperation & RestoreFromBackup wiring (`1,418` tests).
   - Wave 7 (Batch 7.2): `C-17`, `[L8]`, QaSeed Schema v23 Parity, AppMutex, and Inno Setup Hardening (`1,421` tests).
   - Wave 6 (Batch 6.2): `C-14..16`, `SEC-12..13`, Comprehensive Localization Parity, LRU Poster Cache & Persistence Hardening (`1,429` tests).
-  - Wave 6 (Batch 6.1): `SEC-17..18`, `SEC-24..25`, UI Crash Relocation, AppDiagnosticsLog, UI Error Sanitization & Startup Telemetry (`1,434+` tests).
-- **Baseline Test Suite**: **`1,429 / 1,429`** tests passing in Release + 5 new automated tests in Batch 6.1.
+  - Wave 6 (Batch 6.1): `SEC-17..18`, `SEC-24..25`, UI Crash Relocation, AppDiagnosticsLog, UI Error Sanitization & Startup Telemetry (`1,435` tests).
+  - Polish Pass: LRU Sorting Logic Fix, Reparse Guards, `CsWinRT1032` Concrete Collection Refactoring & GitHub Actions v7/v6 Upgrade (`1,438+` tests).
+- **Baseline Test Suite**: **`1,435 / 1,435`** tests passing in Release + 3 new automated tests in Polish Pass.
 
 ## Completed Work
+58. **LRU Cache Fix, Reparse & Log Hardening, and Pre-Release Polish Pass [CsWinRT1032 Zero-Warnings & CI Modernization]**:
+    - **DiskPosterCache LRU Logic & Reparse Hardening**:
+        - Corrected LRU ternary sorting in `PruneToSize` from `<` to `>` (`Math.Max(LastAccessTimeUtc, LastWriteTimeUtc)`), preserving active recently accessed posters and correctly evicting stale untouched files.
+        - Hardened `GetCacheSizeBytes` with `IsReparsePoint` check on the directory and ignored reparse point files.
+        - Protected synchronous `LoadPoster` fallback from UI thread `SynchronizationContext` deadlocks by offloading to `Task.Run`.
+    - **Diagnostics CRLF Log Injection Defense**:
+        - Sanitized `safeCategory` in `AppDiagnosticsLog.cs` and `SecurityDiagnostics.cs` with `.Replace('\r', ' ').Replace('\n', ' ')`.
+    - **CsWinRT1032 Zero-Warnings Refactoring**:
+        - Refactored all 33 collection expressions targeting non-mutable WinRT interfaces across 12 files to concrete arrays (`Array.Empty<T>()`, `new[] { ... }`, `.ToArray()`), establishing zero compiler and analyzer warnings.
+    - **Dead Localization Key Purge**:
+        - Removed 8 dead TraktPage UI keys (`NavTrakt`, `TraktPageTitle`, etc.) with 100% 1-to-1 parity maintained.
+    - **CI Workflow Modernization**:
+        - Upgraded `.github/workflows/test.yml` to `actions/checkout@v7`, `actions/setup-dotnet@v6`, and `actions/upload-artifact@v7`.
+    - **Automated Verification**:
+        - Added `DiskPosterCache_PruneToSize_EvictsLeastRecentlyAccessedFilesFirst_EvenIfWrittenEarlier` and `DiskPosterCache_GetCacheSizeBytes_CalculatesSizeAccurately` in `TmdbClientAndPosterCacheTests.cs`.
+        - Added `Record_StripsNewlinesFromCategory_PreventingLogInjection` in `AppDiagnosticsLogTests.cs`.
 57. **Crash Log Relocation, Error Sanitization & Startup Diagnostics [Wave 6, Batch 6.1 — SEC-17..18, SEC-24..25]**:
     - **Crash Log Relocation & Multi-Line Diagnostics (`SEC-24`)**:
         - Created `AppDiagnosticsLog.cs` in `TBDMovies.Application.Diagnostics` relocating crash logs from `%TEMP%` to `%LOCALAPPDATA%\TBD Movies\logs\ui_crash.log`.

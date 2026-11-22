@@ -42,7 +42,7 @@ public static class AppDiagnosticsLog
 
     public static void Record(string category, string message, string? dataFolder = null)
     {
-        var safeCategory = string.IsNullOrWhiteSpace(category) ? "UI" : category.Trim();
+        var safeCategory = string.IsNullOrWhiteSpace(category) ? "UI" : category.Trim().Replace('\r', ' ').Replace('\n', ' ');
         var safeMessage = SecurityDiagnostics.Redact(message).Replace('\r', ' ').Replace('\n', ' ');
         var line = $"{DateTimeOffset.UtcNow:O} [{safeCategory}] {safeMessage}{Environment.NewLine}";
 

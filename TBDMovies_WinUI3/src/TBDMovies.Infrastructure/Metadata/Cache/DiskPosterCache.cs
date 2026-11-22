@@ -288,7 +288,7 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
 
         try
         {
-            var localPath = EnsurePosterCachedAsync(request.Provider, request.Reference).ConfigureAwait(false).GetAwaiter().GetResult();
+            var localPath = Task.Run(() => EnsurePosterCachedAsync(request.Provider, request.Reference)).ConfigureAwait(false).GetAwaiter().GetResult();
             if (localPath != null && File.Exists(localPath) && IsValidImage(localPath, out var mimeType))
             {
                 var bytes = File.ReadAllBytes(localPath);
@@ -313,8 +313,13 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
             }
 
             var dir = new DirectoryInfo(_cacheDirectory);
+            if (IsReparsePoint(dir))
+            {
+                return 0;
+            }
+
             return dir.EnumerateFiles("*", SearchOption.TopDirectoryOnly)
-                .Where(f => !f.Name.StartsWith('.'))
+                .Where(f => !f.Name.StartsWith('.') && !IsReparsePoint(f))
                 .Sum(f => f.Length);
         }
         catch
@@ -341,7 +346,7 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
 
             var targetBytes = (long)(maxBytes * 0.90);
             var sortedFiles = files
-                .OrderBy(f => f.LastAccessTimeUtc < f.LastWriteTimeUtc ? f.LastAccessTimeUtc : f.LastWriteTimeUtc)
+                .OrderBy(f => f.LastAccessTimeUtc > f.LastWriteTimeUtc ? f.LastAccessTimeUtc : f.LastWriteTimeUtc)
                 .ToList();
 
             var prunedCount = 0;

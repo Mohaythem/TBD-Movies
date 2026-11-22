@@ -48,13 +48,13 @@ public sealed class HomeActivityCard : INotifyPropertyChanged
         }
 
         _artwork = new ArtworkLoader(
-            [item.BackdropReference, item.ArtworkReference != item.PosterReference ? item.ArtworkReference : null],
+            new[] { item.BackdropReference, item.ArtworkReference != item.PosterReference ? item.ArtworkReference : null },
             () =>
             {
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ArtworkSource)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PosterVisibility)));
             });
-        _poster = new ArtworkLoader([item.PosterReference],
+        _poster = new ArtworkLoader(new[] { item.PosterReference },
             () => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PosterSource))));
     }
 

@@ -112,13 +112,11 @@ internal static class LibraryProjection
     /// through here, so the label cannot disagree between them.
     /// </summary>
     public static IReadOnlyList<WatchHistoryRecord> ToWatchHistory(IReadOnlyList<WatchEvent> events) =>
-    [
-        .. events.Select((watch, index) => new WatchHistoryRecord(
+        events.Select((watch, index) => new WatchHistoryRecord(
             LocalizationService.Digits(
                 watch.WatchedAt.ToLocalTime().ToString("MMM d, yyyy", LocalizationService.Culture)),
             LocalizationService.Text(watch.Rewatch || index < events.Count - 1 ? "Rewatch" : "FirstWatch"),
-            watch.Id)),
-    ];
+            watch.Id)).ToArray();
 
     /// <summary>"1080p · x264 · 4.2 GB" - only the facts the record actually carries.</summary>
     private static string FileFacts(MediaFile file)

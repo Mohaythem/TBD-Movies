@@ -777,7 +777,7 @@ internal static class AppServices
             catch (Exception ex)
             {
                 TBDMovies.Application.Diagnostics.SecurityDiagnostics.Record("RecoverInterruptedOperations", ex, DataFolder);
-                approvedRoots = string.IsNullOrWhiteSpace(DataFolder) ? [] : [Path.Combine(DataFolder, "staging")];
+                approvedRoots = string.IsNullOrWhiteSpace(DataFolder) ? Array.Empty<string>() : new[] { Path.Combine(DataFolder, "staging") };
             }
 
             foreach (var op in nonterminal)
@@ -1127,10 +1127,10 @@ internal sealed class UnconfiguredMetadataProvider : IMetadataProvider
     public Task<ConnectionTestResult> TestConnectionAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(new ConnectionTestResult(false, "TMDB read token is not configured.", 401));
 
-    public IReadOnlyList<MovieCandidate> Search(MovieSearchQuery query) => [];
+    public IReadOnlyList<MovieCandidate> Search(MovieSearchQuery query) => Array.Empty<MovieCandidate>();
 
     public Task<IReadOnlyList<MovieCandidate>> SearchMoviesAsync(MovieSearchQuery query, CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<MovieCandidate>>([]);
+        Task.FromResult<IReadOnlyList<MovieCandidate>>(Array.Empty<MovieCandidate>());
 
     public MovieMetadata? GetMovie(string externalId) => null;
 
@@ -1138,7 +1138,7 @@ internal sealed class UnconfiguredMetadataProvider : IMetadataProvider
         Task.FromResult<MovieMetadata?>(null);
 
     public Task<IReadOnlyList<TvCandidate>> SearchTvAsync(TvSearchQuery query, CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<TvCandidate>>([]);
+        Task.FromResult<IReadOnlyList<TvCandidate>>(Array.Empty<TvCandidate>());
 
     public Task<TvShowMetadata?> GetTvShowAsync(string externalId, CancellationToken cancellationToken = default) =>
         Task.FromResult<TvShowMetadata?>(null);

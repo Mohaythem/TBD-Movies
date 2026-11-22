@@ -219,7 +219,7 @@ public sealed record ShowCardItem(TVShowRecord Show, string SecondaryLine) : INo
         : Visibility.Collapsed;
 
     private ArtworkLoader HorizontalArtwork => _horizontalArtwork ??= new ArtworkLoader(
-        [Show.BackdropReference],
+        new[] { Show.BackdropReference },
         () =>
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HorizontalArtworkSource)));
