@@ -65,6 +65,7 @@ Each remediation batch traverses the following five formal states in strict sequ
 | **Wave 6** | **`6.2`** | Remove duplicate localization keys, complete localization coverage, harden `DatabaseMigrator` and `DiskPosterCache` (`C-14..16`, `SEC-12..13`) | `LocalizationService.cs`, `DatabaseMigrator.cs`, `DatabaseSafetyBackup.cs`, `DiskPosterCache.cs` | `Closed` | `d330390` | `PASS` (CI Run `44961158527` · 1,429 tests) |
 | **Wave 7** | **`7.1`** | Prune dead packages and files, wire `UndoOperation` and `RestoreFromBackup` buttons, extract shared UI helpers (`S-DEAD`, `S-ARCH`, Decision 3) | `TBDMovies.UI.csproj`, `OperationsLogPage.*`, `SettingsPage.*`, `WinUiClipboardService.cs`, Icon resources | `Closed` | `73dc5e4` | `PASS` (CI Run `44921541530` · 1,418 tests) |
 | **Wave 7** | **`7.2`** | Re-integrate `TBDMovies.QaSeed` into solution, update to `Schema v23`, and update Inno Setup installer signing (`C-17`, `[L8]`) | `TBDMovies.slnx`, `Seed.cs`, `TBD-Movies.iss`, `App.xaml.cs`, `QaSeedAndInstallerTests.cs` | `Closed` | `1c4a08c` | `PASS` (CI Run `44957957524` · 1,421 tests) |
+| **Polish Pass** | **`Polish`** | Correct `DiskPosterCache` LRU sorting, CRLF log sanitization & `CsWinRT1032` zero-warnings refactoring | `DiskPosterCache.cs`, `AppDiagnosticsLog.cs`, `LocalizationService.cs`, UI views & models | `Closed` | `ee64dcc` | `PASS` (CI Run `44970928679` · 1,438 tests · 0 warnings) |
 
 ---
 
