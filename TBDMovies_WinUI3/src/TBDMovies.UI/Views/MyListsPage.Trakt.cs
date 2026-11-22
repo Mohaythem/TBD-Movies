@@ -57,6 +57,10 @@ public sealed partial class MyListsPage
         Refresh();
     }
 
+    private void RebuildTraktTabs()
+    {
+    }
+
     private void TraktPlaylistTab_Checked(object sender, RoutedEventArgs e)
     {
         if (!_isReady || _rebuilding || _syncing) return;
