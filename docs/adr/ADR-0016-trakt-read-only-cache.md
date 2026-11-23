@@ -1,7 +1,7 @@
 # ADR-0016: Read-only Trakt account cache
 
 > [!IMPORTANT]
-> **Status Update (`Partially Superseded by Schema v21–v23`)**: Device Code OAuth, Windows Credential Manager token storage, and `trakt_resource_cache` (`Schema v18`) remain active, whereas the Phase-1 *"remote mutations are outside this implementation"* boundary in line 24 was superseded in `Schema v21–v23` by two-way watch history sync, movie favorites sync, watchlist push & snapshot cache, scrobble events, collection upload, and unified `[TBD]` custom lists (see `/EGM.md` and `/BUGS.md` `[U9]`/`[U10]`).
+> **Status Update (`Partially Superseded by Schema v21–v24`)**: Device Code OAuth, Windows Credential Manager token storage, and `trakt_resource_cache` (`Schema v18`) remain active, whereas the Phase-1 *"remote mutations are outside this implementation"* boundary in line 24 was superseded in `Schema v21–v24` by two-way watch history sync, movie favorites sync, watchlist push & snapshot cache, full scrobbler lifecycle events, collection upload, and unified `[TBD]` custom lists.
 
 Status: accepted and implemented for the authorized Trakt Phase 1 scope (partially superseded in Phase 2 / Schema v21–v23). Non-UI verification completed on 2026-10-21.
 

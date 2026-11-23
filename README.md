@@ -21,7 +21,7 @@ A modern, fast, and local-first desktop media library for Windows, built with **
 ## 🛠️ Tech Stack
 
 - **UI Framework**: .NET 10 (C# 14) + WinUI 3 / Windows App SDK
-- **Database**: SQLite (`Microsoft.Data.Sqlite`) with ACID transactions & WAL mode (`Schema v23`)
+- **Database**: SQLite (`Microsoft.Data.Sqlite`) with ACID transactions & WAL mode (`Schema v24`)
 - **Integrations**: TMDB API, Trakt.tv REST API, & SubDL Subtitles API
 - **Security**: Windows Credential Manager (`CredWriteW` / `CredReadW`) for TMDB & Trakt tokens with one-way legacy migration
 - **Packaging**: Inno Setup Installer & Portable Self-Contained Win-x64

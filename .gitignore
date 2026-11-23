@@ -60,3 +60,18 @@ TBDMovies_WinUI3/*.txt
 portable/
 
 ALL_IDEAS_ROADMAP.md
+
+# Internal Agent & Workspace Working Documents (Strictly excluded from GitHub)
+.internal_docs/
+AGENTS.md
+HANDOFF.md
+BUGS.md
+PROGRESS.md
+SOLVED_BUGS.md
+AUDIT_FINDINGS_REPORT.md
+SECURITY_AND_TRY_CATCH_AUDIT.md
+REMEDIATION_PROCESS.md
+EGM.md
+docs/plans/
+docs/archive/
+
