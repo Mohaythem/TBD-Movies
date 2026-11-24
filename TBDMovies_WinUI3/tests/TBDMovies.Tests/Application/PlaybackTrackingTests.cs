@@ -1119,6 +1119,180 @@ public sealed class PlaybackTrackingTests
         Assert.Contains(flushes, f => f.Pos == 50.0 && !f.Paused); // Seek jump flushed
         Assert.Contains(flushes, f => f.Pos == 50.0 && f.Paused);  // Pause transition flushed
     }
+
+    [Fact]
+    public async Task StartPlaybackAsync_F3_ImmediateResume_SeedsProgressOnConfirmedLaunch()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_f3_seed_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+            SeedParentEntities(connStr, movieId: 801, mediaFileId: 801);
+
+            var progressRepo = new PlaybackProgressRepository(connStr);
+            var launcher = new FakeLauncher(returns: true);
+            var service = new PlaybackTrackingService(
+                progressRepo,
+                launcher,
+                settingsRepository: null);
+
+            var target = new PlaybackMediaTarget(
+                MediaFileId: 801,
+                FilePath: @"C:\dummy\movie.mkv",
+                TotalDurationSeconds: 1200,
+                IsMovie: true,
+                MovieId: 801,
+                MovieTitle: "F3 Movie");
+
+            var success = await service.StartPlaybackAsync(target, resume: false);
+
+            Assert.True(success);
+            var saved = progressRepo.GetByMediaFileId(801);
+            Assert.NotNull(saved);
+            Assert.Equal(3.0, saved.PositionSeconds);
+            Assert.Equal(1200, saved.TotalDurationSeconds);
+            Assert.True(saved.HasResumePosition);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task StartPlaybackAsync_F3_FailedLaunch_DoesNotSeedProgress_AndCleansSession()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_f3_fail_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+            SeedParentEntities(connStr, movieId: 802, mediaFileId: 802);
+
+            var progressRepo = new PlaybackProgressRepository(connStr);
+            var launcher = new FakeLauncher(returns: false);
+            var service = new PlaybackTrackingService(
+                progressRepo,
+                launcher,
+                settingsRepository: null);
+
+            var target = new PlaybackMediaTarget(
+                MediaFileId: 802,
+                FilePath: @"C:\dummy\missing.mkv",
+                TotalDurationSeconds: 1200,
+                IsMovie: true,
+                MovieId: 802,
+                MovieTitle: "F3 Fail Movie");
+
+            var success = await service.StartPlaybackAsync(target, resume: false);
+
+            Assert.False(success);
+            var saved = progressRepo.GetByMediaFileId(802);
+            Assert.Null(saved);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task StartPlaybackAsync_F3_ResumePreservation_KeepsPosition_AndBumpsLastWatched()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_f3_resume_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+            SeedParentEntities(connStr, movieId: 803, mediaFileId: 803);
+
+            var initialTime = DateTimeOffset.UtcNow.AddHours(-5);
+            var progressRepo = new PlaybackProgressRepository(connStr);
+            progressRepo.SaveProgress(803, 1800.0, 7200, initialTime); // 30 min checkpoint
+
+            var launcher = new FakeLauncher(returns: true);
+            var service = new PlaybackTrackingService(
+                progressRepo,
+                launcher,
+                settingsRepository: null);
+
+            var target = new PlaybackMediaTarget(
+                MediaFileId: 803,
+                FilePath: @"C:\dummy\resume.mkv",
+                TotalDurationSeconds: 7200,
+                IsMovie: true,
+                MovieId: 803,
+                MovieTitle: "Resume Movie");
+
+            var success = await service.StartPlaybackAsync(target, resume: true);
+
+            Assert.True(success);
+            var updated = progressRepo.GetByMediaFileId(803);
+            Assert.NotNull(updated);
+            Assert.Equal(1800.0, updated.PositionSeconds); // Preserved at 30 min, not overwritten by 3.0!
+            Assert.True(updated.LastWatchedAt > initialTime);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
+        }
+    }
+
+    [Fact]
+    public async Task StartPlaybackAsync_F3_ShortMediaOrNullDuration_HandlesGracefully()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_f3_short_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+            SeedParentEntities(connStr, movieId: 804, mediaFileId: 804);
+            SeedParentEntities(connStr, movieId: 805, mediaFileId: 805);
+
+            var progressRepo = new PlaybackProgressRepository(connStr);
+            var launcher = new FakeLauncher(returns: true);
+            var service = new PlaybackTrackingService(
+                progressRepo,
+                launcher,
+                settingsRepository: null);
+
+            // Case A: duration <= 3.0s -> must NOT seed 3.0s
+            var targetShort = new PlaybackMediaTarget(
+                MediaFileId: 804,
+                FilePath: @"C:\dummy\clip.mkv",
+                TotalDurationSeconds: 2.5,
+                IsMovie: true,
+                MovieId: 804,
+                MovieTitle: "Short Clip");
+
+            await service.StartPlaybackAsync(targetShort, resume: false);
+            Assert.Null(progressRepo.GetByMediaFileId(804));
+
+            // Case B: duration is null -> seeds 3.0 with null duration without throwing
+            var targetNullDur = new PlaybackMediaTarget(
+                MediaFileId: 805,
+                FilePath: @"C:\dummy\stream.mkv",
+                TotalDurationSeconds: null,
+                IsMovie: true,
+                MovieId: 805,
+                MovieTitle: "Unknown Duration Stream");
+
+            await service.StartPlaybackAsync(targetNullDur, resume: false);
+            var savedNull = progressRepo.GetByMediaFileId(805);
+            Assert.NotNull(savedNull);
+            Assert.Equal(3.0, savedNull.PositionSeconds);
+            Assert.Null(savedNull.TotalDurationSeconds);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
+        }
+    }
 }
 
 file sealed class FakeTimelineTracker : IPlayerTimelineTracker

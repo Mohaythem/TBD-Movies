@@ -283,6 +283,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         MoreButton.SetValue(AutomationProperties.NameProperty, LocalizationService.Text("MoreOptions"));
         ToolTipService.SetToolTip(MoreButton, LocalizationService.Text("MoreOptions"));
         MarkShowWatchedItem.Text = LocalizationService.Text("MarkWatched");
+        MarkShowWatchedItem.IsEnabled = _show.Id > 0;
         OpenShowFolderItem.Text = LocalizationService.Text("OpenFolder");
         RemoveShowFromLibraryItem.Text = LocalizationService.Text("RemoveFromLibrary");
         RemoveShowFromLibraryItem.IsEnabled = _show.Id > 0;
@@ -734,6 +735,20 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         finally
         {
             if (request.IsCurrent) RemoveShowFromLibraryItem.IsEnabled = true;
+        }
+    }
+
+    private void MarkShowWatchedItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (_show.Id <= 0 || !AppServices.IsAvailable) return;
+        try
+        {
+            AppServices.WatchHistory.RecordShowWatch(_show.Id);
+            RefreshEpisodeProgress();
+        }
+        catch (Exception error)
+        {
+            System.Diagnostics.Debug.WriteLine($"[TVShowDetailsPage] RecordShowWatch failed: {error.Message}");
         }
     }
 
@@ -1300,7 +1315,9 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
             {
                 AppServices.WatchHistory.RecordEpisodeWatch(episode.Id);
                 row.Watched = true;
+                row.PlaybackProgress = null;
                 UpdateShowEpisodeWatched(episode.Id, isWatched: true);
+                UpdateShowSummary();
 
                 if (showTmdbId is > 0 && season is not null && AppServices.Trakt is { } trakt && trakt.GetSyncState().AuthState.IsConnected)
                 {

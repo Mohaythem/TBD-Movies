@@ -204,6 +204,27 @@ public sealed class PlaybackProgressRepository(string connectionString, ILibrary
         tracker?.IncrementPlayback();
     }
 
+    public void DeleteProgressForShow(int showId)
+    {
+        if (showId <= 0) return;
+        using var gate = DatabaseWriteGate.Enter(connectionString);
+        using var connection = SqliteConnections.Open(connectionString);
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            DELETE FROM playback_progress
+             WHERE media_file_id IN (
+                 SELECT emf.media_file_id 
+                   FROM episode_media_files emf
+                   JOIN tv_episodes e ON e.id = emf.episode_id
+                   JOIN tv_seasons s ON s.id = e.season_id
+                  WHERE s.show_id = $showId
+             );
+            """;
+        cmd.Parameters.AddWithValue("$showId", showId);
+        cmd.ExecuteNonQuery();
+        tracker?.IncrementPlayback();
+    }
+
     private static PlaybackProgress ReadRecord(SqliteDataReader reader) => new(
         reader.GetInt32(0),
         reader.GetDouble(1),

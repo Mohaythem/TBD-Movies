@@ -1193,6 +1193,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         try
         {
             AppServices.Personal.RecordWatch(_movie.Id, date);
+            UpdatePlayButtonVisuals(PlayButton.IsEnabled, _isRelinkMode);
             var tmdbId = AppServices.GetMovieTmdbId(_movie.Id);
             if (tmdbId is > 0 && AppServices.Trakt is { } trakt)
             {

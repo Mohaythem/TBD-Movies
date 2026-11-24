@@ -573,6 +573,8 @@ internal static class AppServices
                 IMovieRepository movies = new UnitOfWorkMovieRepository(catalogFactory);
                 IMediaFileRepository mediaFiles = new UnitOfWorkMediaFileRepository(catalogFactory);
                 var personal = new PersonalLibraryRepository(connectionString, tracker: revisionTracker);
+                var playbackProgress = new PlaybackProgressRepository(connectionString, tracker: revisionTracker);
+                _playbackProgressRepository = playbackProgress;
                 var settingsRepository = new SettingsRepository(connectionString);
                 var maintenance = new LibraryMaintenanceRepository(connectionString, tracker: revisionTracker);
                 var testRoot = GetTestDataRoot();
@@ -606,7 +608,7 @@ internal static class AppServices
                     authenticationResult: settings.RecordTmdbAuthenticationResult);
                 var matching = new MetadataMatchingService(catalogFactory, tmdbClient, posterCache);
 
-                var library = new LibraryService(movies, mediaFiles, personal);
+                var library = new LibraryService(movies, mediaFiles, personal, playbackProgress);
                 var import = new ImportService(
                     catalogFactory,
                     tmdbClient,
@@ -624,7 +626,7 @@ internal static class AppServices
                     tvEpisodes,
                     personal,
                     tmdbClient);
-                var watchHistory = new WatchHistoryService(personal);
+                var watchHistory = new WatchHistoryService(personal, playbackProgress);
                 var history = new OperationHistoryService(
                     operations,
                     coordinator,
@@ -656,8 +658,6 @@ internal static class AppServices
                 var showPersonalRepo = new ShowPersonalLibraryRepository(connectionString, tracker: revisionTracker);
                 _showPersonalRepo = showPersonalRepo;
                 _showPersonal = new ShowPersonalLibraryService(showPersonalRepo, tv);
-                var playbackProgress = new PlaybackProgressRepository(connectionString, tracker: revisionTracker);
-                _playbackProgressRepository = playbackProgress;
                 _playbackTrackingService = new PlaybackTrackingService(
                     playbackProgress,
                     PlayerProcessLauncher.Shared,

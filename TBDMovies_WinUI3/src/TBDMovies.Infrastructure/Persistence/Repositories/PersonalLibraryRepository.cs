@@ -1551,6 +1551,51 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         return entry;
     }
 
+    public int AddShowWatchEvents(int showId, DateTimeOffset watchedAt, DateTimeOffset createdAt)
+    {
+        ValidateId(showId, nameof(showId));
+        using var gate = DatabaseWriteGate.Enter(_connectionString);
+        using var connection = SqliteConnections.Open(_connectionString);
+        using var transaction = connection.BeginTransaction(deferred: false);
+        using var command = Command(connection, transaction, """
+            INSERT INTO watch_events(
+                media_kind, episode_id, watched_at, created_at, title_snapshot, show_title_snapshot,
+                season_number_snapshot, episode_number_snapshot, year_snapshot,
+                artwork_reference, backdrop_reference, poster_reference)
+            SELECT 'EPISODE', e.id, $watched, $created, COALESCE(NULLIF(TRIM(e.title), ''), CAST(e.episode_number AS TEXT)),
+                   s.title, se.season_number, e.episode_number, s.year,
+                   e.still_path, s.backdrop_path, s.poster_path
+              FROM tv_episodes e
+              JOIN tv_seasons se ON se.id = e.season_id
+              JOIN tv_shows s ON s.id = se.show_id
+             WHERE s.id = $showId;
+            """);
+        command.Parameters.AddWithValue("$showId", showId);
+        command.Parameters.AddWithValue("$watched", watchedAt.ToString("O"));
+        command.Parameters.AddWithValue("$created", createdAt.ToString("O"));
+        var rowsInserted = command.ExecuteNonQuery();
+
+        using (var active = Command(connection, transaction, """
+            DELETE FROM active_viewings 
+             WHERE episode_id IN (
+                 SELECT e.id FROM tv_episodes e
+                   JOIN tv_seasons se ON se.id = e.season_id
+                  WHERE se.show_id = $showId
+             );
+            """))
+        {
+            active.Parameters.AddWithValue("$showId", showId);
+            active.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+        if (rowsInserted > 0)
+        {
+            _tracker?.IncrementPlayback();
+        }
+        return rowsInserted;
+    }
+
     public int DeleteEpisodeWatchEvents(int episodeId)
     {
         ValidateId(episodeId, nameof(episodeId));

@@ -11,19 +11,49 @@ namespace TBDMovies.Application.Services;
 public sealed class WatchHistoryService : IWatchHistoryUiActions
 {
     private readonly IWatchHistoryRepository _history;
+    private readonly IPlaybackProgressRepository? _playbackProgress;
     private readonly Func<DateTimeOffset> _clock;
 
-    public WatchHistoryService(IWatchHistoryRepository history, Func<DateTimeOffset>? clock = null)
+    public WatchHistoryService(
+        IWatchHistoryRepository history,
+        IPlaybackProgressRepository? playbackProgress = null,
+        Func<DateTimeOffset>? clock = null)
     {
         _history = history;
+        _playbackProgress = playbackProgress;
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
 
     public IReadOnlyList<WatchHistoryItem> ListRecentWatchHistory(int limit = 50, int offset = 0) =>
         _history.ListRecentlyWatchedMedia(limit, offset).Select(Map).ToList();
 
-    public WatchHistoryItem RecordEpisodeWatch(int episodeId, DateTimeOffset? watchedAt = null) =>
-        Map(_history.AddEpisodeWatchEvent(episodeId, watchedAt ?? _clock(), _clock()));
+    public WatchHistoryItem RecordEpisodeWatch(int episodeId, DateTimeOffset? watchedAt = null)
+    {
+        var entry = Map(_history.AddEpisodeWatchEvent(episodeId, watchedAt ?? _clock(), _clock()));
+        try
+        {
+            _playbackProgress?.DeleteProgressForEpisode(episodeId);
+        }
+        catch (Exception ex)
+        {
+            TBDMovies.Application.Diagnostics.AppDiagnosticsLog.Record("WatchHistoryService", $"DeleteProgressForEpisode({episodeId}) failed: {ex.Message}");
+        }
+        return entry;
+    }
+
+    public void RecordShowWatch(int showId, DateTimeOffset? watchedAt = null)
+    {
+        var now = _clock();
+        _history.AddShowWatchEvents(showId, watchedAt ?? now, now);
+        try
+        {
+            _playbackProgress?.DeleteProgressForShow(showId);
+        }
+        catch (Exception ex)
+        {
+            TBDMovies.Application.Diagnostics.AppDiagnosticsLog.Record("WatchHistoryService", $"DeleteProgressForShow({showId}) failed: {ex.Message}");
+        }
+    }
 
     public int RemoveEpisodeWatch(int episodeId) => _history.DeleteEpisodeWatchEvents(episodeId);
 

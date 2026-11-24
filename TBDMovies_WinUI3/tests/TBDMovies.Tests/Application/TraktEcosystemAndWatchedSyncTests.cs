@@ -990,6 +990,7 @@ public sealed class TraktEcosystemAndWatchedSyncTests
         }
 
         public int DeleteEpisodeWatchEvents(int episodeId) => 0;
+        public int AddShowWatchEvents(int showId, DateTimeOffset watchedAt, DateTimeOffset createdAt) => 0;
         public IReadOnlyList<WatchHistoryEntry> ListRecent(int limit = 50, int offset = 0) => Array.Empty<WatchHistoryEntry>();
         public IReadOnlyList<WatchHistoryEntry> ListRecentlyWatchedMedia(int limit = 50, int offset = 0) => Array.Empty<WatchHistoryEntry>();
         public IReadOnlySet<int> GetWatchedEpisodeIds(int showId) => new HashSet<int>();

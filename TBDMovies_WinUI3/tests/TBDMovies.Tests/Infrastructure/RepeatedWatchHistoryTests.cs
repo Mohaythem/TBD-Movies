@@ -134,6 +134,49 @@ public sealed class RepeatedWatchHistoryTests : IDisposable
         Assert.Equal(0, repository.DeleteEpisodeWatchEvents(100));
     }
 
+    [Fact]
+    public void AddShowWatchEvents_And_DeleteProgressForShow_AtomicOperations()
+    {
+        new DatabaseMigrator(_connectionString).Migrate();
+        using (var connection = Open())
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = """
+                INSERT INTO tv_shows(id, provider, external_id, title, sort_title, year, date_added, created_at, updated_at, genres, metadata_status)
+                VALUES (5, 'tmdb', '500', 'Show 5', 'show 5', 2026, '2026-01-01', '2026-01-01', '2026-01-01', '[]', 'READY');
+                INSERT INTO tv_seasons(id, show_id, season_number, created_at, updated_at)
+                VALUES (50, 5, 1, '2026-01-01', '2026-01-01');
+                INSERT INTO tv_episodes(id, season_id, episode_number, title, created_at, updated_at)
+                VALUES (501, 50, 1, 'Episode 1', '2026-01-01', '2026-01-01'),
+                       (502, 50, 2, 'Episode 2', '2026-01-01', '2026-01-01');
+                INSERT INTO media_files(id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at)
+                VALUES (5001, NULL, 'C:\\show5\\ep1.mkv', 'c:\\show5\\ep1.mkv', 1000, 'PRESENT', datetime('now'), datetime('now')),
+                       (5002, NULL, 'C:\\show5\\ep2.mkv', 'c:\\show5\\ep2.mkv', 1000, 'PRESENT', datetime('now'), datetime('now'));
+                INSERT INTO episode_media_files(media_file_id, episode_id, linked_at)
+                VALUES (5001, 501, datetime('now')),
+                       (5002, 502, datetime('now'));
+                """;
+            cmd.ExecuteNonQuery();
+        }
+
+        var progressRepo = new PlaybackProgressRepository(_connectionString);
+        progressRepo.SaveProgress(5001, 600, 1800, DateTimeOffset.UtcNow);
+        progressRepo.SaveProgress(5002, 300, 1800, DateTimeOffset.UtcNow);
+        Assert.NotNull(progressRepo.GetByMediaFileId(5001));
+        Assert.NotNull(progressRepo.GetByMediaFileId(5002));
+
+        var personalRepo = new PersonalLibraryRepository(_connectionString);
+        var inserted = personalRepo.AddShowWatchEvents(5, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        Assert.Equal(2, inserted);
+        var watchedEps = personalRepo.GetWatchedEpisodeIds(5);
+        Assert.Contains(501, watchedEps);
+        Assert.Contains(502, watchedEps);
+
+        progressRepo.DeleteProgressForShow(5);
+        Assert.Null(progressRepo.GetByMediaFileId(5001));
+        Assert.Null(progressRepo.GetByMediaFileId(5002));
+    }
+
     private static void SeedMovie(SqliteConnection connection)
     {
         using var command = connection.CreateCommand();

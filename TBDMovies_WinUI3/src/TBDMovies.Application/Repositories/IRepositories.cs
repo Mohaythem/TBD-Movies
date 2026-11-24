@@ -196,6 +196,7 @@ public interface IPersonalLibraryRepository
 public interface IWatchHistoryRepository
 {
     WatchHistoryEntry AddEpisodeWatchEvent(int episodeId, DateTimeOffset watchedAt, DateTimeOffset createdAt);
+    int AddShowWatchEvents(int showId, DateTimeOffset watchedAt, DateTimeOffset createdAt);
     int DeleteEpisodeWatchEvents(int episodeId);
     IReadOnlyList<WatchHistoryEntry> ListRecent(int limit = 50, int offset = 0);
 

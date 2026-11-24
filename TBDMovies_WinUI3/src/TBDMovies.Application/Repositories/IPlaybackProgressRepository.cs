@@ -15,4 +15,5 @@ public interface IPlaybackProgressRepository
     void DeleteProgress(int mediaFileId);
     void DeleteProgressForMovie(int movieId);
     void DeleteProgressForEpisode(int episodeId);
+    void DeleteProgressForShow(int showId);
 }

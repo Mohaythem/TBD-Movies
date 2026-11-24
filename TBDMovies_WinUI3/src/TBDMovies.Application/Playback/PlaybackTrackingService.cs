@@ -160,10 +160,7 @@ public sealed class PlaybackTrackingService
                     false);
             }
 
-            // Trakt Scrobble Start (non-blocking)
-            _ = TryScrobbleAsync(target, startPosition, TraktScrobbleAction.Start);
-
-            return await _launcher.LaunchAndTrackAsync(
+            var launched = await _launcher.LaunchAndTrackAsync(
                 target.FilePath,
                 startPosition,
                 target.TotalDurationSeconds,
@@ -234,6 +231,44 @@ public sealed class PlaybackTrackingService
                         _progressRepository.SaveProgress(target.MediaFileId, currentPosition, duration, _clock());
                     }
                 }).ConfigureAwait(false);
+
+            if (!launched)
+            {
+                lock (_sessionLock)
+                {
+                    if (_activeSession?.SessionId == sessionId)
+                    {
+                        _activeSession = null;
+                    }
+                }
+                return false;
+            }
+
+            lock (_sessionLock)
+            {
+                if (_activeSession?.SessionId != sessionId)
+                {
+                    return true;
+                }
+            }
+
+            // Trakt Scrobble Start (non-blocking) - dispatched only after confirmed launch success
+            _ = TryScrobbleAsync(target, startPosition, TraktScrobbleAction.Start);
+
+            // [F3] Immediate Continue Watching registration upon confirmed launch
+            if (target.MediaFileId > 0)
+            {
+                if (resume && startPosition >= 3.0)
+                {
+                    _progressRepository.SaveProgress(target.MediaFileId, startPosition, target.TotalDurationSeconds, _clock());
+                }
+                else if (!target.TotalDurationSeconds.HasValue || target.TotalDurationSeconds.Value > 3.0)
+                {
+                    _progressRepository.SaveProgress(target.MediaFileId, Math.Max(startPosition, 3.0), target.TotalDurationSeconds, _clock());
+                }
+            }
+
+            return true;
         }
         finally
         {
