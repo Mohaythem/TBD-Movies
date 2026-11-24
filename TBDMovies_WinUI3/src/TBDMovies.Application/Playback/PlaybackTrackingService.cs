@@ -160,6 +160,9 @@ public sealed class PlaybackTrackingService
                     false);
             }
 
+            // Trakt Scrobble Start (non-blocking) - dispatched immediately upon starting session
+            _ = TryScrobbleAsync(target, startPosition, TraktScrobbleAction.Start);
+
             var launched = await _launcher.LaunchAndTrackAsync(
                 target.FilePath,
                 startPosition,
@@ -241,6 +244,8 @@ public sealed class PlaybackTrackingService
                         _activeSession = null;
                     }
                 }
+                // Send stop scrobble to cancel the start scrobble if launch failed
+                _ = TryScrobbleAsync(target, 0, TraktScrobbleAction.Stop);
                 return false;
             }
 
@@ -251,9 +256,6 @@ public sealed class PlaybackTrackingService
                     return true;
                 }
             }
-
-            // Trakt Scrobble Start (non-blocking) - dispatched only after confirmed launch success
-            _ = TryScrobbleAsync(target, startPosition, TraktScrobbleAction.Start);
 
             // [F3] Immediate Continue Watching registration upon confirmed launch
             if (target.MediaFileId > 0)
