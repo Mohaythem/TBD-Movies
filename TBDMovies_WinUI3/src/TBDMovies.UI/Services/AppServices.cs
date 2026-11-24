@@ -650,7 +650,8 @@ internal static class AppServices
                 _catalogFactory = catalogFactory;
                 _personal = library;
                 _watchHistory = watchHistory;
-                _viewingActivity = new ViewingActivityService(new ViewingActivityRepository(connectionString, tracker: revisionTracker));
+                var viewingActivityRepo = new ViewingActivityRepository(connectionString, tracker: revisionTracker);
+                _viewingActivity = new ViewingActivityService(viewingActivityRepo);
                 var showPersonalRepo = new ShowPersonalLibraryRepository(connectionString, tracker: revisionTracker);
                 _showPersonalRepo = showPersonalRepo;
                 _showPersonal = new ShowPersonalLibraryService(showPersonalRepo, tv);
@@ -661,7 +662,8 @@ internal static class AppServices
                     getTraktAuth: () => _traktAuthService,
                     getTraktClientId: () => TraktConfig.ClientId,
                     personalLibraryRepository: personal,
-                    watchHistoryRepository: personal);
+                    watchHistoryRepository: personal,
+                    viewingActivityRepository: viewingActivityRepo);
                 _import = import;
                 _reconciliation = reconciliation;
                 _tv = tv;

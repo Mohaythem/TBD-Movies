@@ -5,9 +5,11 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
+using TBDMovies.Application.Dto;
 using TBDMovies.Application.Playback;
 using TBDMovies.Application.Repositories;
 using TBDMovies.Application.Trakt;
+using TBDMovies.Domain.Library.Personal;
 using TBDMovies.Domain.Playback;
 using TBDMovies.FileSystem.Playback;
 using TBDMovies.FileSystem.Playback.Trackers;
@@ -204,6 +206,7 @@ public sealed class PlaybackTrackingTests
 
     private sealed class FakePlayerLauncher : IPlayerProcessLauncher
     {
+        public bool LaunchResult { get; set; } = true;
         public double SimulatedExitPosition { get; set; } = 300;
         public double? SimulatedTickPosition { get; set; }
         public double? SimulatedDiscoveredDuration { get; set; }
@@ -221,6 +224,11 @@ public sealed class PlaybackTrackingTests
             CancellationToken cancellationToken = default,
             Func<double, double?, bool, Task>? onProgressTick = null)
         {
+            if (!LaunchResult)
+            {
+                return false;
+            }
+
             var effectiveDuration = SimulatedDiscoveredDuration ?? totalDurationSeconds;
             if (SimulatedTicks.Count > 0 && onProgressTick != null)
             {
@@ -943,6 +951,142 @@ public sealed class PlaybackTrackingTests
         Assert.Contains(flushes, f => f.Pos == 50.0 && !f.Paused); // Seek jump flushed
         Assert.Contains(flushes, f => f.Pos == 50.0 && f.Paused);  // Pause transition flushed
     }
+
+    [Fact]
+    public async Task PlaybackTrackingService_StartPlaybackAsync_RecordsActiveViewingWhenRepositoryProvided()
+    {
+        var fixedTime = new DateTimeOffset(2026, 11, 24, 16, 0, 0, TimeSpan.Zero);
+        var mockLauncher = new FakePlayerLauncher();
+        var fakeViewingRepo = new FakeViewingActivityRepository();
+        var service = new PlaybackTrackingService(
+            mockLauncher,
+            clock: () => fixedTime,
+            viewingActivityRepository: fakeViewingRepo);
+
+        var target = new PlaybackMediaTarget(
+            MediaFileId: 50,
+            FilePath: @"C:\movies\inception.mkv",
+            TotalDurationSeconds: 7200,
+            IsMovie: true,
+            MovieId: 10);
+
+        var started = await service.StartPlaybackAsync(target);
+        Assert.True(started);
+        var recorded = Assert.Single(fakeViewingRepo.RecordedPlays);
+        Assert.Equal(@"C:\movies\inception.mkv", recorded.Path);
+        Assert.Equal(fixedTime, recorded.StartedAt);
+    }
+
+    [Fact]
+    public async Task PlaybackTrackingService_StartPlaybackAsync_DoesNotRecordActiveViewingWhenLaunchFails()
+    {
+        var mockLauncher = new FakePlayerLauncher { LaunchResult = false };
+        var fakeViewingRepo = new FakeViewingActivityRepository();
+        var service = new PlaybackTrackingService(
+            mockLauncher,
+            viewingActivityRepository: fakeViewingRepo);
+
+        var target = new PlaybackMediaTarget(
+            MediaFileId: 50,
+            FilePath: @"C:\movies\inception.mkv",
+            TotalDurationSeconds: 7200,
+            IsMovie: true,
+            MovieId: 10);
+
+        var started = await service.StartPlaybackAsync(target);
+        Assert.False(started);
+        Assert.Empty(fakeViewingRepo.RecordedPlays);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task PlaybackTrackingService_StartPlaybackAsync_DoesNotRecordActiveViewingWhenFilePathIsBlank(string blankPath)
+    {
+        var mockLauncher = new FakePlayerLauncher();
+        var fakeViewingRepo = new FakeViewingActivityRepository();
+        var service = new PlaybackTrackingService(
+            mockLauncher,
+            viewingActivityRepository: fakeViewingRepo);
+
+        var target = new PlaybackMediaTarget(
+            MediaFileId: 50,
+            FilePath: blankPath,
+            TotalDurationSeconds: 7200,
+            IsMovie: true,
+            MovieId: 10);
+
+        var started = await service.StartPlaybackAsync(target);
+        Assert.True(started);
+        Assert.Empty(fakeViewingRepo.RecordedPlays);
+    }
+
+    [Fact]
+    public async Task PlaybackTrackingService_StartPlaybackAsync_SucceedsWhenRepositoryNotProvided()
+    {
+        var mockLauncher = new FakePlayerLauncher();
+        var service = new PlaybackTrackingService(mockLauncher);
+
+        var target = new PlaybackMediaTarget(
+            MediaFileId: 50,
+            FilePath: @"C:\movies\inception.mkv",
+            TotalDurationSeconds: 7200,
+            IsMovie: true,
+            MovieId: 10);
+
+        var started = await service.StartPlaybackAsync(target);
+        Assert.True(started);
+    }
+
+    [Fact]
+    public async Task PlaybackTrackingService_StartPlaybackAsync_SurvivesRepositoryException()
+    {
+        var mockLauncher = new FakePlayerLauncher();
+        var fakeViewingRepo = new FakeViewingActivityRepository { ShouldThrow = true };
+        var service = new PlaybackTrackingService(
+            mockLauncher,
+            viewingActivityRepository: fakeViewingRepo);
+
+        var target = new PlaybackMediaTarget(
+            MediaFileId: 50,
+            FilePath: @"C:\movies\unindexed.mkv",
+            TotalDurationSeconds: 7200,
+            IsMovie: true,
+            MovieId: 10);
+
+        var started = await service.StartPlaybackAsync(target);
+        Assert.True(started);
+        Assert.Empty(fakeViewingRepo.RecordedPlays);
+    }
+}
+
+file sealed class FakeViewingActivityRepository : IViewingActivityRepository
+{
+    public List<(string Path, DateTimeOffset StartedAt)> RecordedPlays { get; } = [];
+    public bool ShouldThrow { get; set; }
+
+    public ActiveViewingItem RecordSuccessfulPlay(string path, DateTimeOffset startedAt)
+    {
+        if (ShouldThrow) throw new KeyNotFoundException("File not found in media_files.");
+        RecordedPlays.Add((path, startedAt));
+        return new ActiveViewingItem(
+            MovieId: 10,
+            ShowId: null,
+            EpisodeId: null,
+            Title: "Test Movie",
+            Year: 2024,
+            SeasonNumber: null,
+            EpisodeNumber: null,
+            EpisodeTitle: null,
+            Path: path,
+            StartedAt: startedAt,
+            ArtworkReference: null,
+            BackdropReference: null,
+            PosterReference: null);
+    }
+
+    public IReadOnlyList<ActiveViewingItem> ListActive(int limit) => [];
+    public IReadOnlyList<WatchHistoryEntry> ListRecentCompleted(int limit, int offset = 0) => [];
 }
 
 file sealed class FakeTimelineTracker : IPlayerTimelineTracker

@@ -43,6 +43,7 @@ public sealed class PlaybackTrackingService
     private readonly Func<string?>? _getTraktClientId;
     private readonly IPersonalLibraryRepository? _personalLibraryRepository;
     private readonly IWatchHistoryRepository? _watchHistoryRepository;
+    private readonly IViewingActivityRepository? _viewingActivityRepository;
     private readonly Func<DateTimeOffset> _clock;
 
     private ActivePlaybackSession? _activeSession;
@@ -79,7 +80,8 @@ public sealed class PlaybackTrackingService
         Func<DateTimeOffset>? clock = null,
         Func<ITraktDataClient?>? getTraktData = null,
         Func<ITraktAuthService?>? getTraktAuth = null,
-        Func<string?>? getTraktClientId = null)
+        Func<string?>? getTraktClientId = null,
+        IViewingActivityRepository? viewingActivityRepository = null)
     {
         _launcher = launcher ?? throw new ArgumentNullException(nameof(launcher));
         _settingsRepository = settingsRepository;
@@ -89,6 +91,7 @@ public sealed class PlaybackTrackingService
         _personalLibraryRepository = personalLibraryRepository;
         _watchHistoryRepository = watchHistoryRepository;
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
+        _viewingActivityRepository = viewingActivityRepository;
     }
 
     public async Task<bool> StartPlaybackAsync(
@@ -212,6 +215,18 @@ public sealed class PlaybackTrackingService
                 // Send stop scrobble to cancel the start scrobble if launch failed
                 _ = TryScrobbleAsync(target, 0, TraktScrobbleAction.Stop);
                 return false;
+            }
+
+            if (_viewingActivityRepository is not null && !string.IsNullOrWhiteSpace(target.FilePath))
+            {
+                try
+                {
+                    _viewingActivityRepository.RecordSuccessfulPlay(target.FilePath, _clock().ToUniversalTime());
+                }
+                catch (Exception ex)
+                {
+                    Trace.WriteLine($"[PlaybackTrackingService] Failed to record active viewing: {ex.Message}");
+                }
             }
 
             return true;
