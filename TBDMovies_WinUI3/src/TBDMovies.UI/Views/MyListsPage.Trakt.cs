@@ -98,7 +98,6 @@ public sealed partial class MyListsPage
         var displayKey = _selectedKey;
 
         SyncTraktSelectedTab();
-        ContinueGrid.Visibility = Visibility.Collapsed;
         ListMoreOptionsButton.Visibility = Visibility.Collapsed;
 
         var trakt = displayCoordinator;
