@@ -204,7 +204,7 @@ public class ApplicationServiceTests
         var now = new DateTimeOffset(2026, 9, 8, 20, 0, 0, TimeSpan.FromHours(4));
         var movieRepo = new FakeMovieRepo();
         var movie = movieRepo.Create(new MovieCatalogData("tmdb", "clock", "Clock Movie", null, 2026, null, System.Collections.Immutable.ImmutableArray<string>.Empty, null, null, null, MetadataStatus.Ready), now);
-        var library = new LibraryService(movieRepo, new FakeMediaFileRepo(), null!, null, () => now);
+        var library = new LibraryService(movieRepo, new FakeMediaFileRepo(), personal: null, clock: () => now);
         Assert.Null(movieRepo.GetById(movie.Id)!.LastOpenedAt);
         library.ListMovies();
         library.GetMovieItem(movie.Id);

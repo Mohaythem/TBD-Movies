@@ -1583,7 +1583,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
                     overview: episode.Overview,
                     airDate: episode.AirDate,
                     fallbackArtReferences: new[] { show.BackdropReference, show.PosterReference },
-                    filePath: episode.FilePath))).ToArray())).ToArray();
+                    filePath: episode.FilePath)).ToArray())).ToArray();
     }
 
     /// <summary>The season line names the missing files only when there are some.</summary>
