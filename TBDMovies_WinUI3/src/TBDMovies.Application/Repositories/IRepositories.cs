@@ -226,6 +226,7 @@ public interface IWatchHistoryRepository
 
 public interface IViewingActivityRepository
 {
+    IReadOnlyList<TBDMovies.Application.Dto.ActiveViewingItem> ListActive(int limit);
     TBDMovies.Application.Dto.ActiveViewingItem RecordSuccessfulPlay(string path, DateTimeOffset startedAt);
     IReadOnlyList<WatchHistoryEntry> ListRecentCompleted(int limit, int offset = 0);
 }

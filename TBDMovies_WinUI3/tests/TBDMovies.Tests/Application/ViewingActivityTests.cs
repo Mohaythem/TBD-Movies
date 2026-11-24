@@ -276,6 +276,133 @@ public sealed class ViewingActivityTests : IDisposable
         Assert.Empty(Service().ListRecentCompleted());
     }
 
+    [Fact]
+    public void ViewingActivityRepository_ListActive_IncludesNextUpEpisodeForActiveShow()
+    {
+        SeedShowAndEpisode(7, 70, 101, "Pilot", PilotPath, 1);
+        SeedShowAndEpisode(7, 70, 102, "Second", SecondPath, 2);
+
+        // User completed episode 101 (watch event exists)
+        SeedEpisodeWatchEvent(101, _t0.AddHours(1));
+
+        var repo = new ViewingActivityRepository(_cs);
+        var active = repo.ListActive(10);
+
+        // Next Up should be episode 102
+        var item = Assert.Single(active);
+        Assert.Equal(7, item.ShowId);
+        Assert.Equal(102, item.EpisodeId);
+        Assert.Equal(2, item.EpisodeNumber);
+        Assert.Equal("Second", item.EpisodeTitle);
+    }
+
+    [Fact]
+    public void ViewingActivityRepository_ListActive_DeduplicatesMultipleEpisodesOfSameShow()
+    {
+        SeedShowAndEpisode(7, 70, 101, "Pilot", PilotPath, 1);
+        SeedShowAndEpisode(7, 70, 102, "Second", SecondPath, 2);
+
+        var repo = new ViewingActivityRepository(_cs);
+        // 101 played 2 hours ago, 102 played 10 minutes ago
+        repo.RecordSuccessfulPlay(PilotPath, _t0.AddHours(1));
+        repo.RecordSuccessfulPlay(SecondPath, _t0.AddHours(3));
+
+        var active = repo.ListActive(10);
+
+        // Only ONE card for show 7, which must be the latest one (102)
+        var item = Assert.Single(active);
+        Assert.Equal(7, item.ShowId);
+        Assert.Equal(102, item.EpisodeId);
+        Assert.Equal(2, item.EpisodeNumber);
+    }
+
+    [Fact]
+    public void ViewingActivityRepository_ListActive_DeduplicatesMultipleEditionsForSameMovie()
+    {
+        var secondEditionPath = Path.Combine(_dir, "movie1_4k.mkv");
+        SeedMovie(1, "The Great Movie", 2022, MoviePath);
+        // Add a second media file for movie 1 (e.g. 4K edition)
+        Exec($"INSERT INTO media_files(id,movie_id,current_path,path_key,file_size,status,discovered_at,last_seen_at) VALUES (99,1,'{secondEditionPath}','{Key(secondEditionPath)}',1,'PRESENT','2026-01-01','2026-01-01');");
+
+        var repo = new ViewingActivityRepository(_cs);
+        // Older play on file 1, newer play on file 99
+        repo.RecordSuccessfulPlay(MoviePath, _t0.AddHours(1));
+        repo.RecordSuccessfulPlay(secondEditionPath, _t0.AddHours(3));
+
+        var active = repo.ListActive(10);
+
+        // Deduplication partition must yield exactly 1 item for movie 1, picking the newer file 99
+        var item = Assert.Single(active);
+        Assert.Equal(1, item.MovieId);
+        Assert.Equal(secondEditionPath, item.Path);
+    }
+
+    [Fact]
+    public void ViewingActivityRepository_ListActive_DeprioritizesSeason0SpecialsForNextUp()
+    {
+        var specialPath = Path.Combine(_dir, "s00e01.mkv");
+        SeedShowAndEpisode(7, 70, 101, "Pilot", PilotPath, 1);
+        SeedShowAndEpisode(7, 70, 102, "Episode 2", SecondPath, 2);
+        // Add Season 0 Episode 1 (Special)
+        Exec($"INSERT INTO tv_seasons(id,show_id,season_number,created_at,updated_at) VALUES (71,7,0,'2026-01-01','2026-01-01');");
+        Exec($"INSERT INTO tv_episodes(id,season_id,episode_number,title,still_path,created_at,updated_at) VALUES (100,71,1,'Making Of','/still.jpg','2026-01-01','2026-01-01'); INSERT INTO media_files(id,current_path,path_key,file_size,status,discovered_at,last_seen_at) VALUES (100,'{specialPath}','{Key(specialPath)}',1,'PRESENT','2026-01-01','2026-01-01'); INSERT INTO episode_media_files(media_file_id,episode_id,linked_at) VALUES (100,100,'2026-01-01');");
+
+        // User watched Episode 1
+        SeedEpisodeWatchEvent(101, _t0.AddHours(1));
+
+        var repo = new ViewingActivityRepository(_cs);
+        var active = repo.ListActive(10);
+
+        // Next Up MUST pick Episode 2 (Season 1 Episode 2), NOT the Season 0 Special!
+        var item = Assert.Single(active);
+        Assert.Equal(7, item.ShowId);
+        Assert.Equal(102, item.EpisodeId);
+        Assert.Equal(2, item.EpisodeNumber);
+        Assert.Equal(1, item.SeasonNumber);
+    }
+
+    [Fact]
+    public void ViewingActivityRepository_ListActive_AllowsReWatchingPreviouslyWatchedMovie()
+    {
+        SeedMovie(1, "Movie One", 2020, MoviePath);
+
+        // Watched 30 days ago
+        Exec($"INSERT INTO watch_events(media_kind, movie_id, watched_at, created_at, title_snapshot) VALUES ('MOVIE', 1, '{_t0:O}', '{_t0:O}', 'Movie One');");
+
+        var repo = new ViewingActivityRepository(_cs);
+        // User starts re-watching today (started_at is newer than watch_event)
+        repo.RecordSuccessfulPlay(MoviePath, _t0.AddDays(30));
+
+        var active = repo.ListActive(10);
+
+        // Re-watching movie MUST appear!
+        var item = Assert.Single(active);
+        Assert.Equal(1, item.MovieId);
+
+        // Now user finishes re-watching today -> records new watch_event
+        Exec($"INSERT INTO watch_events(media_kind, movie_id, watched_at, created_at, title_snapshot) VALUES ('MOVIE', 1, '{_t0.AddDays(30).AddHours(2):O}', '{_t0.AddDays(30).AddHours(2):O}', 'Movie One');");
+
+        // Now it must disappear from continue watching
+        Assert.Empty(repo.ListActive(10));
+    }
+
+    [Fact]
+    public void ViewingActivityRepository_ListActive_OrdersByLatestActivityAtDescending()
+    {
+        SeedMovie(1, "Movie One", 2020, MoviePath);
+        var movie2Path = Path.Combine(_dir, "movie2.mkv");
+        SeedMovie(2, "Movie Two", 2021, movie2Path);
+
+        var repo = new ViewingActivityRepository(_cs);
+        repo.RecordSuccessfulPlay(MoviePath, _t0.AddHours(1));
+        repo.RecordSuccessfulPlay(movie2Path, _t0.AddHours(2));
+
+        var active = repo.ListActive(10);
+        Assert.Equal(2, active.Count);
+        Assert.Equal(2, active[0].MovieId);
+        Assert.Equal(1, active[1].MovieId);
+    }
+
     private void SeedEpisodeWatchEvent(int episodeId, DateTimeOffset watchedAt)
     {
         Exec($"INSERT INTO watch_events(media_kind, episode_id, watched_at, created_at, title_snapshot) VALUES ('EPISODE', {episodeId}, '{watchedAt:O}', '{watchedAt:O}', 'Watched Episode');");

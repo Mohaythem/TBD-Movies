@@ -24,6 +24,8 @@ public sealed class ViewingActivityService
         return _repository.RecordSuccessfulPlay(path, _clock().ToUniversalTime());
     }
 
+    public IReadOnlyList<ActiveViewingItem> ListActive(int limit = 12) => _repository.ListActive(limit);
+
     public IReadOnlyList<WatchHistoryItem> ListRecentCompleted(int limit = 8, int offset = 0) =>
         _repository.ListRecentCompleted(limit, offset).Select(Map).ToList();
 
