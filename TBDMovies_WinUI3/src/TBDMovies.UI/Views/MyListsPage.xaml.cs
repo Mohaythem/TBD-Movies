@@ -329,7 +329,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             var count = new TextBlock
             {
                 VerticalAlignment = VerticalAlignment.Center,
-                Style = (Style)App.Current.Resources["SecondaryCaptionTextStyle"],
+                Style = (Style)App.Current.Resources["TabPillBadgeStyle"],
                 Visibility = Visibility.Collapsed,
             };
             var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };

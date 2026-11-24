@@ -197,11 +197,12 @@
             <SolidColorBrush x:Key="TabPillBackground" Color="#FF1F2937" />
             <SolidColorBrush x:Key="TabPillBackgroundPointerOver" Color="#FF283548" />
             <SolidColorBrush x:Key="TabPillBackgroundPressed" Color="#FF16202A" />
-            <SolidColorBrush x:Key="TabPillBackgroundChecked" Color="#FF1A324A" />
+            <SolidColorBrush x:Key="TabPillBackgroundChecked" Color="#FF0067C0" />
             <SolidColorBrush x:Key="TabPillBorderBrush" Color="#338392A6" />
-            <SolidColorBrush x:Key="TabPillBorderBrushChecked" Color="#7A0078D4" />
+            <SolidColorBrush x:Key="TabPillBorderBrushChecked" Color="#FF0078D4" />
             <SolidColorBrush x:Key="TabPillForeground" Color="#FFCBD5E1" />
             <SolidColorBrush x:Key="TabPillForegroundChecked" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="TabPillCheckedPointerOverOverlay" Color="#14000000" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="Light">
@@ -316,11 +317,12 @@
             <SolidColorBrush x:Key="TabPillBackground" Color="#FFF0F2F5" />
             <SolidColorBrush x:Key="TabPillBackgroundPointerOver" Color="#FFE8ECF0" />
             <SolidColorBrush x:Key="TabPillBackgroundPressed" Color="#FFDCE2E8" />
-            <SolidColorBrush x:Key="TabPillBackgroundChecked" Color="#FFE0EDFB" />
+            <SolidColorBrush x:Key="TabPillBackgroundChecked" Color="#FF005FB8" />
             <SolidColorBrush x:Key="TabPillBorderBrush" Color="#FFD0D7DE" />
             <SolidColorBrush x:Key="TabPillBorderBrushChecked" Color="#FF005FB8" />
-            <SolidColorBrush x:Key="TabPillForeground" Color="#FF4A5568" />
-            <SolidColorBrush x:Key="TabPillForegroundChecked" Color="#FF005FB8" />
+            <SolidColorBrush x:Key="TabPillForeground" Color="#FF475569" />
+            <SolidColorBrush x:Key="TabPillForegroundChecked" Color="#FFFFFFFF" />
+            <SolidColorBrush x:Key="TabPillCheckedPointerOverOverlay" Color="#14000000" />
         </ResourceDictionary>
 
         <ResourceDictionary x:Key="HighContrast">
@@ -398,6 +400,7 @@
             <SolidColorBrush x:Key="TabPillBorderBrushChecked" Color="{ThemeResource SystemColorHighlightTextColor}" />
             <SolidColorBrush x:Key="TabPillForeground" Color="{ThemeResource SystemColorButtonTextColor}" />
             <SolidColorBrush x:Key="TabPillForegroundChecked" Color="{ThemeResource SystemColorHighlightTextColor}" />
+            <SolidColorBrush x:Key="TabPillCheckedPointerOverOverlay" Color="Transparent" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 </ResourceDictionary>

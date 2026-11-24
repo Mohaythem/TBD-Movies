@@ -136,7 +136,7 @@
                         <TextBlock
                             x:Name="WatchLaterCount"
                             VerticalAlignment="Center"
-                            Style="{StaticResource SecondaryCaptionTextStyle}"
+                            Style="{StaticResource TabPillBadgeStyle}"
                             Visibility="Collapsed" />
                     </StackPanel>
                 </RadioButton>
@@ -151,7 +151,7 @@
                         <TextBlock
                             x:Name="FavoritesCount"
                             VerticalAlignment="Center"
-                            Style="{StaticResource SecondaryCaptionTextStyle}"
+                            Style="{StaticResource TabPillBadgeStyle}"
                             Visibility="Collapsed" />
                     </StackPanel>
                 </RadioButton>
@@ -163,7 +163,7 @@
                     Tag="continue-watching">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock x:Name="ContinueWatchingLabel" VerticalAlignment="Center" />
-                        <TextBlock x:Name="ContinueWatchingCount" VerticalAlignment="Center" Style="{StaticResource SecondaryCaptionTextStyle}" Visibility="Collapsed" />
+                        <TextBlock x:Name="ContinueWatchingCount" VerticalAlignment="Center" Style="{StaticResource TabPillBadgeStyle}" Visibility="Collapsed" />
                     </StackPanel>
                 </RadioButton>
                 <RadioButton
@@ -174,14 +174,14 @@
                     Tag="recently-watched">
                     <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock x:Name="RecentlyWatchedLabel" VerticalAlignment="Center" />
-                        <TextBlock x:Name="RecentlyWatchedCount" VerticalAlignment="Center" Style="{StaticResource SecondaryCaptionTextStyle}" Visibility="Collapsed" />
+                        <TextBlock x:Name="RecentlyWatchedCount" VerticalAlignment="Center" Style="{StaticResource TabPillBadgeStyle}" Visibility="Collapsed" />
                     </StackPanel>
                 </RadioButton>
                 <Rectangle
                     x:Name="TabsSeparator"
                     Width="1"
-                    Height="18"
-                    Margin="4,0,4,0"
+                    Height="20"
+                    Margin="4,8,4,8"
                     VerticalAlignment="Center"
                     Fill="{ThemeResource DividerStrokeColorDefaultBrush}"
                     Opacity="0.4"
@@ -191,7 +191,7 @@
                     Click="NewListButton_Click"
                     Style="{StaticResource DefaultButtonStyle}"
                     CornerRadius="8"
-                    Height="32"
+                    Height="36"
                     Padding="14,0,14,0"
                     VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">

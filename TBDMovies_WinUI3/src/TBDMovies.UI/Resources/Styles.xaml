@@ -544,8 +544,10 @@
     -->
     <Style x:Key="TabPillItemStyle" TargetType="RadioButton">
         <Setter Property="MinWidth" Value="0" />
-        <Setter Property="MinHeight" Value="32" />
-        <Setter Property="Padding" Value="14,5,14,5" />
+        <Setter Property="MinHeight" Value="36" />
+        <Setter Property="Padding" Value="16,6,16,6" />
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Background" Value="{ThemeResource TabPillBackground}" />
         <Setter Property="BorderBrush" Value="{ThemeResource TabPillBorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
@@ -569,11 +571,13 @@
                                 <VisualState x:Name="PointerOver">
                                     <VisualState.Setters>
                                         <Setter Target="HoverOverlay.Opacity" Value="1" />
+                                        <Setter Target="CheckedHoverOverlay.Opacity" Value="1" />
                                     </VisualState.Setters>
                                 </VisualState>
                                 <VisualState x:Name="Pressed">
                                     <VisualState.Setters>
                                         <Setter Target="HoverOverlay.Opacity" Value="0.6" />
+                                        <Setter Target="CheckedHoverOverlay.Opacity" Value="0.6" />
                                     </VisualState.Setters>
                                 </VisualState>
                                 <VisualState x:Name="Disabled">
@@ -589,27 +593,34 @@
                                 <VisualState x:Name="Checked">
                                     <VisualState.Setters>
                                         <Setter Target="CheckedPlate.Opacity" Value="1" />
+                                        <Setter Target="PillRoot.BorderBrush" Value="{ThemeResource TabPillBorderBrushChecked}" />
                                         <Setter Target="PillContent.Foreground" Value="{ThemeResource TabPillForegroundChecked}" />
                                     </VisualState.Setters>
                                 </VisualState>
                             </VisualStateGroup>
                         </VisualStateManager.VisualStateGroups>
 
-                        <!-- Unchecked hover overlay -->
+                        <!-- Unchecked hover overlay (placed below CheckedPlate) -->
                         <Border
                             x:Name="HoverOverlay"
                             Background="{ThemeResource TabPillBackgroundPointerOver}"
                             CornerRadius="7"
                             Opacity="0" />
 
-                        <!-- Active / Checked highlighted capsule -->
+                        <!-- Active / Checked highlighted capsule with single crisp border via PillRoot -->
                         <Border
                             x:Name="CheckedPlate"
                             Background="{ThemeResource TabPillBackgroundChecked}"
-                            BorderBrush="{ThemeResource TabPillBorderBrushChecked}"
-                            BorderThickness="1"
+                            BorderThickness="0"
                             CornerRadius="7"
-                            Opacity="0" />
+                            Opacity="0">
+                            <!-- Translucent darkening scrim on active tab -->
+                            <Border
+                                x:Name="CheckedHoverOverlay"
+                                Background="{ThemeResource TabPillCheckedPointerOverOverlay}"
+                                CornerRadius="7"
+                                Opacity="0" />
+                        </Border>
 
                         <ContentPresenter
                             x:Name="PillContent"
@@ -619,11 +630,24 @@
                             Content="{TemplateBinding Content}"
                             ContentTemplate="{TemplateBinding ContentTemplate}"
                             Foreground="{TemplateBinding Foreground}"
+                            FontSize="{TemplateBinding FontSize}"
+                            FontWeight="{TemplateBinding FontWeight}"
                             TextWrapping="NoWrap" />
                     </Grid>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!--
+        Tab Pill Count Badge Style (My Lists active tab count indicator).
+        Omits explicit Foreground so the badge naturally inherits PillContent.Foreground
+        across all visual states (Checked, Unchecked, PointerOver, Disabled).
+    -->
+    <Style x:Key="TabPillBadgeStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
 
