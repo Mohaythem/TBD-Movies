@@ -195,11 +195,23 @@ public sealed class ViewingActivityRepository(string connectionString, ILibraryR
             SELECT * FROM next_up_episodes
             UNION ALL
             SELECT * FROM legacy_active
+        ),
+        deduped AS (
+            SELECT *,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY CASE
+                           WHEN movie_id IS NOT NULL THEN 'M:' || movie_id
+                           WHEN show_id IS NOT NULL THEN 'S:' || show_id
+                           WHEN episode_id IS NOT NULL THEN 'E:' || episode_id
+                           ELSE path END
+                       ORDER BY julianday(started_at) DESC
+                   ) AS item_rank
+            FROM all_candidates
         )
         SELECT movie_id, show_id, episode_id, title, year, season_number, episode_number, episode_title,
                path, started_at, artwork_reference, backdrop_reference, poster_reference
-        FROM all_candidates
-        WHERE path IS NOT NULL
+        FROM deduped
+        WHERE item_rank = 1 AND path IS NOT NULL
         ORDER BY julianday(started_at) DESC
         LIMIT $limit;
         """;
