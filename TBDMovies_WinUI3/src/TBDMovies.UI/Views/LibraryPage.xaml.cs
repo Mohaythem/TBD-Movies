@@ -207,6 +207,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
     public void Activate()
     {
         _isActivated = true;
+        TraktSync.UpdateSyncStatus();
         var currentSnapshot = AppServices.LibrarySnapshot;
 
         // 1. Cold start: first visit
@@ -388,6 +389,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
     {
         FlowDirection = LocalizationService.FlowDirection;
         PageTitleText.Text = LocalizationService.Text("Library");
+        TraktSync.ApplyLocalization();
         MediaTypeAllItem.Content = LocalizationService.Text("All");
         MediaTypeMoviesItem.Content = LocalizationService.Text("MoviesTab");
         MediaTypeShowsItem.Content = LocalizationService.Text("TvShowsTab");

@@ -57,52 +57,9 @@
                     Spacing="10">
 
                     <!-- Trakt Sync Status Capsule -->
-                    <Border
-                        x:Name="TraktSyncContainer"
-                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                        BorderThickness="1"
-                        CornerRadius="8"
-                        Padding="8,3,8,3"
-                        VerticalAlignment="Center"
-                        Visibility="Collapsed">
-                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                            <StackPanel
-                                x:Name="SyncProgressContainer"
-                                Orientation="Horizontal"
-                                Spacing="6"
-                                VerticalAlignment="Center"
-                                Visibility="Collapsed">
-                                <ProgressBar
-                                    x:Name="SyncProgressBar"
-                                    Width="80"
-                                    Height="4"
-                                    Minimum="0"
-                                    Maximum="8"
-                                    Value="0"
-                                    CornerRadius="2"
-                                    VerticalAlignment="Center" />
-                                <TextBlock
-                                    x:Name="SyncProgressCounter"
-                                    Style="{StaticResource SecondaryCaptionTextStyle}"
-                                    VerticalAlignment="Center" />
-                            </StackPanel>
-                            <TextBlock
-                                x:Name="SyncStatusText"
-                                VerticalAlignment="Center"
-                                Style="{StaticResource SecondaryCaptionTextStyle}"
-                                Visibility="Collapsed" />
-                            <Button
-                                x:Name="SyncNowButton"
-                                Click="SyncNowButton_Click"
-                                Style="{StaticResource SubtleControlButtonStyle}"
-                                Height="24" Width="24" Padding="0"
-                                VerticalAlignment="Center"
-                                ToolTipService.ToolTip="Sync Trakt Now">
-                                <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" FontSize="11" Glyph="&#xE895;" />
-                            </Button>
-                        </StackPanel>
-                    </Border>
+                    <controls:TraktSyncCapsule
+                        x:Name="TraktSync"
+                        VerticalAlignment="Center" />
 
                     <AutoSuggestBox
                         x:Name="SearchBox"

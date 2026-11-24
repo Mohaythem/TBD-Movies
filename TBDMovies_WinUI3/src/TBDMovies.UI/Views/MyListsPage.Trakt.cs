@@ -714,7 +714,6 @@ public sealed partial class MyListsPage
         _syncRefreshDebounceTimer?.Stop();
         _syncRefreshDebounceTimer = null;
         AppServices.TraktSyncCompleted -= OnTraktSyncCompleted;
-        if (AppServices.Trakt is { } trakt) trakt.SyncProgressChanged -= OnTraktSyncProgressChanged;
         _traktActive = false;
         _isActivated = false;
         ++_traktGeneration;
@@ -724,26 +723,11 @@ public sealed partial class MyListsPage
         ++_traktDisplayGeneration;
     }
 
-    private void OnTraktSyncProgressChanged(object? sender, TraktSyncProgress progress)
-    {
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            if (!_isActivated || !IsLoaded) return;
-            SyncProgressBar.Maximum = progress.TotalSteps;
-            SyncProgressBar.Value = progress.CurrentStep;
-            SyncProgressCounter.Text = LocalizationService.Format("TraktSyncProgressFormat", progress.CurrentStep, progress.TotalSteps);
-            SyncProgressContainer.Visibility = Visibility.Visible;
-            SyncStatusText.Visibility = Visibility.Collapsed;
-        });
-    }
-
     private void OnTraktSyncCompleted(object? sender, EventArgs e)
     {
         DispatcherQueue.TryEnqueue(() =>
         {
             if (!_isActivated || !IsLoaded) return;
-            SyncProgressContainer.Visibility = Visibility.Collapsed;
-            SyncStatusText.Visibility = Visibility.Visible;
             UpdateSyncStatus();
             ScheduleDebouncedSyncReload();
         });

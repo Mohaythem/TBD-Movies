@@ -75,11 +75,6 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         _traktActive = true;
         AppServices.TraktSyncCompleted -= OnTraktSyncCompleted;
         AppServices.TraktSyncCompleted += OnTraktSyncCompleted;
-        if (AppServices.Trakt is { } traktService)
-        {
-            traktService.SyncProgressChanged -= OnTraktSyncProgressChanged;
-            traktService.SyncProgressChanged += OnTraktSyncProgressChanged;
-        }
 
         var currentSnapshot = AppServices.LibrarySnapshot;
         if (_lastLoadedSnapshot.HasValue && _lastLoadedSnapshot.Value == currentSnapshot)
@@ -97,63 +92,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
 
     public void UpdateSyncStatus()
     {
-        var trakt = AppServices.Trakt;
-        if (trakt is null)
-        {
-            SyncStatusText.Visibility = Visibility.Collapsed;
-            SyncNowButton.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        var state = trakt.GetSyncState();
-        if (!state.AuthState.IsConnected)
-        {
-            TraktSyncContainer.Visibility = Visibility.Collapsed;
-            SyncStatusText.Visibility = Visibility.Collapsed;
-            SyncNowButton.Visibility = Visibility.Collapsed;
-            return;
-        }
-
-        TraktSyncContainer.Visibility = Visibility.Visible;
-        SyncStatusText.Visibility = Visibility.Visible;
-        SyncNowButton.Visibility = Visibility.Visible;
-        SyncNowButton.IsEnabled = !state.IsSyncing;
-
-        if (state.IsSyncing)
-        {
-            SyncStatusText.Text = LocalizationService.Text("TraktStatusSyncing");
-        }
-        else if (state.LastSyncSuccessAt.HasValue)
-        {
-            var timeStr = LocalizationService.Digits(state.LastSyncSuccessAt.Value.ToLocalTime().ToString("HH:mm", CultureInfo.InvariantCulture));
-            SyncStatusText.Text = $"{LocalizationService.Text("TraktLastSynced")}: {timeStr}";
-        }
-        else
-        {
-            SyncStatusText.Text = string.Empty;
-        }
-    }
-
-    private async void SyncNowButton_Click(object sender, RoutedEventArgs e)
-    {
-        var trakt = AppServices.Trakt;
-        if (trakt is null) return;
-        SyncNowButton.IsEnabled = false;
-        SyncStatusText.Text = LocalizationService.Text("TraktStatusSyncing");
-        try
-        {
-            await trakt.SyncAsync(CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"[MyListsPage] Manual sync failed: {ex.Message}");
-        }
-        finally
-        {
-            SyncProgressContainer.Visibility = Visibility.Collapsed;
-            SyncStatusText.Visibility = Visibility.Visible;
-            UpdateSyncStatus();
-        }
+        TraktSync.UpdateSyncStatus();
     }
 
     /// <summary>Drops the per-visit caches: the custom lists and the loaded section.</summary>
@@ -252,8 +191,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         FlowDirection = LocalizationService.FlowDirection;
         PageTitleText.Text = LocalizationService.Text("MyLists");
         NewListButtonText.Text = LocalizationService.Text("NewList");
-        UpdateTraktSyncVisibility();
-        ToolTipService.SetToolTip(SyncNowButton, LocalizationService.Text("TraktSyncNow"));
+        TraktSync.ApplyLocalization();
         AddMoviesButtonText.Text = LocalizationService.Text("AddMedia");
         RenameListMenuItem.Text = LocalizationService.Text("Rename") ?? "Rename";
         DeleteListMenuItem.Text = LocalizationService.Text("Delete") ?? "Delete";

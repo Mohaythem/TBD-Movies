@@ -307,9 +307,12 @@
                     VerticalAlignment="Center"
                     Orientation="Horizontal"
                     Spacing="12">
+                    <controls:TraktSyncCapsule
+                        x:Name="TraktSync"
+                        VerticalAlignment="Center" />
                     <AutoSuggestBox
                         x:Name="SearchBox"
-                        Width="280"
+                        Width="240"
                         QueryIcon="Find"
                         Style="{StaticResource PageSearchBoxStyle}"
                         TextChanged="SearchBox_TextChanged" />
