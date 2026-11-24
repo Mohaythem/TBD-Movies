@@ -147,6 +147,16 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
 
         if (_movies is null && _shows is null) return;
 
+        ReconcileLocalSnapshotChanges();
+        _moviesRevision = AppServices.CatalogRevision;
+        _showsRevision = AppServices.CatalogRevision;
+
+        _lastSnapshot = AppServices.LibrarySnapshot;
+        PopulateAndRestoreScroll(savedOffset);
+    }
+
+    private void ReconcileLocalSnapshotChanges()
+    {
         if (_movies is not null)
         {
             try
@@ -164,7 +174,6 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
                 }
 
                 _movies = newMovies;
-                _moviesRevision = AppServices.CatalogRevision;
             }
             catch { }
         }
@@ -187,13 +196,9 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
                 }
 
                 _shows = newShows;
-                _showsRevision = AppServices.CatalogRevision;
             }
             catch { }
         }
-
-        _lastSnapshot = AppServices.LibrarySnapshot;
-        PopulateAndRestoreScroll(savedOffset);
     }
 
     /// <summary>
@@ -216,6 +221,11 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
         // 2. Exact match: nothing changed across all 3 domains
         if (_lastSnapshot.HasValue && _lastSnapshot.Value == currentSnapshot)
         {
+            var opened = _recentShowOpened || _recentMovieOpened;
+            if (LibraryNavigationSortPolicy.ShouldReorder(opened, _sort))
+            {
+                PopulateLibrary();
+            }
             HandleRecentOpenedScroll();
             return;
         }
@@ -244,25 +254,29 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
             return;
         }
 
-        // 5. Personal change only (favorites/watchlist)
-        if (currentSnapshot.Personal != _lastSnapshot.Value.Personal &&
-            currentSnapshot.Playback == _lastSnapshot.Value.Playback)
-        {
-            _lastSnapshot = currentSnapshot;
-            HandleRecentOpenedScroll();
-            return;
-        }
-
-        // 6. Playback change (progress/watched)
-        if (currentSnapshot.Playback != _lastSnapshot.Value.Playback)
+        // 5. Personal or Playback change (favorites, watchlist, progress, watched)
+        if (currentSnapshot.Personal != _lastSnapshot.Value.Personal ||
+            currentSnapshot.Playback != _lastSnapshot.Value.Playback)
         {
             var savedOffset = GetCurrentScrollOffset();
             _lastSnapshot = currentSnapshot;
-            if (_filterWatchedOnly)
+
+            ReconcileLocalSnapshotChanges();
+            _moviesRevision = AppServices.CatalogRevision;
+            _showsRevision = AppServices.CatalogRevision;
+
+            var opened = _recentShowOpened || _recentMovieOpened;
+            if (LibraryNavigationSortPolicy.ShouldBubbleToTop(opened, _sort, _sortDescending))
+            {
+                PopulateLibrary();
+                HandleRecentOpenedScroll();
+            }
+            else
             {
                 PopulateAndRestoreScroll(savedOffset);
+                _recentMovieOpened = false;
+                _recentShowOpened = false;
             }
-            HandleRecentOpenedScroll();
             return;
         }
 
@@ -273,7 +287,7 @@ public sealed partial class LibraryPage : Page, ILocalizableView, IActivatableVi
     private void HandleRecentOpenedScroll()
     {
         var opened = _recentShowOpened || _recentMovieOpened;
-        if (opened && _sort == "recent" && _sortDescending)
+        if (LibraryNavigationSortPolicy.ShouldBubbleToTop(opened, _sort, _sortDescending))
         {
             if (MoviesGrid.Items.Count > 0)
                 MoviesGrid.ScrollIntoView(MoviesGrid.Items[0], ScrollIntoViewAlignment.Leading);

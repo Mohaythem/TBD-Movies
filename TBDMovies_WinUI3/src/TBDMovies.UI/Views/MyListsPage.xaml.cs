@@ -180,14 +180,63 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         return false;
     }
 
+    private static MyListsDiffService.ListMediaItemDiffState ToDiffState(ListMediaItem item) => new(
+        item.IsShow,
+        item.Movie?.Id,
+        item.Show?.Id,
+        item.TmdbId,
+        item.IsLocal,
+        item.ShowLocalBadge,
+        item.Year,
+        item.Title,
+        item.LocalBadgeText);
+
+    internal static bool ItemsMatch(ListMediaItem a, ListMediaItem b) =>
+        MyListsDiffService.ItemsMatch(ToDiffState(a), ToDiffState(b));
+
+    internal static bool AreItemsMatchingInOrder(IReadOnlyList<ListMediaItem> fresh, IList<ListMediaItem> current)
+    {
+        if (fresh.Count != current.Count) return false;
+        var freshStates = new MyListsDiffService.ListMediaItemDiffState[fresh.Count];
+        var currentStates = new MyListsDiffService.ListMediaItemDiffState[current.Count];
+        for (int i = 0; i < fresh.Count; i++) freshStates[i] = ToDiffState(fresh[i]);
+        for (int i = 0; i < current.Count; i++) currentStates[i] = ToDiffState(current[i]);
+        return MyListsDiffService.AreItemsMatchingInOrder(freshStates, currentStates);
+    }
+
     private void ReloadAfterSync()
     {
         var previousLists = _customLists;
-        Invalidate();
+        _customLists = _isActivated ? LoadCustomLists() : Array.Empty<CustomList>();
         if (CustomListsChanged(previousLists, _customLists))
         {
             RebuildTabs();
+            Refresh();
+            return;
         }
+
+        // F8: Suppress ItemsSource reassignment if active list items match displayed items in exact order
+        if (_selectedKey is not ("continue-watching" or "recently-watched") && !IsTraktKey(_selectedKey))
+        {
+            var definitions = Definitions;
+            var definition = definitions.FirstOrDefault(list => list.Key == _selectedKey) ?? definitions[0];
+            if (definition.Key == _selectedKey && LoadItems(definition) is { } freshItems)
+            {
+                var queryItems = _query.Length == 0
+                    ? freshItems
+                    : freshItems.Where(item => MediaTitleSearch.Matches(item.Title, item.CanonicalTitle, item.Year, _query)).ToArray();
+
+                if (_displayedItems is not null && AreItemsMatchingInOrder(queryItems, _displayedItems))
+                {
+                    _sectionItems = freshItems;
+                    _sectionKey = definition.Key;
+                    UpdateActiveTabBadge(queryItems.Count);
+                    return;
+                }
+            }
+        }
+
+        Invalidate();
         Refresh();
     }
 
