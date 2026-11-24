@@ -1120,6 +1120,44 @@ public sealed class PlaybackTrackingTests
         Assert.Contains(flushes, f => f.Pos == 50.0 && f.Paused);  // Pause transition flushed
     }
 
+    private static void SeedMovieAndMediaFile(string connStr, int movieId, int mediaFileId)
+    {
+        using var conn = new SqliteConnection(connStr);
+        conn.Open();
+        using var pragma = conn.CreateCommand();
+        pragma.CommandText = "PRAGMA foreign_keys = ON;";
+        pragma.ExecuteNonQuery();
+
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = $@"
+            INSERT INTO movies (id, provider, external_id, title, year, created_at, updated_at, date_added, genres, metadata_status)
+            VALUES ({movieId}, 'tmdb', '{movieId}', 'Test Movie', 2024, datetime('now'), datetime('now'), datetime('now'), '[]', 'READY');
+            INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at)
+            VALUES ({mediaFileId}, {movieId}, 'C:\test_{mediaFileId}.mkv', 'c:\test_{mediaFileId}.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
+        ";
+        cmd.ExecuteNonQuery();
+    }
+
+    private sealed class ReturnValueLauncher : IPlayerProcessLauncher
+    {
+        private readonly bool _result;
+        public ReturnValueLauncher(bool result) => _result = result;
+
+        public Task<bool> LaunchAndTrackAsync(
+            string filePath,
+            double startPositionSeconds,
+            double? totalDurationSeconds,
+            MediaPlayerType playerType,
+            string? customExecutablePath,
+            string? customArgumentsTemplate,
+            Func<double, double?, Task> onPlaybackExit,
+            CancellationToken cancellationToken = default,
+            Func<double, double?, bool, Task>? onProgressTick = null)
+        {
+            return Task.FromResult(_result);
+        }
+    }
+
     [Fact]
     public async Task StartPlaybackAsync_F3_ImmediateResume_SeedsProgressOnConfirmedLaunch()
     {
@@ -1128,10 +1166,10 @@ public sealed class PlaybackTrackingTests
         try
         {
             new DatabaseMigrator(connStr).Migrate();
-            SeedParentEntities(connStr, movieId: 801, mediaFileId: 801);
+            SeedMovieAndMediaFile(connStr, movieId: 801, mediaFileId: 801);
 
             var progressRepo = new PlaybackProgressRepository(connStr);
-            var launcher = new FakeLauncher(returns: true);
+            var launcher = new ReturnValueLauncher(result: true);
             var service = new PlaybackTrackingService(
                 progressRepo,
                 launcher,
@@ -1169,10 +1207,10 @@ public sealed class PlaybackTrackingTests
         try
         {
             new DatabaseMigrator(connStr).Migrate();
-            SeedParentEntities(connStr, movieId: 802, mediaFileId: 802);
+            SeedMovieAndMediaFile(connStr, movieId: 802, mediaFileId: 802);
 
             var progressRepo = new PlaybackProgressRepository(connStr);
-            var launcher = new FakeLauncher(returns: false);
+            var launcher = new ReturnValueLauncher(result: false);
             var service = new PlaybackTrackingService(
                 progressRepo,
                 launcher,
@@ -1207,13 +1245,13 @@ public sealed class PlaybackTrackingTests
         try
         {
             new DatabaseMigrator(connStr).Migrate();
-            SeedParentEntities(connStr, movieId: 803, mediaFileId: 803);
+            SeedMovieAndMediaFile(connStr, movieId: 803, mediaFileId: 803);
 
             var initialTime = DateTimeOffset.UtcNow.AddHours(-5);
             var progressRepo = new PlaybackProgressRepository(connStr);
             progressRepo.SaveProgress(803, 1800.0, 7200, initialTime); // 30 min checkpoint
 
-            var launcher = new FakeLauncher(returns: true);
+            var launcher = new ReturnValueLauncher(result: true);
             var service = new PlaybackTrackingService(
                 progressRepo,
                 launcher,
@@ -1250,11 +1288,11 @@ public sealed class PlaybackTrackingTests
         try
         {
             new DatabaseMigrator(connStr).Migrate();
-            SeedParentEntities(connStr, movieId: 804, mediaFileId: 804);
-            SeedParentEntities(connStr, movieId: 805, mediaFileId: 805);
+            SeedMovieAndMediaFile(connStr, movieId: 804, mediaFileId: 804);
+            SeedMovieAndMediaFile(connStr, movieId: 805, mediaFileId: 805);
 
             var progressRepo = new PlaybackProgressRepository(connStr);
-            var launcher = new FakeLauncher(returns: true);
+            var launcher = new ReturnValueLauncher(result: true);
             var service = new PlaybackTrackingService(
                 progressRepo,
                 launcher,
