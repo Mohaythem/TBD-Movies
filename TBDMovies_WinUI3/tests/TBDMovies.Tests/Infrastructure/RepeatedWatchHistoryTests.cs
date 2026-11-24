@@ -135,7 +135,7 @@ public sealed class RepeatedWatchHistoryTests : IDisposable
     }
 
     [Fact]
-    public void AddShowWatchEvents_And_DeleteProgressForShow_AtomicOperations()
+    public void AddShowWatchEvents_InsertsEvents()
     {
         new DatabaseMigrator(_connectionString).Migrate();
         using (var connection = Open())
@@ -159,22 +159,12 @@ public sealed class RepeatedWatchHistoryTests : IDisposable
             cmd.ExecuteNonQuery();
         }
 
-        var progressRepo = new PlaybackProgressRepository(_connectionString);
-        progressRepo.SaveProgress(5001, 600, 1800, DateTimeOffset.UtcNow);
-        progressRepo.SaveProgress(5002, 300, 1800, DateTimeOffset.UtcNow);
-        Assert.NotNull(progressRepo.GetByMediaFileId(5001));
-        Assert.NotNull(progressRepo.GetByMediaFileId(5002));
-
         var personalRepo = new PersonalLibraryRepository(_connectionString);
         var inserted = personalRepo.AddShowWatchEvents(5, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         Assert.Equal(2, inserted);
         var watchedEps = personalRepo.GetWatchedEpisodeIds(5);
         Assert.Contains(501, watchedEps);
         Assert.Contains(502, watchedEps);
-
-        progressRepo.DeleteProgressForShow(5);
-        Assert.Null(progressRepo.GetByMediaFileId(5001));
-        Assert.Null(progressRepo.GetByMediaFileId(5002));
     }
 
     private static void SeedMovie(SqliteConnection connection)

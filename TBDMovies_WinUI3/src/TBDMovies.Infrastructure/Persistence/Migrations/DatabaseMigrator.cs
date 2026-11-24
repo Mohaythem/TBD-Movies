@@ -6,7 +6,7 @@ namespace TBDMovies.Infrastructure.Persistence.Migrations;
 
 public class DatabaseMigrator
 {
-    public const int LatestVersion = 24;
+    public const int LatestVersion = 25;
     private readonly string _connectionString;
 
     public DatabaseMigrator(string connectionString)
@@ -755,7 +755,11 @@ public class DatabaseMigrator
                 created_at TEXT NOT NULL
             );
             CREATE INDEX idx_trakt_pending_watchlist ON trakt_pending_watchlist_actions(media_kind, tmdb_id);
-        "
+        ",
+        // Migration 25: Drop playback_progress table
+        """
+            DROP TABLE IF EXISTS playback_progress;
+        """
     };
 
     public void Migrate(int targetVersion = LatestVersion)
@@ -826,7 +830,7 @@ public class DatabaseMigrator
                     ValidateSchema(connection, tx, includeActivity: i + 1 >= 15,
                         includeViewing: i + 1 >= 16, includeShowPersonal: i + 1 >= 17,
                         includeTrakt: i + 1 >= 18, includeCustomTitle: i + 1 >= 19,
-                        includeScaleIndexes: i + 1 >= 20, includePlaybackProgress: i + 1 >= 21,
+                        includeScaleIndexes: i + 1 >= 20, includePlaybackProgress: i + 1 >= 21 && i + 1 < 25,
                         includeUnifiedTraktLists: i + 1 >= 22,
                         includeRelaxedPendingActions: i + 1 >= 23,
                         includeTraktPendingActions: i + 1 >= 24);
@@ -855,7 +859,7 @@ public class DatabaseMigrator
     private static void ValidateSchema(SqliteConnection connection, SqliteTransaction? transaction = null,
         bool includeActivity = true, bool includeViewing = true, bool includeShowPersonal = true,
         bool includeTrakt = true, bool includeCustomTitle = true, bool includeScaleIndexes = true,
-        bool includePlaybackProgress = true, bool includeUnifiedTraktLists = true,
+        bool includePlaybackProgress = false, bool includeUnifiedTraktLists = true,
         bool includeRelaxedPendingActions = true, bool includeTraktPendingActions = true,
         bool exhaustive = true)
     {

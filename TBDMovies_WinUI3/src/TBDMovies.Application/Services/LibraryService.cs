@@ -15,20 +15,17 @@ public class LibraryService : ILibraryUiActions, IPersonalLibraryUiActions
     private readonly IMovieRepository _movies;
     private readonly IMediaFileRepository _mediaFiles;
     private readonly IPersonalLibraryRepository _personal;
-    private readonly IPlaybackProgressRepository? _playbackProgress;
     private readonly Func<DateTimeOffset> _clock;
 
     public LibraryService(
         IMovieRepository movies,
         IMediaFileRepository mediaFiles,
         IPersonalLibraryRepository? personal = null,
-        IPlaybackProgressRepository? playbackProgress = null,
         Func<DateTimeOffset>? clock = null)
     {
         _movies = movies;
         _mediaFiles = mediaFiles;
         _personal = personal!;
-        _playbackProgress = playbackProgress;
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
 
@@ -116,14 +113,6 @@ public class LibraryService : ILibraryUiActions, IPersonalLibraryUiActions
     {
         var now = _clock();
         _personal.AddWatchEvent(movieId, watchedAt ?? now, now);
-        try
-        {
-            _playbackProgress?.DeleteProgressForMovie(movieId);
-        }
-        catch (Exception ex)
-        {
-            TBDMovies.Application.Diagnostics.AppDiagnosticsLog.Record("LibraryService", $"DeleteProgressForMovie({movieId}) failed: {ex.Message}");
-        }
         return MapSnapshot(_personal.GetState(movieId));
     }
 

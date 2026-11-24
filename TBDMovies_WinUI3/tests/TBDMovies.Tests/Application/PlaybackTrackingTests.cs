@@ -20,38 +20,6 @@ namespace TBDMovies.Tests.Application;
 
 public sealed class PlaybackTrackingTests
 {
-    [Fact]
-    public void PlaybackProgress_CalculatesResumePositionCorrectly()
-    {
-        // Under 3 seconds -> HasResumePosition should be false
-        var p1 = new PlaybackProgress(1, 2, 1000, DateTimeOffset.UtcNow);
-        Assert.False(p1.HasResumePosition);
-
-        // Exactly 3 seconds and above -> HasResumePosition should be true
-        var p1b = new PlaybackProgress(1, 3, 1000, DateTimeOffset.UtcNow);
-        Assert.True(p1b.HasResumePosition);
-
-        // Valid middle position -> HasResumePosition is true
-        var p2 = new PlaybackProgress(1, 600, 1000, DateTimeOffset.UtcNow);
-        Assert.True(p2.HasResumePosition);
-        Assert.Equal(60.0, p2.ProgressPercentage);
-        Assert.Equal("10:00", p2.FormattedResumeTime);
-
-        // At or over 80% -> HasResumePosition is false (unified watched threshold)
-        var p3 = new PlaybackProgress(1, 800, 1000, DateTimeOffset.UtcNow);
-        Assert.False(p3.HasResumePosition);
-        Assert.Equal(80.0, p3.ProgressPercentage);
-
-        // Under 80% (e.g. 79.9%) -> HasResumePosition is true
-        var p3b = new PlaybackProgress(1, 799, 1000, DateTimeOffset.UtcNow);
-        Assert.True(p3b.HasResumePosition);
-
-        // Hours formatting
-        var p4 = new PlaybackProgress(1, 3665, 7200, DateTimeOffset.UtcNow);
-        Assert.True(p4.HasResumePosition);
-        Assert.Equal("1:01:05", p4.FormattedResumeTime);
-    }
-
     [Theory]
     [InlineData(MediaPlayerType.Vlc, 125, "--start-time=125 \"C:\\movie.mkv\"")]
     [InlineData(MediaPlayerType.Mpc, 125, "/startpos 00:02:05 \"C:\\movie.mkv\"")]
@@ -97,62 +65,6 @@ public sealed class PlaybackTrackingTests
     }
 
     [Fact]
-    public async Task PlaybackProgressRepository_SaveGetDeleteLifecycle()
-    {
-        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_playback_{Guid.NewGuid():N}.db");
-        var connStr = $"Data Source={dbPath}";
-        try
-        {
-            new DatabaseMigrator(connStr).Migrate();
-
-            // Seed a movie and a media file
-            using (var conn = new SqliteConnection(connStr))
-            {
-                conn.Open();
-                using var cmd = conn.CreateCommand();
-                cmd.CommandText = @"
-                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (10, 'Test Movie', 2024, datetime('now'), datetime('now'), datetime('now'));
-                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (100, 10, 'C:\test.mkv', 'c:\test.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
-                ";
-                cmd.ExecuteNonQuery();
-            }
-
-            var repo = new PlaybackProgressRepository(connStr);
-
-            // Initially null
-            var initial = repo.GetByMediaFileId(100);
-            Assert.Null(initial);
-
-            // Save progress
-            var now = DateTimeOffset.UtcNow;
-            repo.SaveProgress(100, 500, 1000, now);
-
-            var retrieved = repo.GetByMediaFileId(100);
-            Assert.NotNull(retrieved);
-            Assert.Equal(100, retrieved.MediaFileId);
-            Assert.Equal(500, retrieved.PositionSeconds);
-            Assert.Equal(1000, retrieved.TotalDurationSeconds);
-            Assert.Equal(50.0, retrieved.ProgressPercentage);
-
-            // Get for movie
-            var movieProgress = repo.GetForMovie(10);
-            Assert.NotNull(movieProgress);
-            Assert.Equal(100, movieProgress.MediaFileId);
-
-            // Delete progress
-            repo.DeleteProgress(100);
-            Assert.Null(repo.GetByMediaFileId(100));
-        }
-        finally
-        {
-            if (File.Exists(dbPath))
-            {
-                try { File.Delete(dbPath); } catch { }
-            }
-        }
-    }
-
-    [Fact]
     public async Task PlaybackTrackingService_TracksProgressAndScrobbles()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_tracking_{Guid.NewGuid():N}.db");
@@ -172,12 +84,10 @@ public sealed class PlaybackTrackingTests
                 cmd.ExecuteNonQuery();
             }
 
-            var progressRepo = new PlaybackProgressRepository(connStr);
             var mockLauncher = new FakePlayerLauncher();
             var mockTrakt = new FakeTraktClient();
 
             var service = new PlaybackTrackingService(
-                progressRepo,
                 mockLauncher,
                 traktDataClient: mockTrakt,
                 traktAuthService: new FakeTraktAuthService(),
@@ -194,14 +104,8 @@ public sealed class PlaybackTrackingTests
             // Mock launcher simulates user watching to 600 seconds (60% -> under 80% threshold)
             mockLauncher.SimulatedExitPosition = 600;
 
-            var started = await service.StartPlaybackAsync(target, resume: false);
+            var started = await service.StartPlaybackAsync(target);
             Assert.True(started);
-
-            // Verify progress was saved upon exit
-            var saved = progressRepo.GetByMediaFileId(200);
-            Assert.NotNull(saved);
-            Assert.Equal(600, saved.PositionSeconds);
-            Assert.Equal(60.0, saved.ProgressPercentage);
 
             // Scrobble action on exit is always "stop" to clear "Watching Now" on Trakt
             Assert.Contains(mockTrakt.Calls, c => c.Action == "start");
@@ -210,7 +114,7 @@ public sealed class PlaybackTrackingTests
             // Now simulate watching to 850 seconds (85% -> exceeds unified 80% threshold)
             mockTrakt.Calls.Clear();
             mockLauncher.SimulatedExitPosition = 850;
-            await service.StartPlaybackAsync(target, resume: false);
+            await service.StartPlaybackAsync(target);
 
             // At 80%+, scrobble action is "stop" (marking as watched on both local and Trakt)
             Assert.Contains(mockTrakt.Calls, c => c.Action == "stop" && Math.Abs(c.Progress - 85.0) < 0.1);
@@ -243,9 +147,8 @@ public sealed class PlaybackTrackingTests
                 cmd.ExecuteNonQuery();
             }
 
-            var progressRepo = new PlaybackProgressRepository(connStr);
             var mockLauncher = new FakePlayerLauncher { SimulatedExitPosition = 120 };
-            var service = new PlaybackTrackingService(progressRepo, mockLauncher);
+            var service = new PlaybackTrackingService(mockLauncher);
 
             var target = new PlaybackMediaTarget(
                 MediaFileId: 300,
@@ -265,7 +168,7 @@ public sealed class PlaybackTrackingTests
             service.PlaybackEnded += globalHandler;
             service.PlaybackEnded += detailsHandler;
 
-            await service.StartPlaybackAsync(target, resume: false);
+            await service.StartPlaybackAsync(target);
 
             Assert.Single(globalSubscriberCalls);
             Assert.Equal(300, globalSubscriberCalls[0]);
@@ -275,7 +178,7 @@ public sealed class PlaybackTrackingTests
             // Phase 2: User navigates away -> Deactivate unsubscribes details page
             service.PlaybackEnded -= detailsHandler;
 
-            await service.StartPlaybackAsync(target, resume: false);
+            await service.StartPlaybackAsync(target);
 
             Assert.Equal(2, globalSubscriberCalls.Count);
             // Details page must NOT have received event while deactivated (no leak)
@@ -284,7 +187,7 @@ public sealed class PlaybackTrackingTests
             // Phase 3: User returns to details page -> Activate re-subscribes
             service.PlaybackEnded += detailsHandler;
 
-            await service.StartPlaybackAsync(target, resume: false);
+            await service.StartPlaybackAsync(target);
 
             Assert.Equal(3, globalSubscriberCalls.Count);
             Assert.Equal(2, detailsPageSubscriberCalls.Count);
@@ -383,57 +286,6 @@ public sealed class PlaybackTrackingTests
     }
 
     [Fact]
-    public void PlaybackProgressRepository_GetForMovies_BatchQuery()
-    {
-        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_batch_progress_{Guid.NewGuid():N}.db");
-        var connStr = $"Data Source={dbPath}";
-        try
-        {
-            new DatabaseMigrator(connStr).Migrate();
-
-            using (var conn = new SqliteConnection(connStr))
-            {
-                conn.Open();
-                using var cmd = conn.CreateCommand();
-                cmd.CommandText = @"
-                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (1, 'Movie 1', 2021, datetime('now'), datetime('now'), datetime('now'));
-                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (2, 'Movie 2', 2022, datetime('now'), datetime('now'), datetime('now'));
-                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (3, 'Movie 3', 2023, datetime('now'), datetime('now'), datetime('now'));
-
-                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (10, 1, 'C:\m1.mkv', 'c:\m1.mkv', 100, 'PRESENT', datetime('now'), datetime('now'));
-                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (20, 2, 'C:\m2.mkv', 'c:\m2.mkv', 200, 'PRESENT', datetime('now'), datetime('now'));
-                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (30, 3, 'C:\m3.mkv', 'c:\m3.mkv', 300, 'PRESENT', datetime('now'), datetime('now'));
-                ";
-                cmd.ExecuteNonQuery();
-            }
-
-            var repo = new PlaybackProgressRepository(connStr);
-
-            // Empty list returns empty dictionary
-            var emptyResult = repo.GetForMovies([]);
-            Assert.Empty(emptyResult);
-
-            // Save progress for Movie 1 and Movie 2, but not Movie 3
-            repo.SaveProgress(10, 120, 3600, DateTimeOffset.UtcNow);
-            repo.SaveProgress(20, 240, 7200, DateTimeOffset.UtcNow);
-
-            var batch = repo.GetForMovies([1, 2, 3]);
-            Assert.Equal(2, batch.Count);
-            Assert.True(batch.ContainsKey(1));
-            Assert.True(batch.ContainsKey(2));
-            Assert.False(batch.ContainsKey(3));
-
-            Assert.Equal(120, batch[1].PositionSeconds);
-            Assert.Equal(240, batch[2].PositionSeconds);
-        }
-        finally
-        {
-            SqliteConnection.ClearAllPools();
-            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
-        }
-    }
-
-    [Fact]
     public async Task PlaybackTrackingService_WhenMediaFileIdZeroOrNegative_DoesNotThrow_AndStillFiresPlaybackEnded()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_unindexed_{Guid.NewGuid():N}.db");
@@ -441,9 +293,8 @@ public sealed class PlaybackTrackingTests
         try
         {
             new DatabaseMigrator(connStr).Migrate();
-            var progressRepo = new PlaybackProgressRepository(connStr);
             var mockLauncher = new FakePlayerLauncher { SimulatedExitPosition = 250 };
-            var service = new PlaybackTrackingService(progressRepo, mockLauncher);
+            var service = new PlaybackTrackingService(mockLauncher);
 
             var target = new PlaybackMediaTarget(
                 MediaFileId: 0,
@@ -461,7 +312,7 @@ public sealed class PlaybackTrackingTests
             };
 
             // Should complete cleanly without throwing ArgumentOutOfRangeException
-            var started = await service.StartPlaybackAsync(target, resume: false);
+            var started = await service.StartPlaybackAsync(target);
             Assert.True(started);
             Assert.True(endedFired);
             Assert.Equal(0, reportedId);
@@ -493,7 +344,6 @@ public sealed class PlaybackTrackingTests
                 cmd.ExecuteNonQuery();
             }
 
-            var progressRepo = new PlaybackProgressRepository(connStr);
             var personalRepo = new PersonalLibraryRepository(connStr);
             var mockLauncher = new FakePlayerLauncher
             {
@@ -503,7 +353,6 @@ public sealed class PlaybackTrackingTests
             var mockTrakt = new FakeTraktClient();
 
             var service = new PlaybackTrackingService(
-                progressRepo,
                 mockLauncher,
                 personalLibraryRepository: personalRepo,
                 traktDataClient: mockTrakt,
@@ -518,10 +367,7 @@ public sealed class PlaybackTrackingTests
                 MovieId: 50,
                 MovieTitle: "Discovered Movie");
 
-            await service.StartPlaybackAsync(target, resume: false);
-
-            // Watched past 80% -> progress deleted
-            Assert.Null(progressRepo.GetByMediaFileId(500));
+            await service.StartPlaybackAsync(target);
 
             // Watched past 80% -> watch event recorded in personal library
             var history = personalRepo.GetWatchEvents(50);
@@ -538,7 +384,7 @@ public sealed class PlaybackTrackingTests
     }
 
     [Fact]
-    public async Task PlaybackTrackingService_WhenBothDurationsNull_DoesNotThrowDivisionByZero_AndSavesPositionSafely()
+    public async Task PlaybackTrackingService_WhenBothDurationsNull_DoesNotThrowDivisionByZero_AndStopsCleanly()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_no_duration_{Guid.NewGuid():N}.db");
         var connStr = $"Data Source={dbPath}";
@@ -557,7 +403,6 @@ public sealed class PlaybackTrackingTests
                 cmd.ExecuteNonQuery();
             }
 
-            var progressRepo = new PlaybackProgressRepository(connStr);
             var personalRepo = new PersonalLibraryRepository(connStr);
             var mockLauncher = new FakePlayerLauncher
             {
@@ -567,7 +412,6 @@ public sealed class PlaybackTrackingTests
             var mockTrakt = new FakeTraktClient();
 
             var service = new PlaybackTrackingService(
-                progressRepo,
                 mockLauncher,
                 personalLibraryRepository: personalRepo,
                 traktDataClient: mockTrakt,
@@ -582,13 +426,7 @@ public sealed class PlaybackTrackingTests
                 MovieId: 60,
                 MovieTitle: "No Duration Movie");
 
-            await service.StartPlaybackAsync(target, resume: false);
-
-            // Progress should be safely saved without exception
-            var saved = progressRepo.GetByMediaFileId(600);
-            Assert.NotNull(saved);
-            Assert.Equal(500, saved.PositionSeconds);
-            Assert.Null(saved.TotalDurationSeconds);
+            await service.StartPlaybackAsync(target);
 
             // No watch event recorded because percentage is 0
             Assert.Empty(personalRepo.GetWatchEvents(60));
@@ -623,7 +461,6 @@ public sealed class PlaybackTrackingTests
                 cmd.ExecuteNonQuery();
             }
 
-            var progressRepo = new PlaybackProgressRepository(connStr);
             var mockLauncher = new FakePlayerLauncher
             {
                 SimulatedDiscoveredDuration = 2000,
@@ -632,7 +469,6 @@ public sealed class PlaybackTrackingTests
             var mockTrakt = new FakeTraktClient();
 
             var service = new PlaybackTrackingService(
-                progressRepo,
                 mockLauncher,
                 traktDataClient: mockTrakt,
                 traktAuthService: new FakeTraktAuthService(),
@@ -646,7 +482,7 @@ public sealed class PlaybackTrackingTests
                 MovieId: 70,
                 MovieTitle: "Scrobble Movie");
 
-            await service.StartPlaybackAsync(target, resume: false);
+            await service.StartPlaybackAsync(target);
 
             // Trakt scrobble payload must report 50% (not 0.0%)
             Assert.Contains(mockTrakt.Calls, c => c.Action == "stop" && Math.Abs(c.Progress - 50.0) < 0.1);
@@ -659,7 +495,7 @@ public sealed class PlaybackTrackingTests
     }
 
     [Fact]
-    public async Task PlaybackTrackingService_WhenPlaybackExitsUnder3Seconds_CleansUpStaleProgress_AndSendsStopScrobble()
+    public async Task PlaybackTrackingService_WhenPlaybackExitsUnder3Seconds_SendsStopScrobble_AndFiresPlaybackEnded()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_under_3s_{Guid.NewGuid():N}.db");
         var connStr = $"Data Source={dbPath}";
@@ -674,12 +510,10 @@ public sealed class PlaybackTrackingTests
                 cmd.CommandText = @"
                     INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (80, 'Quick Exit Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
                     INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (800, 80, 'C:\quick.mkv', 'c:\quick.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
-                    INSERT INTO playback_progress (media_file_id, position_seconds, total_duration_seconds, last_watched_at) VALUES (800, 200, 1000, datetime('now'));
                 ";
                 cmd.ExecuteNonQuery();
             }
 
-            var progressRepo = new PlaybackProgressRepository(connStr);
             var mockLauncher = new FakePlayerLauncher
             {
                 SimulatedDiscoveredDuration = 1000,
@@ -688,7 +522,6 @@ public sealed class PlaybackTrackingTests
             var mockTrakt = new FakeTraktClient();
 
             var service = new PlaybackTrackingService(
-                progressRepo,
                 mockLauncher,
                 traktDataClient: mockTrakt,
                 traktAuthService: new FakeTraktAuthService(),
@@ -705,10 +538,7 @@ public sealed class PlaybackTrackingTests
             var endedFired = false;
             service.PlaybackEnded += (_, id) => endedFired = (id == 800);
 
-            await service.StartPlaybackAsync(target, resume: false);
-
-            // Stale progress must be deleted
-            Assert.Null(progressRepo.GetByMediaFileId(800));
+            await service.StartPlaybackAsync(target);
 
             // Stop scrobble must be sent even for under 3s exit to clear "Watching Now" on Trakt (1.5s / 1000s = 0.15%)
             Assert.Contains(mockTrakt.Calls, c => c.Action == "stop" && Math.Abs(c.Progress - 0.15) < 0.01);
@@ -743,7 +573,6 @@ public sealed class PlaybackTrackingTests
                 cmd.ExecuteNonQuery();
             }
 
-            var progressRepo = new PlaybackProgressRepository(connStr);
             var mockLauncher = new FakePlayerLauncher
             {
                 SimulatedDiscoveredDuration = 1000,
@@ -756,7 +585,6 @@ public sealed class PlaybackTrackingTests
 
             var mockTrakt = new FakeTraktClient();
             var service = new PlaybackTrackingService(
-                progressRepo,
                 mockLauncher,
                 traktDataClient: mockTrakt,
                 traktAuthService: new FakeTraktAuthService(),
@@ -770,7 +598,7 @@ public sealed class PlaybackTrackingTests
                 MovieId: 90,
                 MovieTitle: "Lifecycle Movie");
 
-            await service.StartPlaybackAsync(target, resume: false);
+            await service.StartPlaybackAsync(target);
 
             // Calls must contain:
             // 1. Initial start
@@ -813,7 +641,6 @@ public sealed class PlaybackTrackingTests
                 cmd.ExecuteNonQuery();
             }
 
-            var progressRepo = new PlaybackProgressRepository(connStr);
             var mockLauncher = new FakePlayerLauncher
             {
                 SimulatedDiscoveredDuration = 1000,
@@ -824,7 +651,6 @@ public sealed class PlaybackTrackingTests
 
             var mockTrakt = new FakeTraktClient();
             var service = new PlaybackTrackingService(
-                progressRepo,
                 mockLauncher,
                 traktDataClient: mockTrakt,
                 traktAuthService: new FakeTraktAuthService(),
@@ -839,7 +665,7 @@ public sealed class PlaybackTrackingTests
                 MovieTitle: "App Exit Movie");
 
             // Start playback in background
-            var playTask = service.StartPlaybackAsync(target, resume: false);
+            var playTask = service.StartPlaybackAsync(target);
 
             // Wait briefly for playback to begin and first tick to register
             await Task.Delay(50);
@@ -880,7 +706,6 @@ public sealed class PlaybackTrackingTests
                 cmd.ExecuteNonQuery();
             }
 
-            var progressRepo = new PlaybackProgressRepository(connStr);
             var mockLauncher = new FakePlayerLauncher
             {
                 SimulatedDiscoveredDuration = 1000,
@@ -889,7 +714,6 @@ public sealed class PlaybackTrackingTests
             };
             var mockTrakt = new FakeTraktClient();
             var service = new PlaybackTrackingService(
-                progressRepo,
                 mockLauncher,
                 traktDataClient: mockTrakt,
                 traktAuthService: new FakeTraktAuthService(),
@@ -912,11 +736,11 @@ public sealed class PlaybackTrackingTests
                 MovieTitle: "Movie 2");
 
             // Play video 1 in background
-            var play1 = service.StartPlaybackAsync(target1, resume: false);
+            var play1 = service.StartPlaybackAsync(target1);
             await Task.Delay(50);
 
             // Starting video 2 cleanly stops video 1 first
-            var play2 = service.StartPlaybackAsync(target2, resume: false);
+            var play2 = service.StartPlaybackAsync(target2);
 
             await Task.WhenAll(play1, play2);
 
@@ -1118,218 +942,6 @@ public sealed class PlaybackTrackingTests
         Assert.NotEmpty(flushes);
         Assert.Contains(flushes, f => f.Pos == 50.0 && !f.Paused); // Seek jump flushed
         Assert.Contains(flushes, f => f.Pos == 50.0 && f.Paused);  // Pause transition flushed
-    }
-
-    private static void SeedMovieAndMediaFile(string connStr, int movieId, int mediaFileId)
-    {
-        using var conn = new SqliteConnection(connStr);
-        conn.Open();
-        using var pragma = conn.CreateCommand();
-        pragma.CommandText = "PRAGMA foreign_keys = ON;";
-        pragma.ExecuteNonQuery();
-
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = $@"
-            INSERT INTO movies (id, provider, external_id, title, year, created_at, updated_at, date_added, genres, metadata_status)
-            VALUES ({movieId}, 'tmdb', '{movieId}', 'Test Movie', 2024, datetime('now'), datetime('now'), datetime('now'), '[]', 'READY');
-            INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at)
-            VALUES ({mediaFileId}, {movieId}, 'C:\test_{mediaFileId}.mkv', 'c:\test_{mediaFileId}.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
-        ";
-        cmd.ExecuteNonQuery();
-    }
-
-    private sealed class ReturnValueLauncher : IPlayerProcessLauncher
-    {
-        private readonly bool _result;
-        public ReturnValueLauncher(bool result) => _result = result;
-
-        public Task<bool> LaunchAndTrackAsync(
-            string filePath,
-            double startPositionSeconds,
-            double? totalDurationSeconds,
-            MediaPlayerType playerType,
-            string? customExecutablePath,
-            string? customArgumentsTemplate,
-            Func<double, double?, Task> onPlaybackExit,
-            CancellationToken cancellationToken = default,
-            Func<double, double?, bool, Task>? onProgressTick = null)
-        {
-            return Task.FromResult(_result);
-        }
-    }
-
-    [Fact]
-    public async Task StartPlaybackAsync_F3_ImmediateResume_SeedsProgressOnConfirmedLaunch()
-    {
-        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_f3_seed_{Guid.NewGuid():N}.db");
-        var connStr = $"Data Source={dbPath}";
-        try
-        {
-            new DatabaseMigrator(connStr).Migrate();
-            SeedMovieAndMediaFile(connStr, movieId: 801, mediaFileId: 801);
-
-            var progressRepo = new PlaybackProgressRepository(connStr);
-            var launcher = new ReturnValueLauncher(result: true);
-            var service = new PlaybackTrackingService(
-                progressRepo,
-                launcher,
-                settingsRepository: null);
-
-            var target = new PlaybackMediaTarget(
-                MediaFileId: 801,
-                FilePath: @"C:\dummy\movie.mkv",
-                TotalDurationSeconds: 1200,
-                IsMovie: true,
-                MovieId: 801,
-                MovieTitle: "F3 Movie");
-
-            var success = await service.StartPlaybackAsync(target, resume: false);
-
-            Assert.True(success);
-            var saved = progressRepo.GetByMediaFileId(801);
-            Assert.NotNull(saved);
-            Assert.Equal(3.0, saved.PositionSeconds);
-            Assert.Equal(1200, saved.TotalDurationSeconds);
-            Assert.True(saved.HasResumePosition);
-        }
-        finally
-        {
-            SqliteConnection.ClearAllPools();
-            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
-        }
-    }
-
-    [Fact]
-    public async Task StartPlaybackAsync_F3_FailedLaunch_DoesNotSeedProgress_AndCleansSession()
-    {
-        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_f3_fail_{Guid.NewGuid():N}.db");
-        var connStr = $"Data Source={dbPath}";
-        try
-        {
-            new DatabaseMigrator(connStr).Migrate();
-            SeedMovieAndMediaFile(connStr, movieId: 802, mediaFileId: 802);
-
-            var progressRepo = new PlaybackProgressRepository(connStr);
-            var launcher = new ReturnValueLauncher(result: false);
-            var service = new PlaybackTrackingService(
-                progressRepo,
-                launcher,
-                settingsRepository: null);
-
-            var target = new PlaybackMediaTarget(
-                MediaFileId: 802,
-                FilePath: @"C:\dummy\missing.mkv",
-                TotalDurationSeconds: 1200,
-                IsMovie: true,
-                MovieId: 802,
-                MovieTitle: "F3 Fail Movie");
-
-            var success = await service.StartPlaybackAsync(target, resume: false);
-
-            Assert.False(success);
-            var saved = progressRepo.GetByMediaFileId(802);
-            Assert.Null(saved);
-        }
-        finally
-        {
-            SqliteConnection.ClearAllPools();
-            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
-        }
-    }
-
-    [Fact]
-    public async Task StartPlaybackAsync_F3_ResumePreservation_KeepsPosition_AndBumpsLastWatched()
-    {
-        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_f3_resume_{Guid.NewGuid():N}.db");
-        var connStr = $"Data Source={dbPath}";
-        try
-        {
-            new DatabaseMigrator(connStr).Migrate();
-            SeedMovieAndMediaFile(connStr, movieId: 803, mediaFileId: 803);
-
-            var initialTime = DateTimeOffset.UtcNow.AddHours(-5);
-            var progressRepo = new PlaybackProgressRepository(connStr);
-            progressRepo.SaveProgress(803, 1800.0, 7200, initialTime); // 30 min checkpoint
-
-            var launcher = new ReturnValueLauncher(result: true);
-            var service = new PlaybackTrackingService(
-                progressRepo,
-                launcher,
-                settingsRepository: null);
-
-            var target = new PlaybackMediaTarget(
-                MediaFileId: 803,
-                FilePath: @"C:\dummy\resume.mkv",
-                TotalDurationSeconds: 7200,
-                IsMovie: true,
-                MovieId: 803,
-                MovieTitle: "Resume Movie");
-
-            var success = await service.StartPlaybackAsync(target, resume: true);
-
-            Assert.True(success);
-            var updated = progressRepo.GetByMediaFileId(803);
-            Assert.NotNull(updated);
-            Assert.Equal(1800.0, updated.PositionSeconds); // Preserved at 30 min, not overwritten by 3.0!
-            Assert.True(updated.LastWatchedAt > initialTime);
-        }
-        finally
-        {
-            SqliteConnection.ClearAllPools();
-            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
-        }
-    }
-
-    [Fact]
-    public async Task StartPlaybackAsync_F3_ShortMediaOrNullDuration_HandlesGracefully()
-    {
-        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_f3_short_{Guid.NewGuid():N}.db");
-        var connStr = $"Data Source={dbPath}";
-        try
-        {
-            new DatabaseMigrator(connStr).Migrate();
-            SeedMovieAndMediaFile(connStr, movieId: 804, mediaFileId: 804);
-            SeedMovieAndMediaFile(connStr, movieId: 805, mediaFileId: 805);
-
-            var progressRepo = new PlaybackProgressRepository(connStr);
-            var launcher = new ReturnValueLauncher(result: true);
-            var service = new PlaybackTrackingService(
-                progressRepo,
-                launcher,
-                settingsRepository: null);
-
-            // Case A: duration <= 3.0s -> must NOT seed 3.0s
-            var targetShort = new PlaybackMediaTarget(
-                MediaFileId: 804,
-                FilePath: @"C:\dummy\clip.mkv",
-                TotalDurationSeconds: 2.5,
-                IsMovie: true,
-                MovieId: 804,
-                MovieTitle: "Short Clip");
-
-            await service.StartPlaybackAsync(targetShort, resume: false);
-            Assert.Null(progressRepo.GetByMediaFileId(804));
-
-            // Case B: duration is null -> seeds 3.0 with null duration without throwing
-            var targetNullDur = new PlaybackMediaTarget(
-                MediaFileId: 805,
-                FilePath: @"C:\dummy\stream.mkv",
-                TotalDurationSeconds: null,
-                IsMovie: true,
-                MovieId: 805,
-                MovieTitle: "Unknown Duration Stream");
-
-            await service.StartPlaybackAsync(targetNullDur, resume: false);
-            var savedNull = progressRepo.GetByMediaFileId(805);
-            Assert.NotNull(savedNull);
-            Assert.Equal(3.0, savedNull.PositionSeconds);
-            Assert.Null(savedNull.TotalDurationSeconds);
-        }
-        finally
-        {
-            SqliteConnection.ClearAllPools();
-            try { if (File.Exists(dbPath)) File.Delete(dbPath); } catch { }
-        }
     }
 }
 

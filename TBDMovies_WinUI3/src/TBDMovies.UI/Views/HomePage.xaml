@@ -15,74 +15,6 @@
                 <Setter Property="VerticalContentAlignment" Value="Stretch" />
             </Style>
 
-            <DataTemplate x:Key="ContinueWatchingTemplate" x:DataType="models:HomeActivityCard">
-                <Grid Width="320" Height="196">
-                    <Button
-                        Width="320" Height="196"
-                        AutomationProperties.AutomationId="{x:Bind DetailsAutomationId}"
-                        AutomationProperties.Name="{x:Bind AccessibleName}"
-                        Click="ContinueDetails_Click"
-                        Style="{StaticResource HomeHeroButtonStyle}"
-                        Tag="{x:Bind}"
-                        ToolTipService.ToolTip="{x:Bind Title}">
-                        <Border CornerRadius="{ThemeResource ControlCornerRadius}">
-                            <Grid Width="320" Height="196" Background="{ThemeResource PosterMoviePlaceholderBrush}">
-                                <FontIcon Margin="0,0,0,64" FontSize="40" Glyph="&#xE8B2;"
-                                          Foreground="{ThemeResource PosterGlyphForegroundBrush}" />
-                                <Image Height="196" Source="{x:Bind ArtworkSource, Mode=OneWay}"
-                                       Stretch="UniformToFill" />
-                                <Image Width="96" Height="144" Margin="12,8,12,0"
-                                       HorizontalAlignment="Right" VerticalAlignment="Top"
-                                       Source="{x:Bind PosterSource, Mode=OneWay}"
-                                       Visibility="{x:Bind PosterVisibility, Mode=OneWay}"
-                                       Stretch="Uniform" />
-                                <Border Background="{ThemeResource LandscapeCardScrimBrush}" />
-                                <ProgressBar
-                                    VerticalAlignment="Bottom"
-                                    Height="3"
-                                    Value="{x:Bind ProgressPercentage, Mode=OneWay}"
-                                    Maximum="100"
-                                    Foreground="{ThemeResource AccentFillColorDefaultBrush}"
-                                    Background="Transparent"
-                                    Visibility="{x:Bind HasResumeVisibility, Mode=OneWay}" />
-                                <Grid Margin="16,68,16,16" ColumnSpacing="12" VerticalAlignment="Bottom">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="4">
-                                        <TextBlock Foreground="{ThemeResource LandscapeCardTextBrush}"
-                                                   Style="{StaticResource BodyStrongTextBlockStyle}"
-                                                   Text="{x:Bind Title}" MaxLines="2"
-                                                   TextTrimming="CharacterEllipsis" TextWrapping="Wrap" />
-                                        <TextBlock Foreground="{ThemeResource LandscapeCardSecondaryTextBrush}"
-                                                   Style="{StaticResource SecondaryCaptionTextStyle}"
-                                                   Text="{x:Bind SecondaryLine}"
-                                                   TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
-                                        <TextBlock Foreground="{ThemeResource LandscapeCardSecondaryTextBrush}"
-                                                   Style="{StaticResource SecondaryCaptionTextStyle}"
-                                                   Text="{x:Bind TypeLabel}" />
-                                    </StackPanel>
-                                    <!-- Reserves the real Play button's space in both LTR and RTL. -->
-                                    <Border Grid.Column="1" MinWidth="76" />
-                                </Grid>
-                            </Grid>
-                        </Border>
-                    </Button>
-                    <Button Margin="16" AutomationProperties.AutomationId="{x:Bind PlayAutomationId}"
-                            AutomationProperties.Name="{x:Bind PlayLabel}" Click="ContinuePlay_Click"
-                            HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                            IsEnabled="{x:Bind PlayEnabled, Mode=OneWay}"
-                            Style="{StaticResource AccentControlButtonStyle}"
-                            Tag="{x:Bind}" ToolTipService.ToolTip="{x:Bind PlayLabel}">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                            <FontIcon FontSize="12" Glyph="&#xE768;" />
-                            <TextBlock Text="{x:Bind PlayLabel}" />
-                        </StackPanel>
-                    </Button>
-                </Grid>
-            </DataTemplate>
-
             <DataTemplate x:Key="WatchHistoryTemplate" x:DataType="models:WatchHistoryCardRecord">
                 <Grid Width="320" Height="196">
                     <Button
@@ -184,36 +116,6 @@
                         </ItemsRepeater.ItemTemplate>
                     </ItemsRepeater>
                 </Grid>
-
-                <!-- Continue Watching Shelf -->
-                <StackPanel Spacing="12">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock x:Name="ContinueHeadingText" VerticalAlignment="Center" Style="{StaticResource SubtitleTextBlockStyle}" />
-                        <Button x:Name="ContinueSeeAllButton" Grid.Column="1" VerticalAlignment="Center" Click="ContinueSeeAllButton_Click" Style="{StaticResource TextBlockButtonStyle}" />
-                    </Grid>
-                    <Grid x:Name="ContinueRowGrid" Height="196">
-                        <ItemsRepeater
-                            x:Name="ContinueRepeater"
-                            HorizontalAlignment="Left"
-                            ItemTemplate="{StaticResource ContinueWatchingTemplate}">
-                            <ItemsRepeater.Layout>
-                                <StackLayout Orientation="Horizontal" Spacing="12" />
-                            </ItemsRepeater.Layout>
-                        </ItemsRepeater>
-                    </Grid>
-
-                    <controls:EmptyStateCard
-                        x:Name="ContinueEmptyState"
-                        Height="196"
-                        HorizontalAlignment="Stretch"
-                        IsFrameless="True"
-                        Glyph="&#xE768;"
-                        Visibility="Collapsed" />
-                </StackPanel>
 
                 <!-- Watch History Shelf -->
                 <StackPanel x:Name="HistorySection" Spacing="12">

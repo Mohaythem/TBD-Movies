@@ -406,6 +406,29 @@ public sealed class DatabaseMigrationHardeningTests : IDisposable
         Assert.Throws<System.Reflection.TargetInvocationException>(() => method.Invoke(null, ["   "]));
     }
 
+    [Fact]
+    public void Migration_Version24To25_DropsPlaybackProgressTable()
+    {
+        var migrator = new DatabaseMigrator(_cs);
+        migrator.Migrate(24);
+
+        using (var db24 = Open())
+        {
+            Assert.Equal(24, Convert.ToInt32(Scalar(db24, "PRAGMA user_version")));
+            var tableCount = Convert.ToInt32(Scalar(db24, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='playback_progress';"));
+            Assert.Equal(1, tableCount);
+        }
+
+        migrator.Migrate(25);
+
+        using (var db25 = Open())
+        {
+            Assert.Equal(25, Convert.ToInt32(Scalar(db25, "PRAGMA user_version")));
+            var tableCount = Convert.ToInt32(Scalar(db25, "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='playback_progress';"));
+            Assert.Equal(0, tableCount);
+        }
+    }
+
     private static void SeedMovie(SqliteConnection db, int id, string title)
         => SeedMovie(db, id, title, "tmdb", "READY");
 

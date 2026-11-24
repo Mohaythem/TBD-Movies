@@ -12,10 +12,9 @@ public sealed class HomeActivityCard : INotifyPropertyChanged
 {
     private readonly ArtworkLoader _artwork;
     private readonly ArtworkLoader _poster;
-    private readonly PlaybackProgress? _playbackProgress;
     private bool _isPlaying;
 
-    public HomeActivityCard(ActiveViewingItem item, PlaybackProgress? playbackProgress = null)
+    public HomeActivityCard(ActiveViewingItem item)
     {
         MovieId = item.MovieId;
         ShowId = item.ShowId;
@@ -26,26 +25,6 @@ public sealed class HomeActivityCard : INotifyPropertyChanged
         EpisodeNumber = item.EpisodeNumber;
         EpisodeTitle = item.EpisodeTitle;
         Path = item.Path;
-
-        if (playbackProgress != null)
-        {
-            _playbackProgress = playbackProgress;
-        }
-        else if (AppServices.IsAvailable)
-        {
-            try
-            {
-                if (EpisodeId is int epId)
-                {
-                    _playbackProgress = AppServices.PlaybackProgress.GetForEpisode(epId);
-                }
-                else if (MovieId is int movieId)
-                {
-                    _playbackProgress = AppServices.PlaybackProgress.GetForMovie(movieId);
-                }
-            }
-            catch { }
-        }
 
         _artwork = new ArtworkLoader(
             new[] { item.BackdropReference, item.ArtworkReference != item.PosterReference ? item.ArtworkReference : null },
@@ -76,11 +55,6 @@ public sealed class HomeActivityCard : INotifyPropertyChanged
     public ImageSource? PosterSource => _poster.Source;
     public Visibility PosterVisibility => ArtworkSource is null ? Visibility.Visible : Visibility.Collapsed;
 
-    public bool HasResume => _playbackProgress?.HasResumePosition == true;
-    public double ProgressPercentage => _playbackProgress?.ProgressPercentage ?? 0.0;
-    public Visibility HasResumeVisibility => HasResume ? Visibility.Visible : Visibility.Collapsed;
-    public string FormattedResumeTime => _playbackProgress?.FormattedResumeTime ?? string.Empty;
-
     private string ActivityIdentity => EpisodeId is int episodeId ? $"Episode_{episodeId}" : $"Movie_{MovieId ?? 0}";
     public string DetailsAutomationId => $"HomeContinueDetails_{ActivityIdentity}";
     public string PlayAutomationId => $"HomeContinuePlay_{ActivityIdentity}";
@@ -108,9 +82,7 @@ public sealed class HomeActivityCard : INotifyPropertyChanged
         }
     }
 
-    public string PlayLabel => HasResume && !string.IsNullOrWhiteSpace(FormattedResumeTime)
-        ? LocalizationService.Format("ResumeFrom", FormattedResumeTime)
-        : LocalizationService.Text("HomePlay");
+    public string PlayLabel => LocalizationService.Text("HomePlay");
 
     public string TypeLabel => EpisodeNumber is not null
         ? LocalizationService.Text("HomeEpisodeType")

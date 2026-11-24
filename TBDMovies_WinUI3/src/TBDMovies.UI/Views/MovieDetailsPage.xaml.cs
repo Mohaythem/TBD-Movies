@@ -552,58 +552,23 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
 
     private void UpdatePlayButtonVisuals(bool canOpenFile, bool isMissing)
     {
-        PlayFromBeginningMenuItem.Text = LocalizationService.Text("PlayFromBeginning");
-        ClearResumeMenuItem.Text = LocalizationService.Text("ClearResumePoint");
-
-        // Keep menu items visible in visual tree to eliminate empty flyout
-        PlayFromBeginningMenuItem.Visibility = Visibility.Visible;
-        ClearResumeMenuItem.Visibility = Visibility.Visible;
-
         _isRelinkMode = isMissing && !_storageUnavailable && !_isOrganizing && (_movie.MediaFileId is not null || _movie.Files.Count > 0);
         if (_isRelinkMode)
         {
             PlayButton.IsEnabled = true;
             PlayGlyph.Glyph = "\uE71B";
             PlayText.Text = LocalizationService.Text("Relink");
-            PosterProgressBar.Visibility = Visibility.Collapsed;
-            PlayFromBeginningMenuItem.IsEnabled = false;
-            ClearResumeMenuItem.IsEnabled = false;
             ToolTipService.SetToolTip(PlayButton, LocalizationService.Text("RelinkTitle"));
             PlayButton.SetValue(AutomationProperties.NameProperty, LocalizationService.Text("RelinkTitle"));
         }
         else
         {
             PlayButton.IsEnabled = canOpenFile;
-            var mediaFileId = _movie.MediaFileId ?? _movie.Files.FirstOrDefault()?.MediaFileId;
-            var progress = mediaFileId.HasValue ? AppServices.PlaybackProgress.GetByMediaFileId(mediaFileId.Value) : null;
-            if (progress?.HasResumePosition != true && _movie.Id > 0)
-            {
-                progress = AppServices.PlaybackProgress.GetForMovie(_movie.Id);
-            }
-
-            if (progress?.HasResumePosition == true)
-            {
-                var resumeLabel = LocalizationService.Format("ResumeFrom", progress.FormattedResumeTime);
-                PlayGlyph.Glyph = "\uE768";
-                PlayText.Text = resumeLabel;
-                PosterProgressBar.Value = progress.ProgressPercentage;
-                PosterProgressBar.Visibility = Visibility.Visible;
-                PlayFromBeginningMenuItem.IsEnabled = canOpenFile;
-                ClearResumeMenuItem.IsEnabled = true;
-                ToolTipService.SetToolTip(PlayButton, resumeLabel);
-                PlayButton.SetValue(AutomationProperties.NameProperty, resumeLabel);
-            }
-            else
-            {
-                var playLabel = LocalizationService.Text("PlayMovie");
-                PlayGlyph.Glyph = "\uE768";
-                PlayText.Text = playLabel;
-                PosterProgressBar.Visibility = Visibility.Collapsed;
-                PlayFromBeginningMenuItem.IsEnabled = canOpenFile;
-                ClearResumeMenuItem.IsEnabled = false;
-                ToolTipService.SetToolTip(PlayButton, playLabel);
-                PlayButton.SetValue(AutomationProperties.NameProperty, playLabel);
-            }
+            var playLabel = LocalizationService.Text("PlayMovie");
+            PlayGlyph.Glyph = "\uE768";
+            PlayText.Text = playLabel;
+            ToolTipService.SetToolTip(PlayButton, playLabel);
+            PlayButton.SetValue(AutomationProperties.NameProperty, playLabel);
         }
     }
 
@@ -681,7 +646,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
     /// Hands the file to whatever the user has registered for it. ShellExecute is the only way to
     /// honour the user's default player, and UseShellExecute is required for that.
     /// </summary>
-    private async void PlayButton_Click(SplitButton sender, SplitButtonClickEventArgs e)
+    private async void PlayButton_Click(object sender, RoutedEventArgs e)
     {
         if (_isRelinkMode)
         {
@@ -689,29 +654,10 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
             return;
         }
 
-        await PlayMovieAsync(resume: true);
+        await PlayMovieAsync();
     }
 
-    private async void PlayFromBeginningMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        await PlayMovieAsync(resume: false);
-    }
-
-    private void ClearResumeMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        var mediaFileId = _movie.MediaFileId ?? _movie.Files.FirstOrDefault()?.MediaFileId;
-        if (mediaFileId.HasValue)
-        {
-            AppServices.PlaybackProgress.DeleteProgress(mediaFileId.Value);
-        }
-        if (_movie.Id > 0)
-        {
-            AppServices.PlaybackProgress.DeleteProgressForMovie(_movie.Id);
-        }
-        UpdatePlayButtonVisuals(PlayButton.IsEnabled, _isRelinkMode);
-    }
-
-    private async Task PlayMovieAsync(bool resume)
+    private async Task PlayMovieAsync()
     {
         if (string.IsNullOrWhiteSpace(_movie.FilePath) || !_movie.HasLocalFile)
         {
@@ -745,7 +691,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         var request = _actionRequests.Begin();
         try
         {
-            var started = await AppServices.PlaybackTracking.StartPlaybackAsync(target, resume, CancellationToken.None);
+            var started = await AppServices.PlaybackTracking.StartPlaybackAsync(target, CancellationToken.None);
             if (!request.IsCurrent) return;
             if (!started)
             {

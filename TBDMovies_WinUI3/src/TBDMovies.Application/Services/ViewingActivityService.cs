@@ -18,8 +18,6 @@ public sealed class ViewingActivityService
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
 
-    public IReadOnlyList<ActiveViewingItem> ListActive(int limit = 12) => _repository.ListActive(limit);
-
     public ActiveViewingItem RecordSuccessfulPlay(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A media path is required.", nameof(path));

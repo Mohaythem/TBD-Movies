@@ -156,17 +156,6 @@
                     </StackPanel>
                 </RadioButton>
                 <RadioButton
-                    x:Name="ContinueWatchingItem"
-                    Checked="ListTab_Checked"
-                    GroupName="MyListsSelector"
-                    Style="{StaticResource TabPillItemStyle}"
-                    Tag="continue-watching">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <TextBlock x:Name="ContinueWatchingLabel" VerticalAlignment="Center" />
-                        <TextBlock x:Name="ContinueWatchingCount" VerticalAlignment="Center" Style="{StaticResource SecondaryCaptionTextStyle}" Visibility="Collapsed" />
-                    </StackPanel>
-                </RadioButton>
-                <RadioButton
                     x:Name="RecentlyWatchedItem"
                     Checked="ListTab_Checked"
                     GroupName="MyListsSelector"
@@ -303,63 +292,6 @@
                         <ItemsWrapGrid x:Name="ListItemsPanel" ItemWidth="{StaticResource MediaCardItemWidth}" ItemHeight="{StaticResource MediaCardItemHeight}" Orientation="Horizontal" />
                     </ItemsPanelTemplate>
                 </GridView.ItemsPanel>
-            </GridView>
-
-            <GridView
-                x:Name="ContinueGrid"
-                Padding="32,12,32,48"
-                HorizontalAlignment="Stretch"
-                ItemClick="ActivityGrid_ItemClick"
-                ContextRequested="MediaGrid_ContextRequested"
-                Style="{StaticResource MediaGridViewStyle}"
-                Visibility="Collapsed"
-                ScrollViewer.VerticalScrollBarVisibility="Auto"
-                ScrollViewer.VerticalScrollMode="Enabled">
-                <GridView.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <ItemsWrapGrid x:Name="ContinueWatchingItemsPanel" ItemWidth="{StaticResource MediaCardItemWidth}" ItemHeight="{StaticResource MediaCardItemHeight}" Orientation="Horizontal" />
-                    </ItemsPanelTemplate>
-                </GridView.ItemsPanel>
-                <GridView.ItemTemplate>
-                    <DataTemplate x:DataType="models:HomeActivityCard">
-                        <StackPanel Spacing="8" HorizontalAlignment="Center">
-                            <Border
-                                Width="{StaticResource MediaCardPosterWidth}"
-                                Height="{StaticResource MediaCardPosterHeight}"
-                                HorizontalAlignment="Center"
-                                Style="{StaticResource PosterSurfaceStyle}">
-                                <Grid>
-                                    <FontIcon FontSize="36" Glyph="&#xE8B2;" Foreground="{ThemeResource PosterGlyphForegroundBrush}" />
-                                    <Image Source="{x:Bind PosterSource, Mode=OneWay}" Stretch="UniformToFill" />
-                                    <!-- Green Continue Watching Progress Bar along the bottom of the poster -->
-                                    <ProgressBar
-                                        VerticalAlignment="Bottom"
-                                        Height="4"
-                                        Value="{x:Bind ProgressPercentage, Mode=OneWay}"
-                                        Maximum="100"
-                                        Foreground="{ThemeResource SystemFillColorSuccessBrush}"
-                                        Background="Transparent"
-                                        CornerRadius="0,0,8,8"
-                                        Visibility="{x:Bind HasResumeVisibility, Mode=OneWay}" />
-                                </Grid>
-                            </Border>
-                            <StackPanel Margin="6,0,6,14" Spacing="2">
-                                <TextBlock
-                                    Height="{StaticResource MediaCardTitleHeight}"
-                                    MaxLines="2"
-                                    Style="{StaticResource BodyStrongTextBlockStyle}"
-                                    Text="{x:Bind Title}"
-                                    TextTrimming="CharacterEllipsis"
-                                    TextWrapping="Wrap" />
-                                <TextBlock
-                                    Style="{StaticResource SecondaryCaptionTextStyle}"
-                                    Text="{x:Bind SecondaryLine}"
-                                    TextTrimming="CharacterEllipsis"
-                                    TextWrapping="NoWrap" />
-                            </StackPanel>
-                        </StackPanel>
-                    </DataTemplate>
-                </GridView.ItemTemplate>
             </GridView>
 
             <GridView

@@ -161,56 +161,6 @@ public sealed class TvLibraryService(
         return season?.ShowId;
     }
 
-    public IReadOnlyList<TvContinueWatchingItem> ListContinueWatching(int limit = 20)
-    {
-        if (limit <= 0) throw new ArgumentOutOfRangeException(nameof(limit));
-        if (history is null) return [];
-
-        if (shows is ITvContinueWatchingReader continueReader)
-        {
-            return continueReader.ListContinueWatching(limit);
-        }
-
-        // Optimized in-memory fallback for test mocks and repositories without direct SQL reader
-        var watchedShowIds = history.GetWatchedShowIds();
-        if (watchedShowIds.Count == 0) return [];
-
-        var result = new List<TvContinueWatchingItem>();
-        foreach (var show in shows.ListAll())
-        {
-            if (!watchedShowIds.Contains(show.Id)) continue;
-            var watched = history.GetWatchedEpisodeIds(show.Id);
-            if (watched.Count == 0) continue;
-
-            var showSeasons = seasons.ListByShow(show.Id);
-            var seasonMap = showSeasons.ToDictionary(s => s.Id, s => s.Number);
-            var showFiles = episodes.ListMediaFilesByShow(show.Id);
-
-            var allEpisodes = episodes.ListByShow(show.Id)
-                .OrderBy(episode => seasonMap.GetValueOrDefault(episode.SeasonId, int.MaxValue))
-                .ThenBy(episode => episode.Number)
-                .ToList();
-
-            var next = allEpisodes.FirstOrDefault(episode =>
-                !watched.Contains(episode.Id) &&
-                showFiles.TryGetValue(episode.Id, out var files) &&
-                IsPresent(files));
-
-            if (next is null) continue;
-            var seasonNumber = seasonMap.GetValueOrDefault(next.SeasonId, 0);
-
-            result.Add(new TvContinueWatchingItem(
-                show.Id, show.DisplayTitle, show.PosterReference, show.BackdropReference,
-                next.Id, seasonNumber, next.Number, next.Title,
-                next.StillReference ?? show.BackdropReference ?? show.PosterReference, true,
-                show.CustomDisplayTitle, show.Title));
-
-            if (result.Count >= limit) break;
-        }
-
-        return result;
-    }
-
     /// <summary>
     /// Provider-confirmed enrichment, awaited off the UI load path: re-reads the local hierarchy, then asks
     /// the provider for each season's episode list. A confirmed season gets provider-confirmed gaps; an

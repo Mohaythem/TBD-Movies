@@ -24,10 +24,8 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     private IReadOnlyList<MovieRecord> _movies = [];
     private IReadOnlyList<TVShowRecord> _shows = [];
     private IReadOnlyList<WatchHistoryItem> _history = [];
-    private IReadOnlyList<HomeActivityCard> _continueSource = [];
     private IReadOnlyList<WatchHistoryCardRecord> _historyCards = [];
     private readonly PostHandoffRequestLifetime _playbackRequests = new();
-    private int _renderedContinueCount = -1;
     private int _renderedHistoryCount = -1;
     private int _renderedRecentCount = -1;
     private LibrarySnapshotToken? _lastLoadedSnapshot = null;
@@ -40,7 +38,6 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         this.InitializeComponent();
         RecentGrid.ItemContainerTransitions = [];
         this.SizeChanged += HomePage_SizeChanged;
-        ContinueRowGrid.SizeChanged += HomePage_SizeChanged;
         HistoryRowGrid.SizeChanged += HomePage_SizeChanged;
         RecentRowGrid.SizeChanged += RecentRowGrid_SizeChanged;
         ContextRequested += Home_ContextRequested;
@@ -100,11 +97,8 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         _shows = LoadShows();
         _history = LoadHistory();
         StatsRepeater.ItemsSource = BuildStats();
-        _continueSource = BuildContinueWatching();
         _historyCards = BuildHistoryCards();
-        UpdateContinueVisibility();
         UpdateHistoryVisibility();
-        _renderedContinueCount = -1;
         _renderedHistoryCount = -1;
         _renderedRecentCount = -1;
         UpdateActivityShelves();
@@ -122,11 +116,8 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     {
         _history = LoadHistory();
         StatsRepeater.ItemsSource = BuildStats();
-        _continueSource = BuildContinueWatching();
         _historyCards = BuildHistoryCards();
-        UpdateContinueVisibility();
         UpdateHistoryVisibility();
-        _renderedContinueCount = -1;
         _renderedHistoryCount = -1;
         UpdateActivityShelves();
         _activityDirty = false;
@@ -145,18 +136,12 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         FlowDirection = LocalizationService.FlowDirection;
         PageTitleText.Text = LocalizationService.Text("WelcomeBack");
         PageSubtitleText.Text = LocalizationService.Text("YourLibrary");
-        ContinueHeadingText.Text = LocalizationService.Text("ContinueWatching");
         HistoryHeadingText.Text = LocalizationService.Text("RecentlyWatched");
         RecentHeadingText.Text = LocalizationService.Text("RecentlyAdded");
         SeeAllButton.Content = LocalizationService.Text("SeeAll");
-        ContinueSeeAllButton.Content = LocalizationService.Text("SeeAll");
         HistorySeeAllButton.Content = LocalizationService.Text("SeeAll");
-        ContinueEmptyState.Title = LocalizationService.Text("NothingToContinue");
-        ContinueEmptyState.Message = LocalizationService.Text("NothingToContinueHelp");
         HistoryEmptyState.Title = LocalizationService.Text("NothingWatched");
         HistoryEmptyState.Message = LocalizationService.Text("NothingWatchedHelp");
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ContinueSeeAllButton,
-            $"{LocalizationService.Text("SeeAll")}: {LocalizationService.Text("ContinueWatching")}");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(HistorySeeAllButton,
             $"{LocalizationService.Text("SeeAll")}: {LocalizationService.Text("RecentlyWatched")}");
     }
@@ -197,57 +182,6 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         {
             return [];
         }
-    }
-
-    /// <summary>
-    /// Continue Watching is supplied by the application service from successful playback activity.
-    /// </summary>
-    private IReadOnlyList<HomeActivityCard> BuildContinueWatching()
-    {
-        try
-        {
-            var items = AppServices.ViewingActivity.ListActive(20);
-            if (items.Count == 0) return [];
-
-            IReadOnlyDictionary<int, PlaybackProgress> epProgress = new Dictionary<int, PlaybackProgress>();
-            IReadOnlyDictionary<int, PlaybackProgress> movieProgress = new Dictionary<int, PlaybackProgress>();
-
-            if (AppServices.IsAvailable)
-            {
-                try
-                {
-                    var epIds = items.Where(i => i.EpisodeId.HasValue).Select(i => i.EpisodeId!.Value).Distinct().ToList();
-                    var movieIds = items.Where(i => i.MovieId.HasValue).Select(i => i.MovieId!.Value).Distinct().ToList();
-
-                    if (epIds.Count > 0)
-                    {
-                        epProgress = AppServices.PlaybackProgress.GetForEpisodes(epIds);
-                    }
-
-                    if (movieIds.Count > 0)
-                    {
-                        movieProgress = AppServices.PlaybackProgress.GetForMovies(movieIds);
-                    }
-                }
-                catch { }
-            }
-
-            return items.Select(item =>
-            {
-                PlaybackProgress? progress = null;
-                if (item.EpisodeId is int epId && epProgress.TryGetValue(epId, out var epProg))
-                {
-                    progress = epProg;
-                }
-                else if (item.MovieId is int movieId && movieProgress.TryGetValue(movieId, out var mProg))
-                {
-                    progress = mProg;
-                }
-
-                return new HomeActivityCard(item, progress);
-            }).ToArray();
-        }
-        catch { return Array.Empty<HomeActivityCard>(); }
     }
 
     public static string HistoryTypeLabel(WatchEventMediaKind mediaKind) =>
@@ -308,23 +242,6 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         }
     }
 
-    private void UpdateContinueVisibility()
-    {
-        var hasAny = _continueSource.Count > 0;
-        ContinueRowGrid.Visibility = hasAny
-            ? Microsoft.UI.Xaml.Visibility.Visible
-            : Microsoft.UI.Xaml.Visibility.Collapsed;
-        ContinueEmptyState.Visibility = hasAny
-            ? Microsoft.UI.Xaml.Visibility.Collapsed
-            : Microsoft.UI.Xaml.Visibility.Visible;
-        ContinueEmptyState.Title = LocalizationService.Text("NothingToContinue");
-        ContinueEmptyState.Message = LocalizationService.Text("NothingToContinueHelp");
-        if (!hasAny)
-        {
-            ContinueSeeAllButton.Visibility = Visibility.Collapsed;
-        }
-    }
-
     private void UpdateHistoryVisibility()
     {
         var hasAny = _historyCards.Count > 0;
@@ -347,8 +264,6 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
 
     private double GetAvailableShelfWidth()
     {
-        if (ContinueRowGrid.Visibility == Visibility.Visible && ContinueRowGrid.ActualWidth > 0)
-            return ContinueRowGrid.ActualWidth;
         if (HistoryRowGrid.Visibility == Visibility.Visible && HistoryRowGrid.ActualWidth > 0)
             return HistoryRowGrid.ActualWidth;
         if (RecentRowGrid.Visibility == Visibility.Visible && RecentRowGrid.ActualWidth > 0)
@@ -391,18 +306,10 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         if (double.IsFinite(availableWidth) && availableWidth > 0)
         {
             var clipRect = new Windows.Foundation.Rect(0, 0, availableWidth, 196);
-            ContinueRowGrid.Clip = new RectangleGeometry { Rect = clipRect };
             HistoryRowGrid.Clip = new RectangleGeometry { Rect = clipRect };
         }
 
-        var continueRender = HomeActivityLayout.CalculateItemsToRender(availableWidth, _continueSource.Count);
         var historyRender = HomeActivityLayout.CalculateItemsToRender(availableWidth, _historyCards.Count);
-
-        if (continueRender != _renderedContinueCount)
-        {
-            _renderedContinueCount = continueRender;
-            ContinueRepeater.ItemsSource = _continueSource.Take(continueRender).ToArray();
-        }
 
         if (historyRender != _renderedHistoryCount)
         {
@@ -410,9 +317,6 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
             HistoryRepeater.ItemsSource = _historyCards.Take(historyRender).ToArray();
         }
 
-        ContinueSeeAllButton.Visibility = HomeActivityLayout.ShouldShowSeeAll(availableWidth, _continueSource.Count)
-            ? Visibility.Visible
-            : Visibility.Collapsed;
         HistorySeeAllButton.Visibility = HomeActivityLayout.ShouldShowSeeAll(availableWidth, _historyCards.Count)
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -484,108 +388,6 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
 
     private static string Count(int value) => LocalizationService.Number(value);
 
-    private void ContinueDetails_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: HomeActivityCard card })
-        {
-            if (card.MovieId is int movieId)
-            {
-                var movie = _movies.FirstOrDefault(movie => movie.Id == movieId)
-                    ?? new MovieRecord(movieId, card.Title, 0, string.Empty, 0, [], string.Empty);
-                MovieSelected?.Invoke(this, movie);
-            }
-            else if (card.ShowId is int showId)
-            {
-                var show = _shows.FirstOrDefault(show => show.Id == showId)
-                    ?? new TVShowRecord(showId, card.Title, 0, [], string.Empty, []);
-                ShowSelected?.Invoke(this, show);
-            }
-        }
-    }
-
-    private async void ContinuePlay_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not Button { Tag: HomeActivityCard card } || !card.CanPlay)
-        {
-            return;
-        }
-
-        var request = _playbackRequests.Begin();
-        card.SetPlaying(true);
-        try
-        {
-            var result = await AppServices.PlayMediaFileAsync(card.Path!, request.Token);
-            if (!request.IsCurrent)
-            {
-                return;
-            }
-
-            if (result.ErrorCode == "PlaybackActivityNotSaved")
-            {
-                await ShowPlayMessageAsync(LocalizationService.Text("Failed"), LocalizationService.Text("PlaybackActivityNotSaved"));
-                return;
-            }
-
-            if (result.Status == AvailabilityInspectionStatus.Present)
-            {
-                _activityDirty = true;
-                return;
-            }
-
-            if (result.Status == AvailabilityInspectionStatus.StorageUnavailable)
-            {
-                await ShowPlayMessageAsync(LocalizationService.Text("StorageUnavailable"), LocalizationService.Text("DetailsOfflineHelp"));
-            }
-            else if (result.Status == AvailabilityInspectionStatus.Missing)
-            {
-                if (card.MovieId is int movieId)
-                {
-                    var movie = _movies.FirstOrDefault(movie => movie.Id == movieId)
-                        ?? new MovieRecord(movieId, card.Title, 0, string.Empty, 0, [], string.Empty);
-                    MovieSelected?.Invoke(this, movie);
-                }
-                else if (card.ShowId is int showId)
-                {
-                    var show = _shows.FirstOrDefault(show => show.Id == showId)
-                        ?? new TVShowRecord(showId, card.Title, 0, [], string.Empty, []);
-                    ShowSelected?.Invoke(this, show);
-                }
-            }
-            else
-            {
-                await ShowPlayMessageAsync(LocalizationService.Text("Failed"), LocalizationService.Text("Failed"));
-            }
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch (Exception)
-        {
-            if (request.IsCurrent)
-            {
-                await ShowPlayMessageAsync(LocalizationService.Text("Failed"), LocalizationService.Text("Failed"));
-            }
-        }
-        finally
-        {
-            card.SetPlaying(false);
-        }
-    }
-
-    private async Task ShowPlayMessageAsync(string title, string message)
-    {
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            RequestedTheme = ThemeService.ElementTheme,
-            FlowDirection = LocalizationService.FlowDirection,
-            Title = title,
-            Content = message,
-            CloseButtonText = LocalizationService.Text("Close"),
-        };
-        await ContentDialogCoordinator.ShowAsync(dialog);
-    }
-
     private void HistoryCard_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button { Tag: WatchHistoryCardRecord card })
@@ -617,9 +419,6 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
 
     private void SeeAllButton_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e) =>
         LibraryRequested?.Invoke(this, EventArgs.Empty);
-
-    private void ContinueSeeAllButton_Click(object sender, RoutedEventArgs e) =>
-        ActivityListRequested?.Invoke(this, "continue-watching");
 
     private void HistorySeeAllButton_Click(object sender, RoutedEventArgs e) =>
         ActivityListRequested?.Invoke(this, "recently-watched");

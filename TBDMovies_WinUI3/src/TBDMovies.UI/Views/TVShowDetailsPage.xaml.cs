@@ -196,12 +196,9 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         if (_seasons.Count > 0)
         {
             var allEpisodes = _seasons.SelectMany(s => s.Episodes).ToList();
-            var episodeIds = allEpisodes.Select(e => e.EpisodeId).ToList();
-            var progressMap = AppServices.PlaybackProgress.GetForEpisodes(episodeIds);
             var watchedEpisodeIds = _show.Seasons.SelectMany(s => s.Episodes).Where(e => e.Watched).Select(e => e.Id).ToHashSet();
             foreach (var ep in allEpisodes)
             {
-                ep.PlaybackProgress = progressMap.GetValueOrDefault(ep.EpisodeId);
                 ep.Watched = watchedEpisodeIds.Contains(ep.EpisodeId);
             }
             UpdateShowSummary();
@@ -317,13 +314,6 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         }
 
         ProgressValueText.Text = _show.ProgressLine;
-        
-        PlayNextFromBeginningMenuItem.Text = LocalizationService.Text("PlayFromBeginning");
-        ClearNextResumeMenuItem.Text = LocalizationService.Text("ClearResumePoint");
-        
-        // Keep menu items visible in visual tree to eliminate empty flyout
-        PlayNextFromBeginningMenuItem.Visibility = Visibility.Visible;
-        ClearNextResumeMenuItem.Visibility = Visibility.Visible;
 
         var next = _show.NextPlayableEpisode;
         if (next is not null)
@@ -332,40 +322,11 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
             PlayNextButton.IsEnabled = true;
             PlayNextGlyph.Glyph = "\uE768";
             
-            // Dual query: check episode file first, then fallback to GetForEpisode
-            var epFiles = SafeEpisodeFiles(next.Episode.Id);
-            var epMediaFileId = epFiles.FirstOrDefault()?.Id;
-            var nextProgress = epMediaFileId.HasValue ? AppServices.PlaybackProgress.GetByMediaFileId(epMediaFileId.Value) : null;
-            if (nextProgress?.HasResumePosition != true)
-            {
-                nextProgress = AppServices.PlaybackProgress.GetForEpisode(next.Episode.Id);
-            }
+            var playLabel = LocalizationService.Text("PlayNextEpisode");
+            PlayNextText.Text = playLabel;
+            ToolTipService.SetToolTip(PlayNextButton, playLabel);
+            PlayNextButton.SetValue(AutomationProperties.NameProperty, playLabel);
 
-            if (nextProgress?.HasResumePosition == true)
-            {
-                var resumeLabel = LocalizationService.Format("ResumeFrom", nextProgress.FormattedResumeTime);
-                PlayNextText.Text = resumeLabel;
-                PosterProgressBar.Value = nextProgress.ProgressPercentage;
-                PosterProgressBar.Visibility = Visibility.Visible;
-
-                PlayNextFromBeginningMenuItem.IsEnabled = next.Episode.HasLocalFile;
-                ClearNextResumeMenuItem.IsEnabled = true;
-
-                ToolTipService.SetToolTip(PlayNextButton, resumeLabel);
-                PlayNextButton.SetValue(AutomationProperties.NameProperty, resumeLabel);
-            }
-            else
-            {
-                var playLabel = LocalizationService.Text("PlayNextEpisode");
-                PlayNextText.Text = playLabel;
-                PosterProgressBar.Visibility = Visibility.Collapsed;
-
-                PlayNextFromBeginningMenuItem.IsEnabled = next.Episode.HasLocalFile;
-                ClearNextResumeMenuItem.IsEnabled = false;
-
-                ToolTipService.SetToolTip(PlayNextButton, playLabel);
-                PlayNextButton.SetValue(AutomationProperties.NameProperty, playLabel);
-            }
             PlayNextEpisodeText.Text = LocalizationService.Digits(LocalizationService.Format(
                 "HomeContinueEpisodeFormat",
                 next.SeasonNumber,
@@ -375,10 +336,6 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         }
         else
         {
-            PosterProgressBar.Visibility = Visibility.Collapsed;
-            PlayNextFromBeginningMenuItem.IsEnabled = false;
-            ClearNextResumeMenuItem.IsEnabled = false;
-
             var missingEp = _show.Seasons
                 .SelectMany(s => s.Episodes.Select(e => (SeasonNumber: s.Number, Episode: (EpisodeRecord?)e)))
                 .FirstOrDefault(pair => pair.Episode is not null && !pair.Episode.HasLocalFile && pair.Episode.FilePath is not null && SafeEpisodeFiles(pair.Episode.Id).Any(f => f.Status == MediaFileStatus.Missing));
@@ -753,7 +710,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
     }
 
     /// <summary>Plays the first episode of the show that has a file on disk, or relinks if missing.</summary>
-    private async void PlayNextButton_Click(SplitButton sender, SplitButtonClickEventArgs e)
+    private async void PlayNextButton_Click(object sender, RoutedEventArgs e)
     {
         if (_nextMissingEpisode.Episode is not null)
         {
@@ -763,29 +720,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
 
         if (_show.NextPlayableEpisode is { } selection)
         {
-            await PlayEpisodeAsync(selection.Episode, resume: true);
-        }
-    }
-
-    private async void PlayNextFromBeginningMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        if (_show.NextPlayableEpisode is { } selection)
-        {
-            await PlayEpisodeAsync(selection.Episode, resume: false);
-        }
-    }
-
-    private void ClearNextResumeMenuItem_Click(object sender, RoutedEventArgs e)
-    {
-        if (_show.NextPlayableEpisode is { } selection)
-        {
-            AppServices.PlaybackProgress.DeleteProgressForEpisode(selection.Episode.Id);
-            var row = _seasons.SelectMany(s => s.Episodes).FirstOrDefault(ep => ep.EpisodeId == selection.Episode.Id);
-            if (row is not null)
-            {
-                row.PlaybackProgress = null;
-            }
-            UpdateShowSummary();
+            await PlayEpisodeAsync(selection.Episode);
         }
     }
 
@@ -1315,7 +1250,6 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
             {
                 AppServices.WatchHistory.RecordEpisodeWatch(episode.Id);
                 row.Watched = true;
-                row.PlaybackProgress = null;
                 UpdateShowEpisodeWatched(episode.Id, isWatched: true);
                 UpdateShowSummary();
 
@@ -1440,34 +1374,6 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         var episode = FindEpisode(row);
         var flyout = new MenuFlyout();
 
-        if (row.HasResume)
-        {
-            var playFromBeginningItem = new MenuFlyoutItem
-            {
-                Text = LocalizationService.Text("PlayFromBeginning"),
-                Icon = new FontIcon { Glyph = "\uE777" }
-            };
-            playFromBeginningItem.Click += async (_, _) =>
-            {
-                await PlayEpisodeAsync(episode, row, resume: false);
-            };
-            flyout.Items.Add(playFromBeginningItem);
-
-            var clearResumeItem = new MenuFlyoutItem
-            {
-                Text = LocalizationService.Text("ClearResumePoint"),
-                Icon = new FontIcon { Glyph = "\uE74D" }
-            };
-            clearResumeItem.Click += (_, _) =>
-            {
-                AppServices.PlaybackProgress.DeleteProgressForEpisode(row.EpisodeId);
-                row.PlaybackProgress = null;
-                UpdateShowSummary();
-            };
-            flyout.Items.Add(clearResumeItem);
-            flyout.Items.Add(new MenuFlyoutSeparator());
-        }
-
         var files = episode != null ? SafeEpisodeFiles(episode.Id) : [];
         var paths = files.Select(f => f.CurrentPath).Where(p => !string.IsNullOrWhiteSpace(p)).Distinct().ToList();
 
@@ -1531,7 +1437,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         }
     }
 
-    private async Task PlayEpisodeAsync(EpisodeRecord? episode, EpisodeDisplayRecord? row = null, bool resume = true)
+    private async Task PlayEpisodeAsync(EpisodeRecord? episode, EpisodeDisplayRecord? row = null)
     {
         if (episode?.FilePath is not { Length: > 0 } path)
         {
@@ -1560,7 +1466,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         var request = _actionRequests.Begin();
         try
         {
-            var started = await AppServices.PlaybackTracking.StartPlaybackAsync(target, resume, CancellationToken.None);
+            var started = await AppServices.PlaybackTracking.StartPlaybackAsync(target, CancellationToken.None);
             if (!request.IsCurrent) return;
             if (!started)
             {
@@ -1648,9 +1554,6 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
             LocalizationService.Text("UnmarkWatched"),
             LocalizationService.Text("Relink"));
 
-        var allEpisodeIds = show.Seasons.SelectMany(s => s.Episodes).Select(e => e.Id).ToList();
-        var progressMap = AppServices.PlaybackProgress.GetForEpisodes(allEpisodeIds);
-
         return show.Seasons
             .Where(season => season.Number != 0 || season.LocalCount > 0)
             .Select(season => new SeasonDisplayRecord(
@@ -1680,8 +1583,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
                     overview: episode.Overview,
                     airDate: episode.AirDate,
                     fallbackArtReferences: new[] { show.BackdropReference, show.PosterReference },
-                    filePath: episode.FilePath,
-                    playbackProgress: progressMap.GetValueOrDefault(episode.Id))).ToArray())).ToArray();
+                    filePath: episode.FilePath))).ToArray())).ToArray();
     }
 
     /// <summary>The season line names the missing files only when there are some.</summary>

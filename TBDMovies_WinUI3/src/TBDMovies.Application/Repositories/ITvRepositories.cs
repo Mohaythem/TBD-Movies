@@ -12,12 +12,6 @@ public interface ITvShowSummaryReader
     IReadOnlyList<TvShowSummary> ListSummaries();
 }
 
-/// <summary>Optional fast-path query for continue watching shelf.</summary>
-public interface ITvContinueWatchingReader
-{
-    IReadOnlyList<TvContinueWatchingItem> ListContinueWatching(int limit);
-}
-
 public sealed record TvShowSummary(TvShow Show, int Seasons, int Episodes, int LocalEpisodes, int MissingEpisodes);
 
 public interface ITvShowRepository

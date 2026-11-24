@@ -36,7 +36,6 @@ public sealed class PlaybackTrackingService
         double? Duration,
         bool IsPaused);
 
-    private readonly IPlaybackProgressRepository _progressRepository;
     private readonly IPlayerProcessLauncher _launcher;
     private readonly ISettingsRepository? _settingsRepository;
     private readonly Func<ITraktDataClient?>? _getTraktData;
@@ -70,7 +69,6 @@ public sealed class PlaybackTrackingService
     public event EventHandler<int>? PlaybackEnded;
 
     public PlaybackTrackingService(
-        IPlaybackProgressRepository progressRepository,
         IPlayerProcessLauncher launcher,
         ISettingsRepository? settingsRepository = null,
         ITraktDataClient? traktDataClient = null,
@@ -83,7 +81,6 @@ public sealed class PlaybackTrackingService
         Func<ITraktAuthService?>? getTraktAuth = null,
         Func<string?>? getTraktClientId = null)
     {
-        _progressRepository = progressRepository ?? throw new ArgumentNullException(nameof(progressRepository));
         _launcher = launcher ?? throw new ArgumentNullException(nameof(launcher));
         _settingsRepository = settingsRepository;
         _getTraktData = getTraktData ?? (() => traktDataClient);
@@ -94,18 +91,8 @@ public sealed class PlaybackTrackingService
         _clock = clock ?? (() => DateTimeOffset.UtcNow);
     }
 
-    public PlaybackProgress? GetProgress(int mediaFileId) => _progressRepository.GetByMediaFileId(mediaFileId);
-    public PlaybackProgress? GetForMovie(int movieId) => _progressRepository.GetForMovie(movieId);
-    public PlaybackProgress? GetForEpisode(int episodeId) => _progressRepository.GetForEpisode(episodeId);
-    public IReadOnlyDictionary<int, PlaybackProgress> GetForEpisodes(IEnumerable<int> episodeIds) => _progressRepository.GetForEpisodes(episodeIds);
-    public IReadOnlyDictionary<int, PlaybackProgress> GetForMovies(IEnumerable<int> movieIds) => _progressRepository.GetForMovies(movieIds);
-    public void ClearProgress(int mediaFileId) => _progressRepository.DeleteProgress(mediaFileId);
-    public void ClearProgressForMovie(int movieId) => _progressRepository.DeleteProgressForMovie(movieId);
-    public void ClearProgressForEpisode(int episodeId) => _progressRepository.DeleteProgressForEpisode(episodeId);
-
     public async Task<bool> StartPlaybackAsync(
         PlaybackMediaTarget target,
-        bool resume,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -113,24 +100,7 @@ public sealed class PlaybackTrackingService
         await _startPlaybackGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            double startPosition = 0;
-            if (resume)
-            {
-                var saved = target.MediaFileId > 0 ? _progressRepository.GetByMediaFileId(target.MediaFileId) : null;
-                if (saved?.HasResumePosition != true && target.IsMovie && target.MovieId is > 0)
-                {
-                    saved = _progressRepository.GetForMovie(target.MovieId.Value);
-                }
-                else if (saved?.HasResumePosition != true && !target.IsMovie && target.EpisodeId is > 0)
-                {
-                    saved = _progressRepository.GetForEpisode(target.EpisodeId.Value);
-                }
-
-                if (saved?.HasResumePosition == true)
-                {
-                    startPosition = saved.PositionSeconds;
-                }
-            }
+            const double startPosition = 0.0;
 
             var playerType = ResolvePlayerType();
             var customPath = _settingsRepository?.Get("playback_player_custom_path");
@@ -228,11 +198,6 @@ public sealed class PlaybackTrackingService
                     {
                         await TryScrobbleAsync(scrobbleTarget, pos, TraktScrobbleAction.Start).ConfigureAwait(false);
                     }
-
-                    if (target.MediaFileId > 0 && currentPosition >= 3.0)
-                    {
-                        _progressRepository.SaveProgress(target.MediaFileId, currentPosition, duration, _clock());
-                    }
                 }).ConfigureAwait(false);
 
             if (!launched)
@@ -247,27 +212,6 @@ public sealed class PlaybackTrackingService
                 // Send stop scrobble to cancel the start scrobble if launch failed
                 _ = TryScrobbleAsync(target, 0, TraktScrobbleAction.Stop);
                 return false;
-            }
-
-            lock (_sessionLock)
-            {
-                if (_activeSession?.SessionId != sessionId)
-                {
-                    return true;
-                }
-            }
-
-            // [F3] Immediate Continue Watching registration upon confirmed launch
-            if (target.MediaFileId > 0)
-            {
-                if (resume && startPosition >= 3.0)
-                {
-                    _progressRepository.SaveProgress(target.MediaFileId, startPosition, target.TotalDurationSeconds, _clock());
-                }
-                else if (!target.TotalDurationSeconds.HasValue || target.TotalDurationSeconds.Value > 3.0)
-                {
-                    _progressRepository.SaveProgress(target.MediaFileId, Math.Max(startPosition, 3.0), target.TotalDurationSeconds, _clock());
-                }
             }
 
             return true;
@@ -323,27 +267,6 @@ public sealed class PlaybackTrackingService
         var scrobbleTarget = (effectiveDuration.HasValue && !target.TotalDurationSeconds.HasValue)
             ? target with { TotalDurationSeconds = effectiveDuration }
             : target;
-
-        // 1. Local-First: Persist to SQLite immediately and fire PlaybackEnded with sub-millisecond latency
-        if (finalPosition < 3.0)
-        {
-            if (target.MediaFileId > 0)
-            {
-                _progressRepository.DeleteProgress(target.MediaFileId);
-            }
-        }
-        else if (target.MediaFileId > 0)
-        {
-            // If watched past 80%, mark as completed and clear resume point
-            if (effectiveDuration is > 0 && progressPercent >= 80.0)
-            {
-                _progressRepository.DeleteProgress(target.MediaFileId);
-            }
-            else
-            {
-                _progressRepository.SaveProgress(target.MediaFileId, finalPosition, effectiveDuration, now);
-            }
-        }
 
         // Auto mark as watched locally if progress >= 80% (unified with Trakt 80% threshold)
         if (finalPosition >= 3.0 && effectiveDuration is > 0 && progressPercent >= 80.0)
@@ -409,24 +332,6 @@ public sealed class PlaybackTrackingService
         }
 
         var progressPercent = (duration is > 0) ? (pos / duration.Value) * 100.0 : 0.0;
-        if (target.MediaFileId > 0 && pos >= 3.0)
-        {
-            try
-            {
-                if (duration is > 0 && progressPercent >= 80.0)
-                {
-                    _progressRepository.DeleteProgress(target.MediaFileId);
-                }
-                else
-                {
-                    _progressRepository.SaveProgress(target.MediaFileId, pos, duration, _clock());
-                }
-            }
-            catch (Exception ex)
-            {
-                Trace.WriteLine($"[PlaybackTrackingService] StopActivePlaybackAsync save progress error: {ex.Message}");
-            }
-        }
 
         // Auto mark as watched locally if progress >= 80% (unified with Trakt 80% threshold)
         if (duration is > 0 && progressPercent >= 80.0)

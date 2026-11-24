@@ -342,7 +342,6 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
         string? airDate = null,
         IEnumerable<string?>? fallbackArtReferences = null,
         string? filePath = null,
-        PlaybackProgress? playbackProgress = null,
         IReadOnlyList<DetectedSubtitle>? subtitles = null)
     {
         ShowId = showId;
@@ -361,7 +360,6 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
         Overview = overview ?? string.Empty;
         AirDate = airDate ?? string.Empty;
         FilePath = filePath;
-        _playbackProgress = playbackProgress;
         if (subtitles != null)
         {
             _subtitles = subtitles;
@@ -545,31 +543,6 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
         ? (!string.IsNullOrWhiteSpace(Labels.UnmarkWatched) ? Labels.UnmarkWatched : Labels.MarkWatched)
         : Labels.MarkWatched;
 
-    private PlaybackProgress? _playbackProgress;
-
-    public PlaybackProgress? PlaybackProgress
-    {
-        get => _playbackProgress;
-        set
-        {
-            if (_playbackProgress != value)
-            {
-                _playbackProgress = value;
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PlaybackProgress)));
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasResume)));
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProgressPercentage)));
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasResumeVisibility)));
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FormattedResumeTime)));
-                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PlayOrRelinkLabel)));
-            }
-        }
-    }
-
-    public bool HasResume => _playbackProgress?.HasResumePosition == true;
-    public double ProgressPercentage => _playbackProgress?.ProgressPercentage ?? 0.0;
-    public Visibility HasResumeVisibility => HasResume ? Visibility.Visible : Visibility.Collapsed;
-    public string FormattedResumeTime => _playbackProgress?.FormattedResumeTime ?? string.Empty;
-
     public bool IsMissing => _isFileMissing;
     public bool CanMarkWatched => _hasLocalFile || _isFileMissing;
     public bool CanOpenFile => _hasLocalFile && !_storageUnavailable && !_isFileMissing;
@@ -578,9 +551,7 @@ public sealed class EpisodeDisplayRecord : INotifyPropertyChanged
     public string PlayOrRelinkGlyph => _isFileMissing ? "\uE71B" : "\uE768";
     public string PlayOrRelinkLabel => _isFileMissing
         ? (!string.IsNullOrWhiteSpace(Labels.Relink) ? Labels.Relink : "Relink")
-        : (HasResume && !string.IsNullOrWhiteSpace(FormattedResumeTime)
-            ? LocalizationService.Format("ResumeFrom", FormattedResumeTime)
-            : Labels.Play);
+        : Labels.Play;
     public bool HasActions => _hasLocalFile || _isFileMissing;
     public double RowOpacity => (_hasLocalFile || _isFileMissing) ? 1.0 : 0.8;
 }
@@ -598,36 +569,6 @@ public sealed record EpisodeActionLabels(
     string Relink = "");
 
 public sealed record StatCardRecord(string Label, string Value, string Glyph = "");
-
-/// <summary>
-/// One actionable Continue Watching card. Artwork candidates are ordered by visual relevance, but
-/// every already-cached candidate is checked before the loader attempts a network download. This
-/// keeps an uncached episode still from hiding an available show backdrop while offline.
-/// </summary>
-public sealed class ContinueWatchingRecord : INotifyPropertyChanged
-{
-    private readonly ArtworkLoader _artwork;
-
-    public ContinueWatchingRecord(
-        int showId,
-        string showTitle,
-        string episodeLine,
-        IEnumerable<string?> artworkReferences)
-    {
-        ShowId = showId;
-        ShowTitle = showTitle;
-        EpisodeLine = episodeLine;
-        _artwork = new ArtworkLoader(artworkReferences, () =>
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ArtworkSource))));
-    }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    public int ShowId { get; }
-    public string ShowTitle { get; }
-    public string EpisodeLine { get; }
-    public ImageSource? ArtworkSource => _artwork.Source;
-}
 
 /// <summary>A durable history snapshot rendered on Home, including unavailable catalog entries.</summary>
 public sealed class WatchHistoryCardRecord : INotifyPropertyChanged

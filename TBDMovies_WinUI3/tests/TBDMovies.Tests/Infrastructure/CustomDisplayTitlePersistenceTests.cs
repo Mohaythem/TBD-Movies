@@ -304,13 +304,7 @@ public sealed class CustomDisplayTitlePersistenceTests : IDisposable
         var completedItem = Assert.Single(recentCompleted);
         Assert.Equal("Fincher's Fight Club", completedItem.TitleSnapshot);
 
-        // 5. Active viewing query (Continue Watching live projection)
-        viewingRepo.RecordSuccessfulPlay(Path.Combine(_directory, "Fight.Club.1999.mkv"), Now.AddHours(1));
-        var activeItems = viewingRepo.ListActive(10);
-        var activeItem = Assert.Single(activeItems);
-        Assert.Equal("Fincher's Fight Club", activeItem.Title);
-
-        // 6. Verify underlying watch_events table STILL holds the immutable canonical title snapshot!
+        // 5. Verify underlying watch_events table STILL holds the immutable canonical title snapshot!
         using (var connection = Open())
         {
             using var cmd = connection.CreateCommand();
@@ -437,60 +431,6 @@ public sealed class CustomDisplayTitlePersistenceTests : IDisposable
         Assert.Equal("GoT (Complete)", showMember.Title);
         Assert.Equal("GoT (Complete)", showMember.CustomDisplayTitle);
         Assert.Equal("Game of Thrones", showMember.CanonicalTitle);
-    }
-
-    [Fact]
-    public void TvContinueWatching_ProjectsCustomDisplayTitle()
-    {
-        int showId;
-        using (var unit = new CatalogUnitOfWork(_connectionString))
-        {
-            var show = unit.TvShows.Create(
-                new TvShowCatalogData("tmdb", "60059", "Better Call Saul", "Better Call Saul", 2015, "Overview", [], null, MetadataStatus.Ready),
-                Now);
-            showId = show.Id;
-            unit.TvShows.SetCustomDisplayTitle(showId, "BCS (Pre-BB)");
-
-            var season = unit.TvSeasons.Create(showId, 1, "Season 1", null, Now);
-            var ep1 = unit.TvEpisodes.Create(season.Id, 1, "Uno", null, null, null, Now);
-            var ep2 = unit.TvEpisodes.Create(season.Id, 2, "Mijo", null, null, null, Now);
-
-            var f1 = unit.MediaFiles.Add(new VerifiedMediaFileFacts(
-                Path.Combine(_directory, "BCS.S01E01.mkv"), 1024, ".mkv", "1080p", "H264", "WEB", Now));
-            var f2 = unit.MediaFiles.Add(new VerifiedMediaFileFacts(
-                Path.Combine(_directory, "BCS.S01E02.mkv"), 1024, ".mkv", "1080p", "H264", "WEB", Now));
-
-            unit.TvEpisodes.LinkMediaFile(ep1.Id, f1.Id, Now);
-            unit.TvEpisodes.LinkMediaFile(ep2.Id, f2.Id, Now);
-
-            unit.Commit();
-        }
-
-        var personal = new PersonalLibraryRepository(_connectionString);
-        // User watched episode 1
-        using (var connection = Open())
-        {
-            var epRepo = new TvEpisodeRepository(connection);
-            var allEps = epRepo.ListByShow(showId);
-            var ep1 = allEps.First(e => e.Number == 1);
-            personal.AddEpisodeWatchEvent(ep1.Id, Now, Now);
-        }
-
-        using (var connection = Open())
-        {
-            var tvService = new TvLibraryService(
-                new TvShowRepository(connection),
-                new TvSeasonRepository(connection),
-                new TvEpisodeRepository(connection),
-                personal);
-
-            var continueItems = tvService.ListContinueWatching();
-            var item = Assert.Single(continueItems);
-            Assert.Equal("BCS (Pre-BB)", item.ShowTitle);
-            Assert.Equal("BCS (Pre-BB)", item.CustomDisplayTitle);
-            Assert.Equal("Better Call Saul", item.CanonicalTitle);
-            Assert.Equal(2, item.EpisodeNumber); // Next episode to watch is ep 2
-        }
     }
 
     [Fact]

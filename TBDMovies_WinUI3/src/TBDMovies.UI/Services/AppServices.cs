@@ -159,7 +159,6 @@ internal static class AppServices
     public static ViewingActivityService ViewingActivity => Require(_viewingActivity);
     public static ShowPersonalLibraryService ShowPersonal => Require(_showPersonal);
     public static PlaybackTrackingService PlaybackTracking => Require(_playbackTrackingService);
-    public static IPlaybackProgressRepository PlaybackProgress => Require(_playbackProgressRepository);
 
     public static Task<FileActionResult> PlayMediaFileAsync(string path, CancellationToken token = default) =>
         new TrackedPlaybackActions(MediaFileActions, playedPath => ViewingActivity.RecordSuccessfulPlay(playedPath)).OpenFileAsync(path, token);
@@ -436,7 +435,6 @@ internal static class AppServices
     private static ViewingActivityService? _viewingActivity;
     private static ShowPersonalLibraryService? _showPersonal;
     private static IShowPersonalRepository? _showPersonalRepo;
-    private static PlaybackProgressRepository? _playbackProgressRepository;
     private static PlaybackTrackingService? _playbackTrackingService;
     private static ImportService? _import;
     private static ReconciliationService? _reconciliation;
@@ -573,8 +571,6 @@ internal static class AppServices
                 IMovieRepository movies = new UnitOfWorkMovieRepository(catalogFactory);
                 IMediaFileRepository mediaFiles = new UnitOfWorkMediaFileRepository(catalogFactory);
                 var personal = new PersonalLibraryRepository(connectionString, tracker: revisionTracker);
-                var playbackProgress = new PlaybackProgressRepository(connectionString, tracker: revisionTracker);
-                _playbackProgressRepository = playbackProgress;
                 var settingsRepository = new SettingsRepository(connectionString);
                 var maintenance = new LibraryMaintenanceRepository(connectionString, tracker: revisionTracker);
                 var testRoot = GetTestDataRoot();
@@ -608,7 +604,7 @@ internal static class AppServices
                     authenticationResult: settings.RecordTmdbAuthenticationResult);
                 var matching = new MetadataMatchingService(catalogFactory, tmdbClient, posterCache);
 
-                var library = new LibraryService(movies, mediaFiles, personal, playbackProgress);
+                var library = new LibraryService(movies, mediaFiles, personal);
                 var import = new ImportService(
                     catalogFactory,
                     tmdbClient,
@@ -626,7 +622,7 @@ internal static class AppServices
                     tvEpisodes,
                     personal,
                     tmdbClient);
-                var watchHistory = new WatchHistoryService(personal, playbackProgress);
+                var watchHistory = new WatchHistoryService(personal);
                 var history = new OperationHistoryService(
                     operations,
                     coordinator,
@@ -659,7 +655,6 @@ internal static class AppServices
                 _showPersonalRepo = showPersonalRepo;
                 _showPersonal = new ShowPersonalLibraryService(showPersonalRepo, tv);
                 _playbackTrackingService = new PlaybackTrackingService(
-                    playbackProgress,
                     PlayerProcessLauncher.Shared,
                     settingsRepository,
                     getTraktData: () => _traktDataClient,
@@ -752,7 +747,6 @@ internal static class AppServices
         _traktDataClient = null;
         _traktLocalSnapshot = null;
         _traktProjection = null;
-        _playbackProgressRepository = null;
         _playbackTrackingService = null;
         _movies = null;
         _tvShows = null;

@@ -61,7 +61,7 @@ public class LibraryMaintenanceRepository : ILibraryMaintenanceRepository
             "trakt_pending_watched_actions", "trakt_pending_watchlist_actions",
             "custom_list_pending_actions", "custom_list_members", "custom_lists",
             "metadata_cache", "watch_events", "active_viewings", "movie_personal_state", "tv_show_personal_state",
-            "playback_progress", "episode_media_files", "tv_episodes", "tv_seasons", "tv_shows",
+            "episode_media_files", "tv_episodes", "tv_seasons", "tv_shows",
             "media_files", "movies",
         };
 

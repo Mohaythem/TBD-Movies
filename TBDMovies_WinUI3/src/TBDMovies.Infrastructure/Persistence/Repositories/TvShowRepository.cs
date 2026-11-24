@@ -14,7 +14,7 @@ namespace TBDMovies.Infrastructure.Persistence.Repositories;
 /// strings, and identity is the row id - never a position in a list.
 /// </summary>
 public sealed class TvShowRepository(SqliteConnection connection, SqliteTransaction? transaction = null)
-    : ITvShowRepository, ITvShowSummaryReader, ITvContinueWatchingReader
+    : ITvShowRepository, ITvShowSummaryReader
 {
     private const string Columns =
         "id, provider, external_id, title, sort_title, original_title, year, overview, genres, "
@@ -136,98 +136,6 @@ public sealed class TvShowRepository(SqliteConnection connection, SqliteTransact
         while (reader.Read())
             result.Add(new TvShowSummary(Map(reader), reader.GetInt32(19), reader.GetInt32(20),
                 reader.GetInt32(21), reader.GetInt32(22)));
-        return result;
-    }
-
-    public IReadOnlyList<TvContinueWatchingItem> ListContinueWatching(int limit)
-    {
-        if (limit <= 0) throw new ArgumentOutOfRangeException(nameof(limit));
-
-        using var command = Command("""
-            WITH watched_shows AS (
-                SELECT DISTINCT se.show_id
-                  FROM watch_events w
-                  JOIN tv_episodes e ON e.id = w.episode_id
-                  JOIN tv_seasons se ON se.id = e.season_id
-                 WHERE w.media_kind = 'EPISODE' AND w.episode_id IS NOT NULL
-            ),
-            unwatched_present_episodes AS (
-                SELECT e.id AS episode_id,
-                       e.episode_number AS episode_number,
-                       e.title AS episode_title,
-                       e.still_path AS episode_still,
-                       se.show_id,
-                       se.season_number AS season_number,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY se.show_id 
-                           ORDER BY COALESCE(se.season_number, 2147483647) ASC, e.episode_number ASC
-                       ) AS rn
-                  FROM watched_shows ws
-                  JOIN tv_seasons se ON se.show_id = ws.show_id
-                  JOIN tv_episodes e ON e.season_id = se.id
-                 WHERE NOT EXISTS (
-                     SELECT 1 
-                       FROM watch_events w2 
-                      WHERE w2.episode_id = e.id AND w2.media_kind = 'EPISODE'
-                 )
-                 AND EXISTS (
-                     SELECT 1 
-                       FROM episode_media_files emf 
-                       JOIN media_files mf ON mf.id = emf.media_file_id 
-                      WHERE emf.episode_id = e.id AND mf.status = 'PRESENT'
-                 )
-            )
-            SELECT 
-                sh.id,
-                sh.title,
-                sh.custom_display_title,
-                sh.poster_path,
-                sh.backdrop_path,
-                upe.episode_id,
-                upe.season_number,
-                upe.episode_number,
-                upe.episode_title,
-                upe.episode_still
-              FROM tv_shows sh
-              JOIN unwatched_present_episodes upe ON upe.show_id = sh.id AND upe.rn = 1
-             ORDER BY sh.date_added DESC, sh.id DESC
-             LIMIT $limit;
-            """);
-        command.Parameters.AddWithValue("$limit", limit);
-
-        var result = new List<TvContinueWatchingItem>();
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
-        {
-            var showId = reader.GetInt32(0);
-            var canonicalTitle = reader.GetString(1);
-            var customTitle = reader.IsDBNull(2) ? null : reader.GetString(2);
-            var poster = reader.IsDBNull(3) ? null : reader.GetString(3);
-            var backdrop = reader.IsDBNull(4) ? null : reader.GetString(4);
-            var episodeId = reader.GetInt32(5);
-            var seasonNumber = reader.GetInt32(6);
-            var episodeNumber = reader.GetInt32(7);
-            var episodeTitle = reader.IsDBNull(8) ? null : reader.GetString(8);
-            var still = reader.IsDBNull(9) ? null : reader.GetString(9);
-
-            var displayTitle = !string.IsNullOrWhiteSpace(customTitle) ? customTitle : canonicalTitle;
-            var artwork = still ?? backdrop ?? poster;
-
-            result.Add(new TvContinueWatchingItem(
-                showId,
-                displayTitle,
-                poster,
-                backdrop,
-                episodeId,
-                seasonNumber,
-                episodeNumber,
-                episodeTitle,
-                artwork,
-                true,
-                customTitle,
-                canonicalTitle));
-        }
-
         return result;
     }
 

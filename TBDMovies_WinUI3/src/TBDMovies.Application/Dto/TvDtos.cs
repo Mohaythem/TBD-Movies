@@ -23,20 +23,6 @@ public record TvShowListItem(
     string? CanonicalTitle = null,
     int WatchedEpisodeCount = 0);
 
-public record TvContinueWatchingItem(
-    int ShowId,
-    string ShowTitle,
-    string? ShowPosterReference,
-    string? ShowBackdropReference,
-    int EpisodeId,
-    int SeasonNumber,
-    int EpisodeNumber,
-    string? EpisodeTitle,
-    string? ArtworkReference,
-    bool IsAvailable,
-    string? CustomDisplayTitle = null,
-    string? CanonicalTitle = null);
-
 /// <summary>The whole hierarchy of one show, read in one call.</summary>
 public record TvShowDetails(
     int Id,

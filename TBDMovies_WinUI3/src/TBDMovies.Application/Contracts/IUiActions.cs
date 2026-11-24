@@ -197,8 +197,6 @@ public interface ITvLibraryUiActions
     /// Check Library uses it to navigate to the show's details page.
     /// </summary>
     int? FindShowForMediaFile(int mediaFileId);
-
-    IReadOnlyList<TvContinueWatchingItem> ListContinueWatching(int limit = 20);
 }
 
 public interface ISettingsUiActions

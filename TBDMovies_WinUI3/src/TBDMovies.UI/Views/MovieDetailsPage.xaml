@@ -6,12 +6,6 @@
       xmlns:controls="using:TBDMovies.UI.Controls">
     <Page.Resources>
         <ResourceDictionary>
-            <Style TargetType="SplitButton" x:Key="AccentSplitButtonStyle">
-                <Setter Property="Background" Value="{ThemeResource FigmaAccentButtonBrush}" />
-                <Setter Property="Foreground" Value="{ThemeResource FigmaAccentForegroundBrush}" />
-                <Setter Property="BorderBrush" Value="{ThemeResource FigmaAccentButtonBrush}" />
-                <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
-            </Style>
             <Style TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}" x:Key="DetailsBodyStyle">
                 <Setter Property="Foreground" Value="{ThemeResource FigmaTextSecondaryBrush}" />
                 <Setter Property="FontSize" Value="14" />
@@ -171,7 +165,6 @@
                         <Grid>
                             <Image x:Name="PosterImage" Stretch="Uniform" />
                             <FontIcon x:Name="PosterGlyph" FontSize="40" Foreground="{ThemeResource PosterGlyphForegroundBrush}" Glyph="&#xE714;" />
-                            <ProgressBar x:Name="PosterProgressBar" Height="4" VerticalAlignment="Bottom" CornerRadius="0,0,8,8" Foreground="{ThemeResource AccentFillColorDefaultBrush}" Background="Transparent" Visibility="Collapsed" />
                         </Grid>
                     </Border>
                 </Border>
@@ -247,26 +240,12 @@
                         </Border>
                         <controls:WrapPanel x:Name="CommandsPanel" Orientation="Horizontal" RowSpacing="8" ColumnSpacing="8" HorizontalAlignment="Left">
                             <StackPanel x:Name="PrimaryCommandsPanel" Orientation="Horizontal" Spacing="8">
-                                <SplitButton x:Name="PlayButton" Click="PlayButton_Click" Style="{StaticResource AccentSplitButtonStyle}" MinHeight="40">
+                                <Button x:Name="PlayButton" Click="PlayButton_Click" Style="{StaticResource DetailsAccentButtonStyle}" MinHeight="40">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <FontIcon x:Name="PlayGlyph" Glyph="&#xE768;" FontSize="16" VerticalAlignment="Center" />
                                         <TextBlock x:Name="PlayText" VerticalAlignment="Center" />
                                     </StackPanel>
-                                    <SplitButton.Flyout>
-                                        <MenuFlyout Placement="BottomEdgeAlignedLeft">
-                                            <MenuFlyoutItem x:Name="PlayFromBeginningMenuItem" Click="PlayFromBeginningMenuItem_Click">
-                                                <MenuFlyoutItem.Icon>
-                                                    <FontIcon Glyph="&#xE777;" />
-                                                </MenuFlyoutItem.Icon>
-                                            </MenuFlyoutItem>
-                                            <MenuFlyoutItem x:Name="ClearResumeMenuItem" Click="ClearResumeMenuItem_Click">
-                                                <MenuFlyoutItem.Icon>
-                                                    <FontIcon Glyph="&#xE74D;" />
-                                                </MenuFlyoutItem.Icon>
-                                            </MenuFlyoutItem>
-                                        </MenuFlyout>
-                                    </SplitButton.Flyout>
-                                </SplitButton>
+                                </Button>
                                 <DropDownButton x:Name="AddToListButton" Style="{StaticResource DetailsButtonStyle}" MinHeight="40">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <FontIcon Glyph="&#xE710;" FontSize="16" VerticalAlignment="Center" />
