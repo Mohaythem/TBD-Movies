@@ -270,7 +270,7 @@
                             Click="WatchlistSeeAllButton_Click"
                             Style="{StaticResource TextBlockButtonStyle}" />
                     </Grid>
-                    <Grid x:Name="WatchlistRowGrid" Height="{StaticResource MediaCardItemHeight}">
+                    <Grid x:Name="WatchlistRowGrid" Height="326">
                         <GridView
                             x:Name="WatchlistGrid"
                             ItemClick="WatchlistGrid_ItemClick"
