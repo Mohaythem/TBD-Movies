@@ -31,6 +31,7 @@ public sealed class TraktFavoritesSyncTests
         FakeSnapshotBuilder? snapshotBuilder = null,
         TimeProvider? timeProvider = null)
     {
+        dataClient.AccountUuid = auth.GetAuthState().AccountId ?? "acct-1";
         return new TraktSyncService(
             auth,
             dataClient,
@@ -263,7 +264,7 @@ public sealed class TraktFavoritesSyncTests
         };
 
         var syncTask = service.SyncAsync();
-        await drainEntered.Task;
+        await drainEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         // While ReconcileFavoritesAsync is mid-drain holding _operationGate, user clicks Favorite on 202 (enqueues before gate!)
         var concurrentPushTask = service.PushMovieFavoriteAsync(202, true);
@@ -277,7 +278,7 @@ public sealed class TraktFavoritesSyncTests
 
         allowDrainFinish.TrySetResult();
 
-        await Task.WhenAll(syncTask, concurrentPushTask);
+        await Task.WhenAll(syncTask, concurrentPushTask).WaitAsync(TimeSpan.FromSeconds(5));
 
         // Prove 202 survived RemoveDrainedFavoriteActions during SyncAsync's drain BEFORE PushMovieFavoriteAsync ran
         Assert.NotNull(pendingAfterDrainBeforePush);
@@ -341,6 +342,7 @@ public sealed class TraktFavoritesSyncTests
 
     private sealed class FakeTraktDataClient : ITraktDataClient
     {
+        public string AccountUuid { get; set; } = "acct-1";
         public string RemoteFavoriteMoviesJson { get; set; } = "[]";
         public string RemoteFavoriteShowsJson { get; set; } = "[]";
         public TraktSyncWriteResult? NextAddFavoriteResult { get; set; }
@@ -351,7 +353,7 @@ public sealed class TraktFavoritesSyncTests
         public List<(IReadOnlyList<long>? Movies, IReadOnlyList<long>? Shows, bool IsAdd)> BatchFavoriteCalls { get; } = new();
 
         public Task<JsonElement> GetAccountAsync(string clientId, string accessToken, CancellationToken cancellationToken = default)
-            => Task.FromResult(JsonDocument.Parse("""{"user":{"ids":{"uuid":"acct-1"}}}""").RootElement);
+            => Task.FromResult(JsonDocument.Parse($$"""{"user":{"ids":{"uuid":"{{AccountUuid}}"}}}""").RootElement);
 
         public Task<JsonElement> GetResourceAsync(TraktResourceSpec resource, string clientId, string accessToken, CancellationToken cancellationToken = default)
         {
