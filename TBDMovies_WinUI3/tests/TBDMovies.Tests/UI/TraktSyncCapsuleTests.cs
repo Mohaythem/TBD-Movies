@@ -29,6 +29,8 @@ public sealed class TraktSyncCapsuleTests
         Assert.Equal("Transparent", GetSetterValue(style, "BorderBrush"));
         Assert.Equal("0", GetSetterValue(style, "BorderThickness"));
         Assert.Equal("6", GetSetterValue(style, "CornerRadius"));
+        Assert.Null(GetSetterValue(style, "IsTabStop"));
+        Assert.Null(GetSetterValue(style, "AllowFocusOnInteraction"));
     }
 
     [Fact]
@@ -78,6 +80,8 @@ public sealed class TraktSyncCapsuleTests
         var syncButton = border.Descendants(XamlNs + "Button")
             .Single(b => (string?)b.Attribute(XNs + "Name") == "SyncNowButton");
         Assert.Equal("{StaticResource SyncActionButtonStyle}", (string?)syncButton.Attribute("Style"));
+        Assert.Equal("False", (string?)syncButton.Attribute("AllowFocusOnInteraction"));
+        Assert.False(string.Equals((string?)syncButton.Attribute("IsTabStop"), "False", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -87,6 +91,7 @@ public sealed class TraktSyncCapsuleTests
 
         Assert.Contains("private ITraktUiActions? _subscribedTrakt;", csContent);
         Assert.DoesNotContain("ITraktSyncService", csContent);
+        Assert.DoesNotContain("AllowFocusOnInteraction", csContent);
 
         // 1. OnUnloaded scoped cleanup
         var onUnloaded = ExtractMethodBody(csContent, "void OnUnloaded(object sender, RoutedEventArgs e)");

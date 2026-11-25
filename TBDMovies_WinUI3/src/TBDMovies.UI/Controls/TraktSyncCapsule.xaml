@@ -63,6 +63,7 @@
                 x:Name="SyncNowButton"
                 Click="SyncNowButton_Click"
                 Style="{StaticResource SyncActionButtonStyle}"
+                AllowFocusOnInteraction="False"
                 VerticalAlignment="Center">
                 <FontIcon
                     FontFamily="{StaticResource SymbolThemeFontFamily}"

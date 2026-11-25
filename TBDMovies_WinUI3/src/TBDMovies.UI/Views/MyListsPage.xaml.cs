@@ -1230,6 +1230,12 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             return;
         }
 
+        var keyToDelete = CustomKey(list.Id);
+        var predecessorKey = MyListsSelectionPolicy.ResolvePredecessorKey(
+            Definitions.Select(d => d.Key).ToList(),
+            keyToDelete,
+            defaultFallbackKey: "watch-later");
+
         try
         {
             AppServices.Personal.DeleteCustomList(list.Id);
@@ -1240,7 +1246,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             return;
         }
 
-        _selectedKey = "watch-later";
+        _selectedKey = predecessorKey;
         Invalidate();
         RebuildTabs();
         Refresh();
