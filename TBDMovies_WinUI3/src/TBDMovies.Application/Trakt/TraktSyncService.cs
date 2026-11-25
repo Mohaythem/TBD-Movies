@@ -3041,17 +3041,6 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             // 3. Downstream & Upstream Reconciliation
             if (_snapshotBuilder != null)
             {
-                // Re-read pending queue after GetResourceAsync so concurrent UI toggles made during network fetch are protected
-                var currentPending = LoadPendingFavoriteActions();
-                foreach (var p in currentPending)
-                {
-                    var key = (p.MediaKind.Trim().ToUpperInvariant(), p.TmdbId);
-                    if (string.Equals(p.Action, "ADD", StringComparison.OrdinalIgnoreCase))
-                        survivingAddSet.Add(key);
-                    else if (string.Equals(p.Action, "REMOVE", StringComparison.OrdinalIgnoreCase))
-                        survivingRemoveSet.Add(key);
-                }
-
                 var snapshot = await _snapshotBuilder.BuildSnapshotAsync(cancellationToken);
 
                 // Movies Watchlist
