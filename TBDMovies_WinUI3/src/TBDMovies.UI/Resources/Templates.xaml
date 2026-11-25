@@ -70,20 +70,25 @@
                     -->
                     <Border
                         Margin="8"
+                        Width="22"
+                        Height="22"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Bottom"
-                        Background="#332510"
-                        BorderBrush="#664515"
+                        Background="#CC261B0A"
+                        BorderBrush="#99DDA020"
                         BorderThickness="1"
-                        CornerRadius="8"
-                        Padding="6,2"
+                        CornerRadius="11"
                         Canvas.ZIndex="5"
+                        AutomationProperties.Name="{x:Bind ReviewMatchLabel, Mode=OneWay}"
+                        ToolTipService.ToolTip="{x:Bind ReviewMatchLabel, Mode=OneWay}"
                         Visibility="{x:Bind ReviewMatchBadgeVisibility, Mode=OneWay}">
-                        <TextBlock
+                        <FontIcon
+                            FontFamily="{StaticResource SymbolThemeFontFamily}"
+                            FontSize="11"
                             Foreground="#DDA020"
-                            FontWeight="Medium"
-                            Style="{StaticResource CaptionTextBlockStyle}"
-                            Text="{x:Bind ReviewMatchLabel, Mode=OneWay}" />
+                            Glyph="&#xE7BA;"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center" />
                     </Border>
                 </Grid>
             </Border>

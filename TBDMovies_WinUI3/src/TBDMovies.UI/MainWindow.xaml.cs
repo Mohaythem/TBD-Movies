@@ -428,6 +428,8 @@ public sealed partial class MainWindow : Window
         _homePage.MovieSelected += OpenMovie;
         _homePage.ShowSelected += OpenShow;
         _homePage.LibraryRequested += (_, _) => Navigate("library");
+        _homePage.AddMediaRequested += (_, _) => Navigate("add");
+        _homePage.SettingsRequested += (_, _) => Navigate("settings");
         _homePage.ActivityListRequested += (_, key) =>
         {
             Navigate("lists");

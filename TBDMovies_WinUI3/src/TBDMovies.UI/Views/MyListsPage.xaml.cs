@@ -497,7 +497,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
 
     public void SelectSystemList(string key)
     {
-        if (key is not ("continue-watching" or "recently-watched")) return;
+        if (key is not ("watch-later" or "favorites" or "continue-watching" or "recently-watched")) return;
         CancelTraktDisplay();
         _selectedKey = key;
         _query = string.Empty;

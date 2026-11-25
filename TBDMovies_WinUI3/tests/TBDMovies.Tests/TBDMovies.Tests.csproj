@@ -35,6 +35,7 @@
     <Compile Include="..\..\src\TBDMovies.UI\Services\LibraryNavigationSortPolicy.cs" Link="UI\LibraryNavigationSortPolicy.cs" />
     <Compile Include="..\..\src\TBDMovies.UI\Services\MyListsSelectionPolicy.cs" Link="UI\MyListsSelectionPolicy.cs" />
     <Compile Include="..\..\src\TBDMovies.UI\Services\CheckLibraryGroupingPolicy.cs" Link="UI\CheckLibraryGroupingPolicy.cs" />
+    <Compile Include="..\..\src\TBDMovies.UI\Services\HomePageLayoutPolicy.cs" Link="UI\HomePageLayoutPolicy.cs" />
     <Compile Include="..\..\tools\TBDMovies.QaSeed\Seed.cs" Link="Tools\Seed.cs" />
     <ProjectReference Include="..\..\src\TBDMovies.Domain\TBDMovies.Domain.csproj" />
     <ProjectReference Include="..\..\src\TBDMovies.Application\TBDMovies.Application.csproj" />

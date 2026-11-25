@@ -24,10 +24,12 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     private IReadOnlyList<MovieRecord> _movies = [];
     private IReadOnlyList<TVShowRecord> _shows = [];
     private IReadOnlyList<WatchHistoryItem> _history = [];
+    private IReadOnlyList<MovieRecord> _watchlistMovies = [];
     private IReadOnlyList<HomeActivityCard> _continueCards = [];
     private IReadOnlyList<WatchHistoryCardRecord> _historyCards = [];
     private readonly PostHandoffRequestLifetime _playbackRequests = new();
     private int _renderedContinueCount = -1;
+    private int _renderedWatchlistCount = -1;
     private int _renderedHistoryCount = -1;
     private int _renderedRecentCount = -1;
     private LibrarySnapshotToken? _lastLoadedSnapshot = null;
@@ -39,8 +41,10 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     {
         this.InitializeComponent();
         RecentGrid.ItemContainerTransitions = [];
+        WatchlistGrid.ItemContainerTransitions = [];
         this.SizeChanged += HomePage_SizeChanged;
         ContinueRowGrid.SizeChanged += HomePage_SizeChanged;
+        WatchlistRowGrid.SizeChanged += WatchlistRowGrid_SizeChanged;
         HistoryRowGrid.SizeChanged += HomePage_SizeChanged;
         RecentRowGrid.SizeChanged += RecentRowGrid_SizeChanged;
         ContextRequested += Home_ContextRequested;
@@ -69,6 +73,10 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     public event EventHandler<TVShowRecord>? ShowSelected;
 
     public event EventHandler? LibraryRequested;
+
+    public event EventHandler? AddMediaRequested;
+
+    public event EventHandler? SettingsRequested;
 
     public event EventHandler<string>? ActivityListRequested;
 
@@ -99,12 +107,13 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         _movies = LoadMovies();
         _shows = LoadShows();
         _history = LoadHistory();
+        _watchlistMovies = LoadWatchlistMovies();
         StatsRepeater.ItemsSource = BuildStats();
         _continueCards = BuildContinueWatching();
         _historyCards = BuildHistoryCards();
-        UpdateContinueVisibility();
-        UpdateHistoryVisibility();
+        ApplyAdaptiveLayoutState();
         _renderedContinueCount = -1;
+        _renderedWatchlistCount = -1;
         _renderedHistoryCount = -1;
         _renderedRecentCount = -1;
         UpdateActivityShelves();
@@ -121,12 +130,13 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     private void RefreshActivityShelvesOnly()
     {
         _history = LoadHistory();
+        _watchlistMovies = LoadWatchlistMovies();
         StatsRepeater.ItemsSource = BuildStats();
         _continueCards = BuildContinueWatching();
         _historyCards = BuildHistoryCards();
-        UpdateContinueVisibility();
-        UpdateHistoryVisibility();
+        ApplyAdaptiveLayoutState();
         _renderedContinueCount = -1;
+        _renderedWatchlistCount = -1;
         _renderedHistoryCount = -1;
         UpdateActivityShelves();
         _activityDirty = false;
@@ -145,18 +155,30 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         FlowDirection = LocalizationService.FlowDirection;
         PageTitleText.Text = LocalizationService.Text("WelcomeBack");
         PageSubtitleText.Text = LocalizationService.Text("YourLibrary");
+        OnboardingTitleText.Text = LocalizationService.Text("HomeOnboardingTitle");
+        OnboardingSubtitleText.Text = LocalizationService.Text("HomeOnboardingSubtitle");
+        OnboardingStep1TitleText.Text = LocalizationService.Text("HomeOnboardingStep1Title");
+        OnboardingStep1DescText.Text = LocalizationService.Text("HomeOnboardingStep1Desc");
+        OnboardingAddMediaButton.Content = LocalizationService.Text("HomeOnboardingStep1Action");
+        OnboardingStep2TitleText.Text = LocalizationService.Text("HomeOnboardingStep2Title");
+        OnboardingStep2DescText.Text = LocalizationService.Text("HomeOnboardingStep2Desc");
+        OnboardingSettingsButton.Content = LocalizationService.Text("HomeOnboardingStep2Action");
+        OnboardingStep3TitleText.Text = LocalizationService.Text("HomeOnboardingStep3Title");
+        OnboardingStep3DescText.Text = LocalizationService.Text("HomeOnboardingStep3Desc");
         ContinueHeadingText.Text = LocalizationService.Text("ContinueWatching");
+        WatchlistHeadingText.Text = LocalizationService.Text("HomeFromWatchlist");
+        CompactStripMessageText.Text = LocalizationService.Text("HomeCompactStripMessage");
+        CompactOpenLibraryButton.Content = LocalizationService.Text("HomeOpenLibrary");
         HistoryHeadingText.Text = LocalizationService.Text("RecentlyWatched");
         RecentHeadingText.Text = LocalizationService.Text("RecentlyAdded");
         SeeAllButton.Content = LocalizationService.Text("SeeAll");
         ContinueSeeAllButton.Content = LocalizationService.Text("SeeAll");
+        WatchlistSeeAllButton.Content = LocalizationService.Text("SeeAll");
         HistorySeeAllButton.Content = LocalizationService.Text("SeeAll");
-        ContinueEmptyState.Title = LocalizationService.Text("ContinueWatching");
-        ContinueEmptyState.Message = LocalizationService.Text("NothingWatchedHelp");
-        HistoryEmptyState.Title = LocalizationService.Text("NothingWatched");
-        HistoryEmptyState.Message = LocalizationService.Text("NothingWatchedHelp");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(ContinueSeeAllButton,
             $"{LocalizationService.Text("SeeAll")}: {LocalizationService.Text("ContinueWatching")}");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(WatchlistSeeAllButton,
+            $"{LocalizationService.Text("SeeAll")}: {LocalizationService.Text("HomeFromWatchlist")}");
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(HistorySeeAllButton,
             $"{LocalizationService.Text("SeeAll")}: {LocalizationService.Text("RecentlyWatched")}");
     }
@@ -196,6 +218,21 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         catch (Exception)
         {
             return [];
+        }
+    }
+
+    private static IReadOnlyList<MovieRecord> LoadWatchlistMovies()
+    {
+        try
+        {
+            return AppServices.Personal
+                .ListPersonalMovies(PersonalLibrarySection.Watchlist)
+                .Select(LibraryProjection.ToCard)
+                .ToArray();
+        }
+        catch (Exception)
+        {
+            return Array.Empty<MovieRecord>();
         }
     }
 
@@ -271,54 +308,102 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         }
     }
 
-    private void UpdateContinueVisibility()
+    private void ApplyAdaptiveLayoutState()
     {
-        var hasAny = _continueCards.Count > 0;
-        ContinueRowGrid.Visibility = hasAny
-            ? Microsoft.UI.Xaml.Visibility.Visible
-            : Microsoft.UI.Xaml.Visibility.Collapsed;
-        ContinueEmptyState.Visibility = hasAny
-            ? Microsoft.UI.Xaml.Visibility.Collapsed
-            : Microsoft.UI.Xaml.Visibility.Visible;
-        ContinueEmptyState.Title = LocalizationService.Text("ContinueWatching");
-        ContinueEmptyState.Message = LocalizationService.Text("NothingWatchedHelp");
-        if (!hasAny)
+        var layout = HomePageLayoutPolicy.ResolveVisibility(
+            _movies.Count + _shows.Count,
+            _continueCards.Count,
+            _watchlistMovies.Count,
+            _historyCards.Count,
+            _movies.Count);
+
+        OnboardingCard.Visibility = layout.ShowOnboarding ? Visibility.Visible : Visibility.Collapsed;
+        StatsContainer.Visibility = layout.ShowStats ? Visibility.Visible : Visibility.Collapsed;
+        ContinueSection.Visibility = layout.ShowContinueShelf ? Visibility.Visible : Visibility.Collapsed;
+        WatchlistSection.Visibility = layout.ShowWatchlistShelf ? Visibility.Visible : Visibility.Collapsed;
+        CompactStripCard.Visibility = layout.ShowCompactStrip ? Visibility.Visible : Visibility.Collapsed;
+        HistorySection.Visibility = layout.ShowHistoryShelf ? Visibility.Visible : Visibility.Collapsed;
+        RecentSection.Visibility = layout.ShowRecentShelf ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!layout.ShowContinueShelf)
         {
             ContinueSeeAllButton.Visibility = Visibility.Collapsed;
         }
-    }
 
-    private void UpdateHistoryVisibility()
-    {
-        var hasAny = _historyCards.Count > 0;
-        HistoryRowGrid.Visibility = hasAny ? Visibility.Visible : Visibility.Collapsed;
-        HistoryEmptyState.Visibility = hasAny ? Visibility.Collapsed : Visibility.Visible;
-        HistoryEmptyState.Title = LocalizationService.Text("NothingWatched");
-        HistoryEmptyState.Message = LocalizationService.Text("NothingWatchedHelp");
-        if (!hasAny)
+        if (!layout.ShowWatchlistShelf)
+        {
+            WatchlistSeeAllButton.Visibility = Visibility.Collapsed;
+            WatchlistGrid.ItemsSource = Array.Empty<MovieRecord>();
+            _renderedWatchlistCount = 0;
+        }
+
+        if (!layout.ShowHistoryShelf)
         {
             HistorySeeAllButton.Visibility = Visibility.Collapsed;
         }
     }
 
     private void Home_ContextRequested(UIElement sender, Microsoft.UI.Xaml.Input.ContextRequestedEventArgs e)
-        => MediaCardContextMenu.ShowForContext(this, e, onChanged: () => { _activityDirty = true; });
+        => MediaCardContextMenu.ShowForContext(this, e, onChanged: () =>
+        {
+            _activityDirty = true;
+            if (IsLoaded)
+            {
+                RefreshActivityShelvesOnly();
+            }
+        });
 
     private void HomePage_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateActivityShelves();
+
+    private void WatchlistRowGrid_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateWatchlistShelf();
 
     private void RecentRowGrid_SizeChanged(object sender, SizeChangedEventArgs e) => UpdateRecentShelf();
 
     private double GetAvailableShelfWidth()
     {
-        if (ContinueRowGrid.Visibility == Visibility.Visible && ContinueRowGrid.ActualWidth > 0)
+        if (ContinueSection.Visibility == Visibility.Visible && ContinueRowGrid.ActualWidth > 0)
             return ContinueRowGrid.ActualWidth;
-        if (HistoryRowGrid.Visibility == Visibility.Visible && HistoryRowGrid.ActualWidth > 0)
+        if (WatchlistSection.Visibility == Visibility.Visible && WatchlistRowGrid.ActualWidth > 0)
+            return WatchlistRowGrid.ActualWidth;
+        if (HistorySection.Visibility == Visibility.Visible && HistoryRowGrid.ActualWidth > 0)
             return HistoryRowGrid.ActualWidth;
-        if (RecentRowGrid.Visibility == Visibility.Visible && RecentRowGrid.ActualWidth > 0)
+        if (RecentSection.Visibility == Visibility.Visible && RecentRowGrid.ActualWidth > 0)
             return RecentRowGrid.ActualWidth;
         if (double.IsFinite(ActualWidth) && ActualWidth > 64)
             return ActualWidth - 64;
         return ActualWidth;
+    }
+
+    private void UpdateWatchlistShelf()
+    {
+        if (WatchlistSection.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
+        var width = WatchlistRowGrid.ActualWidth;
+        if (!double.IsFinite(width) || width <= 0)
+        {
+            width = GetAvailableShelfWidth();
+            if (!double.IsFinite(width) || width <= 0) return;
+        }
+
+        var cellWidth = (double)Microsoft.UI.Xaml.Application.Current.Resources["MediaCardItemWidth"];
+        var height = WatchlistRowGrid.ActualHeight > 0
+            ? WatchlistRowGrid.ActualHeight
+            : (double)Microsoft.UI.Xaml.Application.Current.Resources["MediaCardItemHeight"];
+
+        WatchlistRowGrid.Clip = new RectangleGeometry
+            { Rect = new Windows.Foundation.Rect(0, 0, width, height) };
+
+        var watchlistCount = HomeActivityLayout.CalculateItemsToRender(width, _watchlistMovies.Count, cellWidth, 0);
+        if (watchlistCount != _renderedWatchlistCount)
+        {
+            _renderedWatchlistCount = watchlistCount;
+            WatchlistGrid.ItemsSource = _watchlistMovies.Take(watchlistCount).ToArray();
+        }
+        WatchlistSeeAllButton.Visibility = HomeActivityLayout.ShouldShowSeeAll(width, _watchlistMovies.Count, cellWidth, 0)
+            ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void UpdateRecentShelf()
@@ -378,6 +463,7 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         HistorySeeAllButton.Visibility = HomeActivityLayout.ShouldShowSeeAll(availableWidth, _historyCards.Count)
             ? Visibility.Visible
             : Visibility.Collapsed;
+        UpdateWatchlistShelf();
         UpdateRecentShelf();
     }
 
@@ -578,4 +664,24 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
 
     private void HistorySeeAllButton_Click(object sender, RoutedEventArgs e) =>
         ActivityListRequested?.Invoke(this, "recently-watched");
+
+    private void WatchlistGrid_ItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is MovieRecord movie)
+        {
+            MovieSelected?.Invoke(this, movie);
+        }
+    }
+
+    private void WatchlistSeeAllButton_Click(object sender, RoutedEventArgs e) =>
+        ActivityListRequested?.Invoke(this, "watch-later");
+
+    private void OnboardingAddMedia_Click(object sender, RoutedEventArgs e) =>
+        AddMediaRequested?.Invoke(this, EventArgs.Empty);
+
+    private void OnboardingSettings_Click(object sender, RoutedEventArgs e) =>
+        SettingsRequested?.Invoke(this, EventArgs.Empty);
+
+    private void CompactOpenLibraryButton_Click(object sender, RoutedEventArgs e) =>
+        LibraryRequested?.Invoke(this, EventArgs.Empty);
 }

@@ -83,10 +83,10 @@
             <SolidColorBrush x:Key="ArtworkBadgeBackgroundBrush" Color="#CC000000" />
             <SolidColorBrush x:Key="ArtworkBadgeForegroundBrush" Color="#FFF8F9FB" />
             <LinearGradientBrush x:Key="LandscapeCardScrimBrush" StartPoint="0,0" EndPoint="0,1">
-                <GradientStop Offset="0" Color="#10000000" />
-                <GradientStop Offset="0.35" Color="#33000000" />
-                <GradientStop Offset="0.65" Color="#CC000000" />
-                <GradientStop Offset="1" Color="#F5000000" />
+                <GradientStop Offset="0" Color="#08000000" />
+                <GradientStop Offset="0.35" Color="#40000000" />
+                <GradientStop Offset="0.62" Color="#D9000000" />
+                <GradientStop Offset="1" Color="#FA000000" />
             </LinearGradientBrush>
             <LinearGradientBrush x:Key="HeroBackdropScrimBrush" StartPoint="0.5,0" EndPoint="0.5,1">
                 <GradientStop Offset="0.0" Color="#00000000" />
@@ -212,10 +212,10 @@
             <SolidColorBrush x:Key="ArtworkBadgeBackgroundBrush" Color="#D9000000" />
             <SolidColorBrush x:Key="ArtworkBadgeForegroundBrush" Color="#FFFFFFFF" />
             <LinearGradientBrush x:Key="LandscapeCardScrimBrush" StartPoint="0,0" EndPoint="0,1">
-                <GradientStop Offset="0" Color="#10000000" />
-                <GradientStop Offset="0.35" Color="#33000000" />
-                <GradientStop Offset="0.65" Color="#CC000000" />
-                <GradientStop Offset="1" Color="#F5000000" />
+                <GradientStop Offset="0" Color="#08000000" />
+                <GradientStop Offset="0.35" Color="#40000000" />
+                <GradientStop Offset="0.62" Color="#D9000000" />
+                <GradientStop Offset="1" Color="#FA000000" />
             </LinearGradientBrush>
             <LinearGradientBrush x:Key="HeroBackdropScrimBrush" StartPoint="0.5,0" EndPoint="0.5,1">
                 <GradientStop Offset="0.0" Color="#00F8F9FA" />
