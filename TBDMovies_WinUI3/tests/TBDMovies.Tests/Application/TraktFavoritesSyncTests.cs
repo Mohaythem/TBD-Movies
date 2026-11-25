@@ -353,7 +353,7 @@ public sealed class TraktFavoritesSyncTests
         public List<(IReadOnlyList<long>? Movies, IReadOnlyList<long>? Shows, bool IsAdd)> BatchFavoriteCalls { get; } = new();
 
         public Task<JsonElement> GetAccountAsync(string clientId, string accessToken, CancellationToken cancellationToken = default)
-            => Task.FromResult(JsonDocument.Parse($$"""{"user":{"ids":{"uuid":"{{AccountUuid}}"}}}""").RootElement);
+            => Task.FromResult(JsonDocument.Parse(JsonSerializer.Serialize(new { user = new { ids = new { uuid = AccountUuid } } })).RootElement);
 
         public Task<JsonElement> GetResourceAsync(TraktResourceSpec resource, string clientId, string accessToken, CancellationToken cancellationToken = default)
         {
