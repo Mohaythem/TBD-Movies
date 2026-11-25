@@ -47,6 +47,9 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
     /// the counts do not each query the catalog again.
     /// </summary>
     private HashSet<int> _missingEpisodeFiles = [];
+    private IReadOnlyDictionary<int, MissingEpisodeRelinkContext> _missingEpisodeContexts = new Dictionary<int, MissingEpisodeRelinkContext>();
+    private int _episodeTotal;
+    private readonly HashSet<int> _expandedShowIds = [];
 
     /// <summary>
     /// Cancellation for the running pass. A CancellationTokenSource is the safe way to hand a stop
@@ -132,13 +135,18 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
 
         if (!hasResult)
         {
+            IssuesRepeater.ItemsSource = null;
+            TvShowRelinkRepeater.ItemsSource = null;
+            IssuesSurface.Visibility = Visibility.Collapsed;
+            TvShowRelinkRepeater.Visibility = Visibility.Collapsed;
             IssuesSection.Visibility = Visibility.Collapsed;
             NoIssuesState.Visibility = Visibility.Collapsed;
             return;
         }
 
         var result = _result!;
-        var issues = BuildIssues(result);
+        var flatIssues = BuildFlatIssues(result);
+        var showGroups = BuildShowGroups();
 
         // The unit is the movie, not the movie plus its file: counting both made a four-movie library
         // report eight items. A movie needs attention when its file is gone or its metadata is thin,
@@ -176,9 +184,14 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
         AttentionValueText.Text = LocalizationService.Number(attention);
         TotalValueText.Text = LocalizationService.Number(total);
 
-        IssuesRepeater.ItemsSource = issues;
-        IssuesSection.Visibility = issues.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        NoIssuesState.Visibility = issues.Count == 0 && _staleTemps.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        IssuesRepeater.ItemsSource = flatIssues;
+        TvShowRelinkRepeater.ItemsSource = showGroups;
+        IssuesSurface.Visibility = flatIssues.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        TvShowRelinkRepeater.Visibility = showGroups.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        IssuesSection.Visibility = (flatIssues.Length > 0 || showGroups.Length > 0) ? Visibility.Visible : Visibility.Collapsed;
+        NoIssuesState.Visibility = (flatIssues.Length == 0 && showGroups.Length == 0 && _staleTemps.Count == 0)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
     /// <summary>
@@ -196,9 +209,14 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
             {
                 movies.Add(movieId);
             }
-            else if (EpisodeForFile(missing.Id) is int episodeId)
+            else if (_missingEpisodeContexts.TryGetValue(missing.Id, out var episodeContext))
             {
-                episodes.Add(episodeId);
+                episodes.Add(episodeContext.EpisodeId);
+            }
+            else if (_missingEpisodeFiles.Contains(missing.Id))
+            {
+                // Context-absent episode file fallback: count uniquely without querying SQLite on the UI thread.
+                episodes.Add(-missing.Id);
             }
         }
 
@@ -223,8 +241,10 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
         }
     }
 
-    /// <summary>How many episodes the catalog holds, so the total counts TV as well as movies.</summary>
-    private static int EpisodeTotal()
+    /// <summary>How many episodes the catalog holds, cached from the last background check pass.</summary>
+    private int EpisodeTotal() => _episodeTotal;
+
+    private static int EpisodeTotalFromCatalog()
     {
         try
         {
@@ -237,12 +257,10 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
     }
 
     /// <summary>
-    /// The issue rows: first the movies whose metadata is incomplete, then the files that are registered
-    /// but no longer on disk. A missing file keeps its registration - that is the product contract - so
-    /// it is reported, never removed. The file rows carry their media-file id, which is what the row
-    /// action resolves. Each category keeps the order supplied by its repository.
+    /// Flat issue rows: movies whose metadata is incomplete, missing movie files, and any missing
+    /// episode file whose show/season context could not be resolved.
     /// </summary>
-    private IReadOnlyList<LibraryIssueDisplayRecord> BuildIssues(LibraryHealthProgress result)
+    private LibraryIssueDisplayRecord[] BuildFlatIssues(LibraryHealthProgress result)
     {
         var rows = new List<LibraryIssueDisplayRecord>();
 
@@ -257,6 +275,11 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
 
         foreach (var missing in _missing)
         {
+            if (_missingEpisodeContexts.ContainsKey(missing.Id))
+            {
+                continue;
+            }
+
             rows.Add(new LibraryIssueDisplayRecord(
                 Path.GetFileName(missing.CurrentPath),
                 LocalizationService.Text(
@@ -266,7 +289,57 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
                 LocalizationService.Text("Relink")));
         }
 
-        return rows;
+        return rows.ToArray();
+    }
+
+    private TvShowRelinkGroupRecord[] BuildShowGroups()
+    {
+        var inputs = new List<CheckLibraryEpisodeInput>();
+
+        foreach (var missing in _missing)
+        {
+            if (!_missingEpisodeContexts.TryGetValue(missing.Id, out var context))
+            {
+                continue;
+            }
+
+            inputs.Add(new CheckLibraryEpisodeInput(
+                context.MediaFileId,
+                context.EpisodeId,
+                context.ShowId,
+                context.ShowTitle,
+                context.SeasonNumber,
+                context.EpisodeNumber,
+                context.EpisodeTitle,
+                Path.GetFileName(missing.CurrentPath)));
+        }
+
+        var groups = CheckLibraryGroupingPolicy.BuildShowGroups(inputs, _expandedShowIds);
+        CheckLibraryGroupingPolicy.PruneExpandedShowIds(_expandedShowIds, groups);
+
+        var relinkLabel = LocalizationService.Text("Relink");
+        var viewLabel = LocalizationService.Text("ViewAction");
+
+        return groups
+            .Select(group =>
+            {
+                var count = group.Episodes.Count;
+                var countText = count == 1
+                    ? LocalizationService.Text("MissingEpisodeSingle")
+                    : LocalizationService.Format("MissingEpisodesCountFormat", count);
+                var episodeRows = group.Episodes
+                    .Select(episode => new TvEpisodeRelinkRow(episode, relinkLabel))
+                    .ToArray();
+
+                return new TvShowRelinkGroupRecord(
+                    group.ShowId,
+                    group.ShowTitle,
+                    countText,
+                    viewLabel,
+                    group.IsExpanded,
+                    episodeRows);
+            })
+            .ToArray();
     }
 
     /// <summary>
@@ -316,6 +389,9 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
         _result = null;
         _missing = [];
         _missingEpisodeFiles = [];
+        _missingEpisodeContexts = new Dictionary<int, MissingEpisodeRelinkContext>();
+        _episodeTotal = 0;
+        _expandedShowIds.Clear();
         _staleTemps = [];
         CheckProgressBar.IsIndeterminate = true;
         CheckProgressText.Text = LocalizationService.Format("CheckedCountFormat", 0);
@@ -338,19 +414,22 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
             _staleTemps = await Task.Run(() => AppServices.DetectStaleTempFiles(token: token), token);
             token.ThrowIfCancellationRequested();
             _result = result;
-            var (missing, missingEpFiles) = await Task.Run(() =>
+            var (missing, missingEpFiles, missingEpContexts, episodeTotal) = await Task.Run(() =>
             {
                 var m = MissingFiles();
+                var contexts = AppServices.Tv.GetMissingEpisodeRelinkContexts(m.Select(file => file.Id));
                 HashSet<int> epFiles = [.. m
-                    .Select(file => (File: file, Episode: EpisodeForFile(file.Id)))
-                    .Where(pair => pair.Episode is not null)
-                    .Select(pair => pair.File.Id)];
-                return (m, epFiles);
+                    .Where(file => contexts.ContainsKey(file.Id) || EpisodeForFile(file.Id) is not null)
+                    .Select(file => file.Id)];
+                var epTotal = EpisodeTotalFromCatalog();
+                return (m, epFiles, contexts, epTotal);
             }, token);
 
             token.ThrowIfCancellationRequested();
             _missing = missing;
             _missingEpisodeFiles = missingEpFiles;
+            _missingEpisodeContexts = missingEpContexts;
+            _episodeTotal = episodeTotal;
             _state = LibraryCheckState.Complete;
         }
         catch (OperationCanceledException)
@@ -549,6 +628,34 @@ public sealed partial class CheckLibraryPage : Page, ILocalizableView, IActivata
         {
             ShowReviewRequested?.Invoke(this, validShowId);
         }
+    }
+
+    private void ShowGroupToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: TvShowRelinkGroupRecord group })
+        {
+            return;
+        }
+
+        group.IsExpanded = !group.IsExpanded;
+        if (group.IsExpanded)
+        {
+            _expandedShowIds.Add(group.ShowId);
+        }
+        else
+        {
+            _expandedShowIds.Remove(group.ShowId);
+        }
+    }
+
+    private void ShowGroupView_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: int showId })
+        {
+            return;
+        }
+
+        ShowReviewRequested?.Invoke(this, showId);
     }
 
     private async Task ShowMessageAsync(string title, string message)

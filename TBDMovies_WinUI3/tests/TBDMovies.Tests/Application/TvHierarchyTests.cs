@@ -742,6 +742,188 @@ public sealed class TvHierarchyTests : IDisposable
         Assert.Null(detailsNull.Seasons[0].PosterReference);
     }
 
+    [Fact]
+    public void GetMissingEpisodeRelinkContexts_ResolvesMultiShowBatch_AndHandlesNullOrMissingParents()
+    {
+        var service = NewTvService();
+
+        // 1. Null and empty guards
+        Assert.Throws<ArgumentNullException>(() => service.GetMissingEpisodeRelinkContexts(null!));
+        Assert.Empty(service.GetMissingEpisodeRelinkContexts(Array.Empty<int>()));
+
+        // 2. Real SQLite batch: multi-show (one with CustomDisplayTitle), multi-season, null/populated episode titles, movie + missing IDs
+        var import = NewImportService();
+        var s1e1 = import.RegisterEpisodeImport(Command(WriteMedia("Alpha.Show.S01E01.1080p.mkv")));
+        var s1e2 = import.RegisterEpisodeImport(Command(WriteMedia("Alpha.Show.S01E02.1080p.mkv")));
+        var s2e1 = import.RegisterEpisodeImport(Command(WriteMedia("Beta.Show.S02E01.720p.mkv")));
+        var s2e2 = import.RegisterEpisodeImport(Command(WriteMedia("Beta.Show.S02E02.720p.mkv")));
+        var s3e1 = import.RegisterEpisodeImport(Command(WriteMedia("Gamma.Show.S01E01.720p.mkv")));
+        var s3e2 = import.RegisterEpisodeImport(Command(WriteMedia("Gamma.Show.S01E02.720p.mkv")));
+        var s4e1 = import.RegisterEpisodeImport(Command(WriteMedia("Delta.Show.S01E01.720p.mkv")));
+
+        int movieFileId;
+        using (var work = _factory.Begin())
+        {
+            work.TvShows.SetCustomDisplayTitle(s1e1.Show.Id, "Alpha Custom Title");
+            work.TvEpisodes.UpdateMetadata(
+                s1e1.Episode.Id, "Pilot Title", null, 42, null, null, null, null, DateTimeOffset.UtcNow);
+            work.TvEpisodes.UpdateMetadata(
+                s1e2.Episode.Id, null, null, null, null, null, null, null, DateTimeOffset.UtcNow);
+
+            var movie = work.Movies.Create(
+                new MovieCatalogData(null, null, "Some Movie", null, 2020, null, [], null, null, null, MetadataStatus.Pending),
+                DateTimeOffset.UtcNow);
+            var movieFile = work.MediaFiles.Add(
+                new VerifiedMediaFileFacts(
+                    Path.Combine(_workspace, "some.movie.2020.mkv"),
+                    1024,
+                    ".mkv",
+                    null,
+                    null,
+                    null,
+                    DateTimeOffset.UtcNow),
+                movie.Id);
+            movieFileId = movieFile.Id;
+
+            work.Commit();
+        }
+
+        // Duplicate episode file id + movie file id + nonexistent id in one batch
+        var batch = new[]
+        {
+            s1e1.MediaFile.Id,
+            s1e1.MediaFile.Id,
+            s1e2.MediaFile.Id,
+            s2e1.MediaFile.Id,
+            movieFileId,
+            999999,
+        };
+
+        var contexts = service.GetMissingEpisodeRelinkContexts(batch);
+        Assert.Equal(3, contexts.Count);
+        Assert.False(contexts.ContainsKey(movieFileId));
+        Assert.False(contexts.ContainsKey(999999));
+
+        var ctx1 = contexts[s1e1.MediaFile.Id];
+        Assert.Equal(s1e1.Episode.Id, ctx1.EpisodeId);
+        Assert.Equal(s1e1.Show.Id, ctx1.ShowId);
+        Assert.Equal("Alpha Custom Title", ctx1.ShowTitle);
+        Assert.Equal(1, ctx1.SeasonNumber);
+        Assert.Equal(1, ctx1.EpisodeNumber);
+        Assert.Equal("Pilot Title", ctx1.EpisodeTitle);
+
+        var ctx2 = contexts[s1e2.MediaFile.Id];
+        Assert.Equal("Alpha Custom Title", ctx2.ShowTitle);
+        Assert.Null(ctx2.EpisodeTitle);
+
+        var ctx3 = contexts[s2e1.MediaFile.Id];
+        Assert.Equal(s2e1.Show.Id, ctx3.ShowId);
+        Assert.Equal(s2e1.Show.DisplayTitle, ctx3.ShowTitle);
+        Assert.Equal(2, ctx3.SeasonNumber);
+        Assert.Equal(1, ctx3.EpisodeNumber);
+
+        // 3. Counting wrapper audit: null episode/season/show skipped cleanly and per-call season/show caches deduplicate lookups (including null misses)
+        var countingShows = new CountingTvShowRepo(new PerCallTvShowRepository(_factory), hiddenShowIds: new HashSet<int> { s2e1.Show.Id });
+        var countingSeasons = new CountingTvSeasonRepo(new PerCallTvSeasonRepository(_factory), hiddenSeasonIds: new HashSet<int> { s3e1.Season.Id });
+        var countingEpisodes = new CountingTvEpisodeRepo(new PerCallTvEpisodeRepository(_factory), hiddenEpisodeIds: new HashSet<int> { s4e1.Episode.Id });
+
+        var countingService = new TvLibraryService(countingShows, countingSeasons, countingEpisodes);
+
+        var cachedResult = countingService.GetMissingEpisodeRelinkContexts(new[]
+        {
+            s1e1.MediaFile.Id,
+            s1e1.MediaFile.Id,
+            s1e2.MediaFile.Id,
+            s2e1.MediaFile.Id,
+            s2e2.MediaFile.Id,
+            s3e1.MediaFile.Id,
+            s3e2.MediaFile.Id,
+            s4e1.MediaFile.Id,
+        });
+
+        Assert.Equal(2, cachedResult.Count);
+        Assert.True(cachedResult.ContainsKey(s1e1.MediaFile.Id));
+        Assert.True(cachedResult.ContainsKey(s1e2.MediaFile.Id));
+        Assert.False(cachedResult.ContainsKey(s2e1.MediaFile.Id));
+        Assert.False(cachedResult.ContainsKey(s2e2.MediaFile.Id));
+        Assert.False(cachedResult.ContainsKey(s3e1.MediaFile.Id));
+        Assert.False(cachedResult.ContainsKey(s3e2.MediaFile.Id));
+        Assert.False(cachedResult.ContainsKey(s4e1.MediaFile.Id));
+
+        Assert.Equal(1, countingEpisodes.EpisodeLookupCount(s1e1.MediaFile.Id));
+        Assert.Equal(1, countingSeasons.SeasonGetByIdCount(s1e1.Season.Id));
+        Assert.Equal(1, countingSeasons.SeasonGetByIdCount(s3e1.Season.Id));
+        Assert.Equal(1, countingShows.ShowGetByIdCount(s1e1.Show.Id));
+        Assert.Equal(1, countingShows.ShowGetByIdCount(s2e1.Show.Id));
+    }
+
+    private sealed class CountingTvShowRepo(ITvShowRepository inner, HashSet<int> hiddenShowIds) : ITvShowRepository
+    {
+        private readonly Dictionary<int, int> _getByIdCalls = new();
+        public int ShowGetByIdCount(int id) => _getByIdCalls.TryGetValue(id, out var c) ? c : 0;
+
+        public TvShow? GetById(int id)
+        {
+            _getByIdCalls[id] = ShowGetByIdCount(id) + 1;
+            return hiddenShowIds.Contains(id) ? null : inner.GetById(id);
+        }
+
+        public TvShow? GetBySortTitle(string sortTitle) => inner.GetBySortTitle(sortTitle);
+        public TvShow? GetByAlias(string aliasSortTitle) => inner.GetByAlias(aliasSortTitle);
+        public void RegisterAlias(int showId, string aliasSortTitle, DateTimeOffset now) => inner.RegisterAlias(showId, aliasSortTitle, now);
+        public void RecordOpened(int id, DateTimeOffset openedAt) => inner.RecordOpened(id, openedAt);
+        public TvShow? GetByExternalId(string provider, string externalId) => inner.GetByExternalId(provider, externalId);
+        public IReadOnlyList<TvShow> ListAll() => inner.ListAll();
+        public int CountAll() => inner.CountAll();
+        public TvShow Create(TvShowCatalogData data, DateTimeOffset now) => inner.Create(data, now);
+        public TvShow UpdateMetadata(int id, TvShowCatalogData data, DateTimeOffset now) => inner.UpdateMetadata(id, data, now);
+        public void SetCustomDisplayTitle(int id, string? customDisplayTitle) => inner.SetCustomDisplayTitle(id, customDisplayTitle);
+        public void Delete(int id) => inner.Delete(id);
+    }
+
+    private sealed class CountingTvSeasonRepo(ITvSeasonRepository inner, HashSet<int> hiddenSeasonIds) : ITvSeasonRepository
+    {
+        private readonly Dictionary<int, int> _getByIdCalls = new();
+        public int SeasonGetByIdCount(int id) => _getByIdCalls.TryGetValue(id, out var c) ? c : 0;
+
+        public TvSeason? GetById(int id)
+        {
+            _getByIdCalls[id] = SeasonGetByIdCount(id) + 1;
+            return hiddenSeasonIds.Contains(id) ? null : inner.GetById(id);
+        }
+
+        public TvSeason? GetByNumber(int showId, int seasonNumber) => inner.GetByNumber(showId, seasonNumber);
+        public IReadOnlyList<TvSeason> ListByShow(int showId) => inner.ListByShow(showId);
+        public TvSeason Create(int showId, int seasonNumber, string? title, string? overview, DateTimeOffset now) => inner.Create(showId, seasonNumber, title, overview, now);
+        public TvSeason UpdateMetadata(int id, string? title, string? overview, string? posterPath, string? airDate, string? externalId, DateTimeOffset now) => inner.UpdateMetadata(id, title, overview, posterPath, airDate, externalId, now);
+        public void Delete(int id) => inner.Delete(id);
+    }
+
+    private sealed class CountingTvEpisodeRepo(ITvEpisodeRepository inner, HashSet<int> hiddenEpisodeIds) : ITvEpisodeRepository
+    {
+        private readonly Dictionary<int, int> _mediaLookupCalls = new();
+        public int EpisodeLookupCount(int mediaFileId) => _mediaLookupCalls.TryGetValue(mediaFileId, out var c) ? c : 0;
+
+        public TvEpisode? GetById(int id) => hiddenEpisodeIds.Contains(id) ? null : inner.GetById(id);
+        public TvEpisode? GetByNumber(int seasonId, int episodeNumber) => inner.GetByNumber(seasonId, episodeNumber);
+        public IReadOnlyList<TvEpisode> ListBySeason(int seasonId) => inner.ListBySeason(seasonId);
+        public IReadOnlyList<TvEpisode> ListByShow(int showId) => inner.ListByShow(showId);
+        public TvEpisode Create(int seasonId, int episodeNumber, string? title, string? overview, int? runtimeMinutes, DateTimeOffset? airDate, DateTimeOffset now) => inner.Create(seasonId, episodeNumber, title, overview, runtimeMinutes, airDate, now);
+        public TvEpisode UpdateMetadata(int id, string? title, string? overview, int? runtimeMinutes, string? airDate, double? rating, string? stillPath, string? externalId, DateTimeOffset now) => inner.UpdateMetadata(id, title, overview, runtimeMinutes, airDate, rating, stillPath, externalId, now);
+        public void Delete(int id) => inner.Delete(id);
+        public void LinkMediaFile(int episodeId, int mediaFileId, DateTimeOffset now) => inner.LinkMediaFile(episodeId, mediaFileId, now);
+        public void UnlinkMediaFile(int mediaFileId) => inner.UnlinkMediaFile(mediaFileId);
+
+        public int? GetEpisodeIdForMediaFile(int mediaFileId)
+        {
+            _mediaLookupCalls[mediaFileId] = EpisodeLookupCount(mediaFileId) + 1;
+            return inner.GetEpisodeIdForMediaFile(mediaFileId);
+        }
+
+        public IReadOnlyList<MediaFile> ListMediaFiles(int episodeId) => inner.ListMediaFiles(episodeId);
+        public IReadOnlyDictionary<int, IReadOnlyList<MediaFile>> ListMediaFilesByShow(int showId) => inner.ListMediaFilesByShow(showId);
+    }
+
     private sealed class EnrichedSeasonProvider(string seasonPosterRef) : IMetadataProvider
     {
         public string ProviderName => "enriched_test";

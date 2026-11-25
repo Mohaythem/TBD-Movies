@@ -161,6 +161,63 @@ public sealed class TvLibraryService(
         return season?.ShowId;
     }
 
+    public IReadOnlyDictionary<int, MissingEpisodeRelinkContext> GetMissingEpisodeRelinkContexts(IEnumerable<int> mediaFileIds)
+    {
+        ArgumentNullException.ThrowIfNull(mediaFileIds);
+
+        var result = new Dictionary<int, MissingEpisodeRelinkContext>();
+        var seasonCache = new Dictionary<int, TvSeason?>();
+        var showCache = new Dictionary<int, TvShow?>();
+
+        foreach (var mediaFileId in mediaFileIds.Distinct())
+        {
+            var episodeId = episodes.GetEpisodeIdForMediaFile(mediaFileId);
+            if (episodeId is null)
+            {
+                continue;
+            }
+
+            var episode = episodes.GetById(episodeId.Value);
+            if (episode is null)
+            {
+                continue;
+            }
+
+            if (!seasonCache.TryGetValue(episode.SeasonId, out var season))
+            {
+                season = seasons.GetById(episode.SeasonId);
+                seasonCache[episode.SeasonId] = season;
+            }
+
+            if (season is null)
+            {
+                continue;
+            }
+
+            if (!showCache.TryGetValue(season.ShowId, out var show))
+            {
+                show = shows.GetById(season.ShowId);
+                showCache[season.ShowId] = show;
+            }
+
+            if (show is null)
+            {
+                continue;
+            }
+
+            result[mediaFileId] = new MissingEpisodeRelinkContext(
+                mediaFileId,
+                episode.Id,
+                show.Id,
+                show.DisplayTitle,
+                season.Number,
+                episode.Number,
+                episode.Title);
+        }
+
+        return result;
+    }
+
     /// <summary>
     /// Provider-confirmed enrichment, awaited off the UI load path: re-reads the local hierarchy, then asks
     /// the provider for each season's episode list. A confirmed season gets provider-confirmed gaps; an

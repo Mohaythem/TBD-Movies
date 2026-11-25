@@ -197,6 +197,13 @@ public interface ITvLibraryUiActions
     /// Check Library uses it to navigate to the show's details page.
     /// </summary>
     int? FindShowForMediaFile(int mediaFileId);
+
+    /// <summary>
+    /// Resolves show and episode metadata for a batch of missing media file ids so Check Library
+    /// can group missing episodes by TV show in one pass.
+    /// </summary>
+    IReadOnlyDictionary<int, MissingEpisodeRelinkContext> GetMissingEpisodeRelinkContexts(IEnumerable<int> mediaFileIds)
+        => new Dictionary<int, MissingEpisodeRelinkContext>();
 }
 
 public interface ISettingsUiActions

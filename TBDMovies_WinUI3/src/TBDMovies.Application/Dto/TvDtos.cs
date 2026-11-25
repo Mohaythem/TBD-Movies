@@ -113,3 +113,13 @@ public sealed class EpisodeRegistrationException(EpisodeRegistrationRefusal refu
 {
     public EpisodeRegistrationRefusal Refusal { get; } = refusal;
 }
+
+/// <summary>Resolved show and episode context for a missing episode media file in Check Library.</summary>
+public sealed record MissingEpisodeRelinkContext(
+    int MediaFileId,
+    int EpisodeId,
+    int ShowId,
+    string ShowTitle,
+    int SeasonNumber,
+    int EpisodeNumber,
+    string? EpisodeTitle);
