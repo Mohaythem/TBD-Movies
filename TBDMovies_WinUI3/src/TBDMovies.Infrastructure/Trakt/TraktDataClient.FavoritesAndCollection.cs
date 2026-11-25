@@ -76,6 +76,9 @@ public sealed partial class TraktDataClient
         while (movieIdx < movies.Count || showIdx < shows.Count)
         {
             ct.ThrowIfCancellationRequested();
+            var startMovieIdx = movieIdx;
+            var startShowIdx = showIdx;
+
             var moviesTake = Math.Min(chunkSize, movies.Count - movieIdx);
             var chunkMovies = movies.GetRange(movieIdx, moviesTake);
             movieIdx += moviesTake;
@@ -93,6 +96,18 @@ public sealed partial class TraktDataClient
             var res = await SendBatchSyncPayloadAsync(relativePath, payload, token, clientId, ct).ConfigureAwait(false);
             if (!res.Success)
             {
+                if (res.IsAccountLimitExceeded)
+                {
+                    var remainingMovies = movies.GetRange(startMovieIdx, movies.Count - startMovieIdx);
+                    var remainingShows = shows.GetRange(startShowIdx, shows.Count - startShowIdx);
+                    return new TraktSyncWriteResult(
+                        false,
+                        totalAffected,
+                        res.Error,
+                        IsAccountLimitExceeded: true,
+                        UnprocessedMovieTmdbIds: remainingMovies,
+                        UnprocessedShowTmdbIds: remainingShows);
+                }
                 return new TraktSyncWriteResult(false, totalAffected, res.Error);
             }
             totalAffected += res.AddedOrRemovedCount;
@@ -206,6 +221,14 @@ public sealed partial class TraktDataClient
                             relativePath,
                             HttpStatusCode.Unauthorized);
                     }
+                    if ((int)response.StatusCode == 420)
+                    {
+                        return new TraktSyncWriteResult(
+                            false,
+                            0,
+                            "HTTP 420 Account limit exceeded",
+                            IsAccountLimitExceeded: true);
+                    }
                     return new TraktSyncWriteResult(false, 0, $"HTTP {(int)response.StatusCode} {response.ReasonPhrase}");
                 }
 
@@ -242,6 +265,17 @@ public sealed partial class TraktDataClient
                         if (existingEl.TryGetProperty("movies", out var em) && em.TryGetInt32(out var emv)) count += emv;
                         if (existingEl.TryGetProperty("shows", out var es) && es.TryGetInt32(out var esv)) count += esv;
                         if (existingEl.TryGetProperty("episodes", out var eep) && eep.TryGetInt32(out var eepv)) count += eepv;
+                    }
+                    if (count == 0 && root.TryGetProperty("not_found", out var notFoundEl))
+                    {
+                        int notFoundCount = 0;
+                        if (notFoundEl.TryGetProperty("movies", out var nfm) && nfm.ValueKind == JsonValueKind.Array) notFoundCount += nfm.GetArrayLength();
+                        if (notFoundEl.TryGetProperty("shows", out var nfs) && nfs.ValueKind == JsonValueKind.Array) notFoundCount += nfs.GetArrayLength();
+                        if (notFoundEl.TryGetProperty("episodes", out var nfep) && nfep.ValueKind == JsonValueKind.Array) notFoundCount += nfep.GetArrayLength();
+                        if (notFoundCount > 0 && !relativePath.EndsWith("/remove", StringComparison.Ordinal))
+                        {
+                            return new TraktSyncWriteResult(false, 0, $"Trakt could not match {notFoundCount} item(s) (not_found)");
+                        }
                     }
                     return new TraktSyncWriteResult(true, count);
                 }

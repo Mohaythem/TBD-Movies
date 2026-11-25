@@ -29,6 +29,7 @@ namespace TBDMovies.UI.Views;
 public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableView, IDeactivatableView
 {
     private string _selectedKey = "watch-later";
+    private string? _notifiedFavoritesLimitAccountId;
     private string _query = string.Empty;
 
     /// <summary>The user's custom lists for this visit. Reloaded on arrival and after every mutation.</summary>
@@ -93,6 +94,22 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
     public void UpdateSyncStatus()
     {
         TraktSync.UpdateSyncStatus();
+        var state = AppServices.IsAvailable ? AppServices.Trakt?.GetSyncState() : null;
+        if (state is { FavoritesLimitReached: true } && state.AuthState.IsConnected)
+        {
+            var accountId = state.CurrentAccountId ?? string.Empty;
+            TraktFavoritesLimitInfoBar.Message = LocalizationService.Text("TraktFavoritesLimitReached");
+            if (!string.Equals(_notifiedFavoritesLimitAccountId, accountId, StringComparison.Ordinal))
+            {
+                _notifiedFavoritesLimitAccountId = accountId;
+                TraktFavoritesLimitInfoBar.IsOpen = true;
+            }
+        }
+        else
+        {
+            _notifiedFavoritesLimitAccountId = null;
+            TraktFavoritesLimitInfoBar.IsOpen = false;
+        }
     }
 
     /// <summary>Drops the per-visit caches: the custom lists and the loaded section.</summary>

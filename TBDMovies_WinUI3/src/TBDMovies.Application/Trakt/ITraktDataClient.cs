@@ -7,7 +7,13 @@ namespace TBDMovies.Application.Trakt;
 /// <summary>
 /// Status outcome for Trakt sync write operations (e.g. watchlist mutations).
 /// </summary>
-public sealed record TraktSyncWriteResult(bool Success, int AddedOrRemovedCount = 0, string? Error = null);
+public sealed record TraktSyncWriteResult(
+    bool Success,
+    int AddedOrRemovedCount = 0,
+    string? Error = null,
+    bool IsAccountLimitExceeded = false,
+    IReadOnlyList<long>? UnprocessedMovieTmdbIds = null,
+    IReadOnlyList<long>? UnprocessedShowTmdbIds = null);
 
 /// <summary>
 /// Client contract for read-only HTTP GET Trakt endpoints (https://api.trakt.tv).

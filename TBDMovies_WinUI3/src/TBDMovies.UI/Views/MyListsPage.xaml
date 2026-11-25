@@ -161,6 +161,12 @@
                 </Button>
             </controls:WrapPanel>
 
+            <InfoBar
+                x:Name="TraktFavoritesLimitInfoBar"
+                IsClosable="True"
+                IsOpen="False"
+                Severity="Warning" />
+
             <!--  Active list: count on leading edge, Add Media & More Options on trailing edge.  -->
             <Grid ColumnSpacing="12" Margin="0,4,0,0">
                 <Grid.ColumnDefinitions>

@@ -23,7 +23,8 @@ public enum TraktSyncFailureKind
     InvalidResponse,
     NetworkError,
     Busy,
-    Cancelled
+    Cancelled,
+    AccountLimitExceeded
 }
 
 /// <summary>
@@ -58,10 +59,11 @@ public sealed record TraktSyncState(
     DateTimeOffset? LastSyncAttemptAt,
     DateTimeOffset? LastSyncSuccessAt,
     string? LastSyncError,
-    TraktSyncFailureKind LastFailureKind = TraktSyncFailureKind.None)
+    TraktSyncFailureKind LastFailureKind = TraktSyncFailureKind.None,
+    bool FavoritesLimitReached = false)
 {
     public static TraktSyncState Initial(TraktAuthState authState, string? lastAccountId = null) =>
-        new(authState, false, authState.AccountId, lastAccountId ?? authState.AccountId, null, null, null, TraktSyncFailureKind.None);
+        new(authState, false, authState.AccountId, lastAccountId ?? authState.AccountId, null, null, null, TraktSyncFailureKind.None, false);
 }
 
 /// <summary>

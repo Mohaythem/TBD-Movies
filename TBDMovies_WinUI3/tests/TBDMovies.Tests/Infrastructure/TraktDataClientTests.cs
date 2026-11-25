@@ -1265,4 +1265,83 @@ public sealed class TraktDataClientTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => client.AddCollectionBatchAsync(new long[] { 550 }, null, TestAccessToken, ct: cts.Token));
     }
+
+    [Fact]
+    public async Task RemoveFavoriteAsync_PostsToSyncFavoritesRemove_WithCorrectPayload()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent("""{"deleted":{"movies":1,"shows":0}}""", Encoding.UTF8, "application/json")
+        });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        var result = await client.RemoveFavoriteAsync(550, TraktMediaKind.Movie, TestAccessToken);
+
+        Assert.True(result.Success);
+        Assert.Equal(1, result.AddedOrRemovedCount);
+        Assert.Equal("/sync/favorites/remove", handler.CapturedRequests[0].RequestUri?.AbsolutePath);
+        Assert.Contains("\"tmdb\":550", handler.CapturedBodies[0]);
+    }
+
+    [Fact]
+    public async Task AddFavoritesBatchAsync_ChunksOver100Items_AndPropagatesHttp420UnprocessedIds()
+    {
+        var handler = new FakeHttpMessageHandler();
+
+        // Chunk 1 (100 items) succeeds with 201 Created; Chunk 2 (20 items) hits HTTP 420
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.Created)
+        {
+            Content = new StringContent("""{"added":{"movies":80,"shows":20}}""", Encoding.UTF8, "application/json")
+        });
+        handler.Enqueue(_ => new HttpResponseMessage((HttpStatusCode)420)
+        {
+            Content = new StringContent("""{"error":"account_limit_exceeded"}""", Encoding.UTF8, "application/json")
+        });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        var movies = Enumerable.Range(1, 80).Select(i => (long)i).ToArray();
+        var shows = Enumerable.Range(1001, 40).Select(i => (long)i).ToArray();
+
+        var result = await client.AddFavoritesBatchAsync(movies, shows, TestAccessToken);
+
+        Assert.False(result.Success);
+        Assert.True(result.IsAccountLimitExceeded);
+        Assert.Equal(100, result.AddedOrRemovedCount);
+        Assert.Equal(2, handler.CapturedBodies.Count);
+
+        using var doc1 = JsonDocument.Parse(handler.CapturedBodies[0]);
+        Assert.Equal(100, doc1.RootElement.GetProperty("movies").GetArrayLength() + doc1.RootElement.GetProperty("shows").GetArrayLength());
+        using var doc2 = JsonDocument.Parse(handler.CapturedBodies[1]);
+        Assert.Equal(20, doc2.RootElement.GetProperty("movies").GetArrayLength() + doc2.RootElement.GetProperty("shows").GetArrayLength());
+
+        Assert.NotNull(result.UnprocessedMovieTmdbIds);
+        Assert.Empty(result.UnprocessedMovieTmdbIds);
+        Assert.NotNull(result.UnprocessedShowTmdbIds);
+        Assert.Equal(20, result.UnprocessedShowTmdbIds!.Count);
+        Assert.Equal(1021L, result.UnprocessedShowTmdbIds[0]);
+    }
+
+    [Fact]
+    public async Task AddFavoriteAsync_OnNotFoundWithZeroAdded_ReturnsFailureResult()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.Created)
+        {
+            Content = new StringContent("""{"added":{"movies":0,"shows":0},"not_found":{"movies":[{"ids":{"tmdb":999999}}]}}""", Encoding.UTF8, "application/json")
+        });
+
+        using var httpClient = new HttpClient(handler);
+        using var client = new TraktDataClient(httpClient);
+
+        var result = await client.AddFavoriteAsync(999999, TraktMediaKind.Movie, TestAccessToken);
+
+        Assert.False(result.Success);
+        Assert.Equal(0, result.AddedOrRemovedCount);
+        Assert.Contains("not_found", result.Error, StringComparison.OrdinalIgnoreCase);
+    }
 }

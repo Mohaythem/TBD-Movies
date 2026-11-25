@@ -98,7 +98,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         var persistedLastAccount = _settingsRepository?.Get(LastAccountIdSettingsKey);
         _lastAccountId = _currentAccountId ?? (string.IsNullOrWhiteSpace(persistedLastAccount) ? null : persistedLastAccount.Trim());
 
-        _syncState = TraktSyncState.Initial(authState, _lastAccountId);
+        _syncState = TraktSyncState.Initial(authState, _lastAccountId) with
+        {
+            FavoritesLimitReached = LoadLimitBlockedFavorites().Count > 0
+        };
 
         if (authState.IsConnected && !authState.RequiresReconnect)
         {
@@ -292,11 +295,13 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             // Clear current account connection, but retain explicit last account ID for offline cache browsing.
             var activeId = _currentAccountId ?? _authService.GetAuthState().AccountId;
             _currentAccountId = null;
-            UpdateState(auth: _authService.GetAuthState(), isSyncing: false, clearError: true);
+            UpdateState(auth: _authService.GetAuthState(), isSyncing: false, clearError: true, favoritesLimitReached: false);
 
             // 5. Clear pending offline actions to prevent cross-account leak
             _personalLibraryRepository?.ClearTraktPendingActions();
             SavePendingFavoriteActions(new List<TraktPendingFavoriteAction>());
+            ClearLimitBlockedFavorites();
+            Interlocked.Exchange(ref _favoriteSlotFreedSinceSync, 0);
 
             if (!string.IsNullOrWhiteSpace(activeId) && _settingsRepository != null)
             {
@@ -1140,7 +1145,8 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         DateTimeOffset? lastSuccess = null,
         string? error = null,
         bool clearError = false,
-        TraktSyncFailureKind failureKind = TraktSyncFailureKind.None)
+        TraktSyncFailureKind failureKind = TraktSyncFailureKind.None,
+        bool? favoritesLimitReached = null)
     {
         var prev = _syncState;
 
@@ -1177,7 +1183,8 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             lastAttempt ?? prev.LastSyncAttemptAt,
             lastSuccess ?? prev.LastSyncSuccessAt,
             nextError,
-            nextFailureKind);
+            nextFailureKind,
+            favoritesLimitReached ?? prev.FavoritesLimitReached);
     }
 
     private bool HasLinkedTraktAccount(TraktAuthState auth) =>
@@ -1917,7 +1924,105 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
     }
 
     private const string PendingFavoriteActionsSettingsKey = "trakt_pending_favorite_actions";
+    private const string LimitBlockedFavoritesSettingsKey = "trakt_favorites_limit_blocked";
     private readonly object _pendingFavoritesLock = new();
+    private int _favoriteSlotFreedSinceSync;
+
+    private sealed record TraktLimitBlockedFavorite(string MediaKind, int TmdbId);
+
+    private List<TraktLimitBlockedFavorite> LoadLimitBlockedFavorites()
+    {
+        lock (_pendingFavoritesLock)
+        {
+            var raw = _settingsRepository?.Get(LimitBlockedFavoritesSettingsKey);
+            if (string.IsNullOrWhiteSpace(raw)) return new List<TraktLimitBlockedFavorite>();
+            try
+            {
+                return JsonSerializer.Deserialize<List<TraktLimitBlockedFavorite>>(raw) ?? new List<TraktLimitBlockedFavorite>();
+            }
+            catch
+            {
+                return new List<TraktLimitBlockedFavorite>();
+            }
+        }
+    }
+
+    private void SaveLimitBlockedFavorites(List<TraktLimitBlockedFavorite> items)
+    {
+        lock (_pendingFavoritesLock)
+        {
+            if (items.Count == 0)
+            {
+                _settingsRepository?.Delete(LimitBlockedFavoritesSettingsKey);
+                return;
+            }
+            var json = JsonSerializer.Serialize(items);
+            _settingsRepository?.Set(LimitBlockedFavoritesSettingsKey, json, _timeProvider.GetUtcNow());
+        }
+    }
+
+    private void AddLimitBlockedFavorites(IEnumerable<(string MediaKind, int TmdbId)> items)
+    {
+        if (items == null) return;
+        lock (_pendingFavoritesLock)
+        {
+            var blocked = LoadLimitBlockedFavorites();
+            var existing = blocked.Select(b => (b.MediaKind.Trim().ToUpperInvariant(), b.TmdbId)).ToHashSet();
+            var changed = false;
+            foreach (var item in items)
+            {
+                if (item.TmdbId <= 0) continue;
+                var key = (item.MediaKind.Trim().ToUpperInvariant(), item.TmdbId);
+                if (existing.Add(key))
+                {
+                    blocked.Add(new TraktLimitBlockedFavorite(key.Item1, key.Item2));
+                    changed = true;
+                }
+            }
+            if (changed) SaveLimitBlockedFavorites(blocked);
+        }
+    }
+
+    private bool RemoveLimitBlockedFavorites(IEnumerable<(string MediaKind, int TmdbId)> items)
+    {
+        if (items == null) return false;
+        lock (_pendingFavoritesLock)
+        {
+            var blocked = LoadLimitBlockedFavorites();
+            if (blocked.Count == 0) return false;
+            var keys = items.Select(i => (i.MediaKind.Trim().ToUpperInvariant(), i.TmdbId)).ToHashSet();
+            var removed = blocked.RemoveAll(b => keys.Contains((b.MediaKind.Trim().ToUpperInvariant(), b.TmdbId)));
+            if (removed > 0) SaveLimitBlockedFavorites(blocked);
+            return blocked.Count == 0;
+        }
+    }
+
+    private void ClearLimitBlockedFavorites()
+    {
+        lock (_pendingFavoritesLock)
+        {
+            _settingsRepository?.Delete(LimitBlockedFavoritesSettingsKey);
+        }
+    }
+
+    private void RemoveDrainedFavoriteActions(IReadOnlyList<TraktPendingFavoriteAction> drained)
+    {
+        if (drained == null || drained.Count == 0) return;
+        lock (_pendingFavoritesLock)
+        {
+            var actions = LoadPendingFavoriteActions();
+            if (actions.Count == 0) return;
+            var drainedKeys = drained
+                .Select(d => (d.MediaKind.Trim().ToUpperInvariant(), d.TmdbId, d.Action.Trim().ToUpperInvariant(), d.CreatedAt))
+                .ToHashSet();
+            actions.RemoveAll(a => drainedKeys.Contains((
+                a.MediaKind.Trim().ToUpperInvariant(),
+                a.TmdbId,
+                a.Action.Trim().ToUpperInvariant(),
+                a.CreatedAt)));
+            SavePendingFavoriteActions(actions);
+        }
+    }
 
     private List<TraktPendingFavoriteAction> LoadPendingFavoriteActions()
     {
@@ -1995,6 +2100,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
 
         // Upfront queueing protects from pruning race while waiting on gate
         EnqueuePendingFavoriteAction("MOVIE", (int)tmdbId, action);
+        if (!isFavorite)
+        {
+            RemoveLimitBlockedFavorites(new[] { ("MOVIE", (int)tmdbId) });
+        }
 
         if (!auth.IsConnected || auth.RequiresReconnect)
         {
@@ -2004,17 +2113,39 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         await _operationGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            if (!isFavorite && LoadLimitBlockedFavorites().Count == 0 && _syncState.FavoritesLimitReached)
+            {
+                UpdateState(favoritesLimitReached: false);
+            }
+
             var result = isFavorite
                 ? await MutateWithAuthRetryAsync(token => _dataClient.AddFavoriteAsync(tmdbId, TraktMediaKind.Movie, token, _config.ClientId, ct), ct).ConfigureAwait(false)
                 : await MutateWithAuthRetryAsync(token => _dataClient.RemoveFavoriteAsync(tmdbId, TraktMediaKind.Movie, token, _config.ClientId, ct), ct).ConfigureAwait(false);
 
             if (!result.Success)
             {
+                if (result.IsAccountLimitExceeded && isFavorite)
+                {
+                    AddLimitBlockedFavorites(new[] { ("MOVIE", (int)tmdbId) });
+                    RemovePendingFavoriteActionsBatch(new[] { ("MOVIE", (int)tmdbId) });
+                    UpdateState(favoritesLimitReached: true);
+                    AppDiagnosticsLog.Record("TraktFavorites", $"PushMovieFavoriteAsync hit Trakt account limit (HTTP 420) for tmdb={tmdbId}; saved locally only.");
+                    return false;
+                }
+
                 AppDiagnosticsLog.Record("TraktFavorites", $"PushMovieFavoriteAsync write failed: {result.Error}");
                 return false;
             }
 
             RemovePendingFavoriteActionsBatch(new[] { ("MOVIE", (int)tmdbId) });
+            if (!isFavorite && LoadLimitBlockedFavorites().Count > 0)
+            {
+                Interlocked.Exchange(ref _favoriteSlotFreedSinceSync, 1);
+            }
+            if (isFavorite && RemoveLimitBlockedFavorites(new[] { ("MOVIE", (int)tmdbId) }))
+            {
+                UpdateState(favoritesLimitReached: false);
+            }
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -2043,6 +2174,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
 
         // Upfront queueing protects from pruning race while waiting on gate
         EnqueuePendingFavoriteAction("SHOW", (int)tmdbId, action);
+        if (!isFavorite)
+        {
+            RemoveLimitBlockedFavorites(new[] { ("SHOW", (int)tmdbId) });
+        }
 
         if (!auth.IsConnected || auth.RequiresReconnect)
         {
@@ -2052,17 +2187,39 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         await _operationGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            if (!isFavorite && LoadLimitBlockedFavorites().Count == 0 && _syncState.FavoritesLimitReached)
+            {
+                UpdateState(favoritesLimitReached: false);
+            }
+
             var result = isFavorite
                 ? await MutateWithAuthRetryAsync(token => _dataClient.AddFavoriteAsync(tmdbId, TraktMediaKind.Show, token, _config.ClientId, ct), ct).ConfigureAwait(false)
                 : await MutateWithAuthRetryAsync(token => _dataClient.RemoveFavoriteAsync(tmdbId, TraktMediaKind.Show, token, _config.ClientId, ct), ct).ConfigureAwait(false);
 
             if (!result.Success)
             {
+                if (result.IsAccountLimitExceeded && isFavorite)
+                {
+                    AddLimitBlockedFavorites(new[] { ("SHOW", (int)tmdbId) });
+                    RemovePendingFavoriteActionsBatch(new[] { ("SHOW", (int)tmdbId) });
+                    UpdateState(favoritesLimitReached: true);
+                    AppDiagnosticsLog.Record("TraktFavorites", $"PushShowFavoriteAsync hit Trakt account limit (HTTP 420) for tmdb={tmdbId}; saved locally only.");
+                    return false;
+                }
+
                 AppDiagnosticsLog.Record("TraktFavorites", $"PushShowFavoriteAsync write failed: {result.Error}");
                 return false;
             }
 
             RemovePendingFavoriteActionsBatch(new[] { ("SHOW", (int)tmdbId) });
+            if (!isFavorite && LoadLimitBlockedFavorites().Count > 0)
+            {
+                Interlocked.Exchange(ref _favoriteSlotFreedSinceSync, 1);
+            }
+            if (isFavorite && RemoveLimitBlockedFavorites(new[] { ("SHOW", (int)tmdbId) }))
+            {
+                UpdateState(favoritesLimitReached: false);
+            }
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -2173,6 +2330,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         foreach (var m in movies) { batch.Add(("MOVIE", (int)m, action)); keys.Add(("MOVIE", (int)m)); }
         foreach (var s in shows) { batch.Add(("SHOW", (int)s, action)); keys.Add(("SHOW", (int)s)); }
         EnqueuePendingFavoriteActionsBatch(batch);
+        if (!isFavorite)
+        {
+            RemoveLimitBlockedFavorites(keys);
+        }
 
         if (!auth.IsConnected || auth.RequiresReconnect)
         {
@@ -2182,17 +2343,43 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         await _operationGate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
+            if (!isFavorite && LoadLimitBlockedFavorites().Count == 0 && _syncState.FavoritesLimitReached)
+            {
+                UpdateState(favoritesLimitReached: false);
+            }
             var result = isFavorite
                 ? await MutateWithAuthRetryAsync(token => _dataClient.AddFavoritesBatchAsync(movies, shows, token, _config.ClientId, ct), ct).ConfigureAwait(false)
                 : await MutateWithAuthRetryAsync(token => _dataClient.RemoveFavoritesBatchAsync(movies, shows, token, _config.ClientId, ct), ct).ConfigureAwait(false);
 
             if (!result.Success)
             {
+                if (result.IsAccountLimitExceeded && isFavorite)
+                {
+                    var blockedMovies = result.UnprocessedMovieTmdbIds ?? movies;
+                    var blockedShows = result.UnprocessedShowTmdbIds ?? shows;
+                    var blockedItems = blockedMovies.Select(id => ("MOVIE", (int)id))
+                        .Concat(blockedShows.Select(id => ("SHOW", (int)id)))
+                        .ToList();
+                    AddLimitBlockedFavorites(blockedItems);
+                    RemovePendingFavoriteActionsBatch(keys);
+                    UpdateState(favoritesLimitReached: true);
+                    AppDiagnosticsLog.Record("TraktFavorites", $"PushBatchFavoritesAsync hit Trakt account limit (HTTP 420); {blockedItems.Count} item(s) saved locally only.");
+                    return false;
+                }
+
                 AppDiagnosticsLog.Record("TraktFavorites", $"PushBatchFavoritesAsync failed: {result.Error}");
                 return false;
             }
 
             RemovePendingFavoriteActionsBatch(keys);
+            if (!isFavorite && LoadLimitBlockedFavorites().Count > 0)
+            {
+                Interlocked.Exchange(ref _favoriteSlotFreedSinceSync, 1);
+            }
+            if (isFavorite && RemoveLimitBlockedFavorites(keys))
+            {
+                UpdateState(favoritesLimitReached: false);
+            }
             return true;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -2416,6 +2603,8 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             // 1. Drain offline pending favorites queue (Upstream FIFO replay)
             var pendingFavorites = LoadPendingFavoriteActions();
             var surviving = new List<TraktPendingFavoriteAction>();
+            var drainedTerminal = new List<TraktPendingFavoriteAction>();
+            var slotFreed = false;
             if (pendingFavorites.Count > 0)
             {
                 foreach (var action in pendingFavorites)
@@ -2423,13 +2612,27 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                     cancellationToken.ThrowIfCancellationRequested();
                     try
                     {
-                        var kind = string.Equals(action.MediaKind, "SHOW", StringComparison.OrdinalIgnoreCase)
-                            ? TraktMediaKind.Show
-                            : TraktMediaKind.Movie;
-                        var res = string.Equals(action.Action, "ADD", StringComparison.OrdinalIgnoreCase)
+                        var isShow = string.Equals(action.MediaKind, "SHOW", StringComparison.OrdinalIgnoreCase);
+                        var kindKey = isShow ? "SHOW" : "MOVIE";
+                        var kind = isShow ? TraktMediaKind.Show : TraktMediaKind.Movie;
+                        var isAdd = string.Equals(action.Action, "ADD", StringComparison.OrdinalIgnoreCase);
+                        var res = isAdd
                             ? await MutateWithAuthRetryAsync(token => _dataClient.AddFavoriteAsync(action.TmdbId, kind, token, _config.ClientId, cancellationToken), cancellationToken).ConfigureAwait(false)
                             : await MutateWithAuthRetryAsync(token => _dataClient.RemoveFavoriteAsync(action.TmdbId, kind, token, _config.ClientId, cancellationToken), cancellationToken).ConfigureAwait(false);
-                        if (!res.Success)
+                        if (res.Success)
+                        {
+                            drainedTerminal.Add(action);
+                            RemoveLimitBlockedFavorites(new[] { (kindKey, action.TmdbId) });
+                            if (!isAdd) slotFreed = true;
+                        }
+                        else if (res.IsAccountLimitExceeded && isAdd)
+                        {
+                            drainedTerminal.Add(action);
+                            AddLimitBlockedFavorites(new[] { (kindKey, action.TmdbId) });
+                            UpdateState(favoritesLimitReached: true);
+                            AppDiagnosticsLog.Record("TraktFavorites", $"Drain favorite action hit Trakt account limit (HTTP 420) for {kindKey}:{action.TmdbId}; kept locally.");
+                        }
+                        else
                         {
                             surviving.Add(action);
                         }
@@ -2441,11 +2644,16 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                         surviving.Add(action);
                     }
                 }
-                SavePendingFavoriteActions(surviving);
+                RemoveDrainedFavoriteActions(drainedTerminal);
             }
 
             var survivingAddSet = surviving
                 .Where(a => string.Equals(a.Action, "ADD", StringComparison.OrdinalIgnoreCase))
+                .Select(a => (Kind: a.MediaKind.Trim().ToUpperInvariant(), TmdbId: a.TmdbId))
+                .ToHashSet();
+
+            var survivingRemoveSet = surviving
+                .Where(a => string.Equals(a.Action, "REMOVE", StringComparison.OrdinalIgnoreCase))
                 .Select(a => (Kind: a.MediaKind.Trim().ToUpperInvariant(), TmdbId: a.TmdbId))
                 .ToHashSet();
 
@@ -2469,8 +2677,79 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             var remoteFavMovies = TraktDataProjections.ParseFavorites(remoteMoviesJson);
             var remoteFavShows = TraktDataProjections.ParseFavorites(remoteShowsJson);
 
-            var remoteFavMovieTmdb = remoteFavMovies.Where(m => m.TmdbId.HasValue).Select(m => (int)m.TmdbId!.Value).ToHashSet();
-            var remoteFavShowTmdb = remoteFavShows.Where(s => s.TmdbId.HasValue).Select(s => (int)s.TmdbId!.Value).ToHashSet();
+            var remoteFavMovieTmdb = remoteFavMovies.Where(m => m.TmdbId is > 0 and <= int.MaxValue).Select(m => (int)m.TmdbId!.Value).ToHashSet();
+            var remoteFavShowTmdb = remoteFavShows.Where(s => s.TmdbId is > 0 and <= int.MaxValue).Select(s => (int)s.TmdbId!.Value).ToHashSet();
+
+            slotFreed = slotFreed || Interlocked.Exchange(ref _favoriteSlotFreedSinceSync, 0) == 1;
+
+            // Remove any limit-blocked items that are now present on Trakt (e.g. VIP upgrade or external sync)
+            var currentBlocked = LoadLimitBlockedFavorites();
+            if (currentBlocked.Count > 0)
+            {
+                var alreadyRemote = currentBlocked
+                    .Where(b => (string.Equals(b.MediaKind, "SHOW", StringComparison.OrdinalIgnoreCase)
+                        ? remoteFavShowTmdb.Contains(b.TmdbId)
+                        : remoteFavMovieTmdb.Contains(b.TmdbId)))
+                    .Select(b => (b.MediaKind, b.TmdbId))
+                    .ToList();
+                if (alreadyRemote.Count > 0)
+                {
+                    RemoveLimitBlockedFavorites(alreadyRemote);
+                    currentBlocked = LoadLimitBlockedFavorites();
+                }
+
+                // If a slot was freed by a REMOVE in this sync, retry remaining limit-blocked items once
+                if (slotFreed && currentBlocked.Count > 0)
+                {
+                    var retryMovies = currentBlocked
+                        .Where(b => !string.Equals(b.MediaKind, "SHOW", StringComparison.OrdinalIgnoreCase))
+                        .Select(b => (long)b.TmdbId)
+                        .ToList();
+                    var retryShows = currentBlocked
+                        .Where(b => string.Equals(b.MediaKind, "SHOW", StringComparison.OrdinalIgnoreCase))
+                        .Select(b => (long)b.TmdbId)
+                        .ToList();
+                    try
+                    {
+                        var retryRes = await MutateWithAuthRetryAsync(
+                            token => _dataClient.AddFavoritesBatchAsync(retryMovies, retryShows, token, _config.ClientId, cancellationToken),
+                            cancellationToken).ConfigureAwait(false);
+                        if (retryRes.Success)
+                        {
+                            RemoveLimitBlockedFavorites(currentBlocked.Select(b => (b.MediaKind, b.TmdbId)));
+                            foreach (var m in retryMovies) remoteFavMovieTmdb.Add((int)m);
+                            foreach (var s in retryShows) remoteFavShowTmdb.Add((int)s);
+                        }
+                        else if (retryRes.IsAccountLimitExceeded)
+                        {
+                            var stillBlockedMovies = retryRes.UnprocessedMovieTmdbIds?.ToHashSet() ?? retryMovies.ToHashSet();
+                            var stillBlockedShows = retryRes.UnprocessedShowTmdbIds?.ToHashSet() ?? retryShows.ToHashSet();
+                            var succeeded = retryMovies.Where(id => !stillBlockedMovies.Contains(id)).Select(id => ("MOVIE", (int)id))
+                                .Concat(retryShows.Where(id => !stillBlockedShows.Contains(id)).Select(id => ("SHOW", (int)id)))
+                                .ToList();
+                            if (succeeded.Count > 0)
+                            {
+                                RemoveLimitBlockedFavorites(succeeded);
+                                foreach (var item in succeeded)
+                                {
+                                    if (item.Item1 == "SHOW") remoteFavShowTmdb.Add(item.Item2);
+                                    else remoteFavMovieTmdb.Add(item.Item2);
+                                }
+                            }
+                        }
+                    }
+                    catch (OperationCanceledException) { throw; }
+                    catch (Exception ex)
+                    {
+                        AppDiagnosticsLog.Record("TraktFavorites", $"Retry limit-blocked favorites failed: {ex.Message}");
+                    }
+                }
+            }
+
+            var limitBlockedSet = LoadLimitBlockedFavorites()
+                .Select(b => (Kind: b.MediaKind.Trim().ToUpperInvariant(), TmdbId: b.TmdbId))
+                .ToHashSet();
+            UpdateState(favoritesLimitReached: limitBlockedSet.Count > 0);
 
             var isInitialSync = _settingsRepository?.Get($"trakt_initial_sync_v2_{accountId}_favorites") != "true";
             var initialUploadSucceeded = true;
@@ -2478,16 +2757,28 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             // 3. Downstream & Upstream Reconciliation
             if (_snapshotBuilder != null)
             {
+                // Re-read pending queue after GetResourceAsync so concurrent UI toggles made during network fetch are protected
+                var currentPending = LoadPendingFavoriteActions();
+                foreach (var p in currentPending)
+                {
+                    var key = (p.MediaKind.Trim().ToUpperInvariant(), p.TmdbId);
+                    if (string.Equals(p.Action, "ADD", StringComparison.OrdinalIgnoreCase))
+                        survivingAddSet.Add(key);
+                    else if (string.Equals(p.Action, "REMOVE", StringComparison.OrdinalIgnoreCase))
+                        survivingRemoveSet.Add(key);
+                }
+
                 var snapshot = await _snapshotBuilder.BuildSnapshotAsync(cancellationToken);
 
                 // Movies
                 if (_personalLibraryRepository != null)
                 {
-                    // Downstream: mark remote favorites as Liked in local DB
+                    // Downstream: mark remote favorites as Liked in local DB (unless a local REMOVE failed to drain)
                     foreach (var cand in snapshot.ForKind(TraktMediaKind.Movie))
                     {
                         if (cand.Identity.TmdbId.HasValue && remoteFavMovieTmdb.Contains(cand.Identity.TmdbId.Value))
                         {
+                            if (survivingRemoveSet.Contains(("MOVIE", cand.Identity.TmdbId.Value))) continue;
                             try
                             {
                                 var current = _personalLibraryRepository.GetState(cand.LocalId);
@@ -2515,7 +2806,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                         {
                             if (candidateMap.TryGetValue(item.Movie.Id, out var tmdbId) && tmdbId > 0 && !remoteFavMovieTmdb.Contains(tmdbId))
                             {
-                                if (survivingAddSet.Contains(("MOVIE", tmdbId))) continue;
+                                if (survivingAddSet.Contains(("MOVIE", tmdbId)) || limitBlockedSet.Contains(("MOVIE", tmdbId))) continue;
                                 try
                                 {
                                     _personalLibraryRepository.ClearPreference(item.Movie.Id, now);
@@ -2534,7 +2825,9 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                         var moviesToUpload = new List<long>();
                         foreach (var item in localLiked)
                         {
-                            if (candidateMap.TryGetValue(item.Movie.Id, out var tmdbId) && tmdbId > 0 && !remoteFavMovieTmdb.Contains(tmdbId))
+                            if (candidateMap.TryGetValue(item.Movie.Id, out var tmdbId) && tmdbId > 0
+                                && !remoteFavMovieTmdb.Contains(tmdbId)
+                                && !limitBlockedSet.Contains(("MOVIE", tmdbId)))
                             {
                                 moviesToUpload.Add(tmdbId);
                             }
@@ -2545,7 +2838,20 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                             try
                             {
                                 var res = await MutateWithAuthRetryAsync(token => _dataClient.AddFavoritesBatchAsync(moviesToUpload, null, token, _config.ClientId, cancellationToken), cancellationToken).ConfigureAwait(false);
-                                if (!res.Success) initialUploadSucceeded = false;
+                                if (!res.Success)
+                                {
+                                    if (res.IsAccountLimitExceeded)
+                                    {
+                                        var blocked = (res.UnprocessedMovieTmdbIds ?? moviesToUpload).Select(id => ("MOVIE", (int)id));
+                                        AddLimitBlockedFavorites(blocked);
+                                        UpdateState(favoritesLimitReached: true);
+                                        AppDiagnosticsLog.Record("TraktFavorites", "Initial movie favorites upload hit Trakt account limit (HTTP 420); remaining favorites kept locally.");
+                                    }
+                                    else
+                                    {
+                                        initialUploadSucceeded = false;
+                                    }
+                                }
                             }
                             catch (Exception ex)
                             {
@@ -2559,11 +2865,12 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                 // TV shows
                 if (_showPersonalRepository != null)
                 {
-                    // Downstream: mark remote favorites as IsFavorite in local DB
+                    // Downstream: mark remote favorites as IsFavorite in local DB (unless a local REMOVE failed to drain)
                     foreach (var cand in snapshot.ForKind(TraktMediaKind.Show))
                     {
                         if (cand.Identity.TmdbId.HasValue && remoteFavShowTmdb.Contains(cand.Identity.TmdbId.Value))
                         {
+                            if (survivingRemoveSet.Contains(("SHOW", cand.Identity.TmdbId.Value))) continue;
                             try
                             {
                                 var current = _showPersonalRepository.GetState(cand.LocalId);
@@ -2591,7 +2898,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                         {
                             if (showCandidateMap.TryGetValue(showId, out var tmdbId) && tmdbId > 0 && !remoteFavShowTmdb.Contains(tmdbId))
                             {
-                                if (survivingAddSet.Contains(("SHOW", tmdbId))) continue;
+                                if (survivingAddSet.Contains(("SHOW", tmdbId)) || limitBlockedSet.Contains(("SHOW", tmdbId))) continue;
                                 try
                                 {
                                     _showPersonalRepository.SetFavorite(showId, false, now);
@@ -2610,7 +2917,9 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                         var showsToUpload = new List<long>();
                         foreach (var showId in localFavShowIds)
                         {
-                            if (showCandidateMap.TryGetValue(showId, out var tmdbId) && tmdbId > 0 && !remoteFavShowTmdb.Contains(tmdbId))
+                            if (showCandidateMap.TryGetValue(showId, out var tmdbId) && tmdbId > 0
+                                && !remoteFavShowTmdb.Contains(tmdbId)
+                                && !limitBlockedSet.Contains(("SHOW", tmdbId)))
                             {
                                 showsToUpload.Add(tmdbId);
                             }
@@ -2621,7 +2930,20 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                             try
                             {
                                 var res = await MutateWithAuthRetryAsync(token => _dataClient.AddFavoritesBatchAsync(null, showsToUpload, token, _config.ClientId, cancellationToken), cancellationToken).ConfigureAwait(false);
-                                if (!res.Success) initialUploadSucceeded = false;
+                                if (!res.Success)
+                                {
+                                    if (res.IsAccountLimitExceeded)
+                                    {
+                                        var blocked = (res.UnprocessedShowTmdbIds ?? showsToUpload).Select(id => ("SHOW", (int)id));
+                                        AddLimitBlockedFavorites(blocked);
+                                        UpdateState(favoritesLimitReached: true);
+                                        AppDiagnosticsLog.Record("TraktFavorites", "Initial show favorites upload hit Trakt account limit (HTTP 420); remaining favorites kept locally.");
+                                    }
+                                    else
+                                    {
+                                        initialUploadSucceeded = false;
+                                    }
+                                }
                             }
                             catch (Exception ex)
                             {
@@ -2719,6 +3041,17 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             // 3. Downstream & Upstream Reconciliation
             if (_snapshotBuilder != null)
             {
+                // Re-read pending queue after GetResourceAsync so concurrent UI toggles made during network fetch are protected
+                var currentPending = LoadPendingFavoriteActions();
+                foreach (var p in currentPending)
+                {
+                    var key = (p.MediaKind.Trim().ToUpperInvariant(), p.TmdbId);
+                    if (string.Equals(p.Action, "ADD", StringComparison.OrdinalIgnoreCase))
+                        survivingAddSet.Add(key);
+                    else if (string.Equals(p.Action, "REMOVE", StringComparison.OrdinalIgnoreCase))
+                        survivingRemoveSet.Add(key);
+                }
+
                 var snapshot = await _snapshotBuilder.BuildSnapshotAsync(cancellationToken);
 
                 // Movies Watchlist
