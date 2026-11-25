@@ -44,7 +44,8 @@ public record TvSeasonDetails(
     int Id,
     int Number,
     string? Title,
-    IReadOnlyList<TvEpisodeDetails> Episodes);
+    IReadOnlyList<TvEpisodeDetails> Episodes,
+    string? PosterReference = null);
 
 /// <summary>
 /// One episode plus the registered files behind it. <see cref="Availability" /> is derived from those

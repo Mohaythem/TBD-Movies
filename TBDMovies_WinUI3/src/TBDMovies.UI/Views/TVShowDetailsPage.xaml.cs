@@ -44,10 +44,14 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
     private bool _playbackTrackingSubscribed;
     private readonly PostHandoffRequestLifetime _metadataRequests = new();
     private readonly PostHandoffRequestLifetime _posterRequests = new();
+    private readonly PostHandoffRequestLifetime _seasonPosterPreloadRequests = new();
+    private readonly PostHandoffRequestLifetime _episodeStillPreloadRequests = new();
     private readonly PostHandoffRequestLifetime _enrichmentRequests = new();
     private readonly PostHandoffRequestLifetime _availabilityRequests = new();
     private readonly PostHandoffRequestLifetime _actionRequests = new();
     private readonly PostHandoffRequestLifetime _subtitleRequests = new();
+    private string? _activePosterReference;
+    private string? _inFlightPosterReference;
     private static readonly Dictionary<int, int> _selectedSeasonByShowId = new();
     private int _activeSeasonNumber;
     public int ActiveSeasonNumber => _activeSeasonNumber;
@@ -137,10 +141,14 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         UnsubscribePlaybackTracking();
         _metadataRequests.Cancel();
         _posterRequests.Cancel();
+        _seasonPosterPreloadRequests.Cancel();
+        _episodeStillPreloadRequests.Cancel();
         _enrichmentRequests.Cancel();
         _availabilityRequests.Cancel();
         _actionRequests.Cancel();
         _subtitleRequests.Cancel();
+        _activePosterReference = null;
+        _inFlightPosterReference = null;
         _pathCopiedTimer?.Stop();
         _activeSeasonTransitionStoryboard?.Stop();
         _activeSeasonTransitionStoryboard = null;
@@ -238,10 +246,17 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
     {
         _metadataRequests.Cancel();
         _posterRequests.Cancel();
+        _seasonPosterPreloadRequests.Cancel();
+        _episodeStillPreloadRequests.Cancel();
         _enrichmentRequests.Cancel();
         _availabilityRequests.Cancel();
         _actionRequests.Cancel();
         _subtitleRequests.Cancel();
+        _activePosterReference = null;
+        _inFlightPosterReference = null;
+        _seasons = [];
+        _seasonTabs = [];
+        _activeSeasonNumber = 0;
         SetMatchingState(false);
         _show = show;
         ReloadShowPersonalState();
@@ -259,8 +274,12 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
 
         UpdateShowSummary();
         MatchButton.IsEnabled = !_isMatching;
-        UpdatePosterVisuals();
         ApplyLocalization();
+        if (_seasons.Count == 0)
+        {
+            UpdatePosterVisuals();
+        }
+        PreloadSeasonPosters(show);
     }
 
     public void ApplyLocalization()
@@ -575,8 +594,9 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
 
     /// <summary>
     /// Applies a provider-enriched hierarchy to the open page: the seasons/episodes, the on-disk progress
-    /// figure, and the Play-next state are refreshed from it. Title, overview, poster, and matching state are
-    /// unchanged because enrichment reads the same show row. It never cancels in-flight requests.
+    /// figure, and the Play-next state are refreshed from it. Title, overview, matching state, and show-level
+    /// identity are unchanged because enrichment reads the same show row. Enriched season artwork updates the
+    /// hero poster when present. It never cancels in-flight user requests.
     /// </summary>
     private void ApplyEnrichedShow(TVShowRecord enriched)
     {
@@ -584,6 +604,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         UpdateShowSummary();
         UpdateSeasonsUI(BuildSeasons(_show));
         ProbeEpisodeStorageAvailability(_show);
+        PreloadSeasonPosters(enriched);
     }
 
     /// <summary>
@@ -943,6 +964,8 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
 
         EpisodesRepeater.ItemsSource = target.Episodes;
         CurrentSeasonMetaText.Text = target.Meta;
+        UpdatePosterVisualsCore(target.PosterReference);
+        PreloadSeasonEpisodeStills(target);
 
         int targetIndex = -1;
         for (int i = 0; i < _seasons.Count; i++)
@@ -1285,7 +1308,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
             var updatedEpisodes = season.Episodes.Select(ep =>
                 ep.Id == episodeId ? ep with { Watched = isWatched } : ep).ToList();
 
-            return new SeasonRecord(season.Id, season.Number, updatedEpisodes);
+            return season with { Episodes = updatedEpisodes };
         }).ToList();
 
         _show = _show with { Seasons = updatedSeasons };
@@ -1321,7 +1344,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
             var updatedEpisodes = season.Episodes.Select(ep =>
                 ep.Id == episodeId ? ep with { IsFileMissing = true } : ep).ToList();
 
-            return new SeasonRecord(season.Id, season.Number, updatedEpisodes);
+            return season with { Episodes = updatedEpisodes };
         }).ToList();
 
         _show = _show with { Seasons = updatedSeasons };
@@ -1582,8 +1605,9 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
                     stillReference: episode.StillReference,
                     overview: episode.Overview,
                     airDate: episode.AirDate,
-                    fallbackArtReferences: new[] { show.BackdropReference, show.PosterReference },
-                    filePath: episode.FilePath)).ToArray())).ToArray();
+                    fallbackArtReferences: null,
+                    filePath: episode.FilePath)).ToArray(),
+                season.PosterReference)).ToArray();
     }
 
     /// <summary>The season line names the missing files only when there are some.</summary>
@@ -1604,19 +1628,39 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
             episode.Runtime.Length == 0 ? code : code + " · " + episode.Runtime);
     }
 
-    private void UpdatePosterVisuals()
+    private void UpdatePosterVisuals() => UpdatePosterVisualsCore(null);
+
+    private void UpdatePosterVisualsCore(string? specificPosterRef)
     {
-        if (string.IsNullOrWhiteSpace(_show.PosterReference) || !AppServices.IsAvailable)
+        var activeSeasonPoster = GetActiveSeasonPosterReference();
+        var rawRef = !string.IsNullOrWhiteSpace(specificPosterRef)
+            ? specificPosterRef
+            : (!string.IsNullOrWhiteSpace(activeSeasonPoster) ? activeSeasonPoster : _show.PosterReference);
+        var posterRef = rawRef?.Trim();
+
+        if (string.IsNullOrWhiteSpace(posterRef) || !AppServices.IsAvailable)
         {
+            _posterRequests.Cancel();
+            _activePosterReference = null;
+            _inFlightPosterReference = null;
             PosterImage.Source = null;
             PosterGlyph.Visibility = Visibility.Visible;
             return;
         }
 
-        var posterRef = _show.PosterReference;
+        if (string.Equals(_activePosterReference, posterRef, StringComparison.Ordinal)
+            && (PosterImage.Source is not null || string.Equals(_inFlightPosterReference, posterRef, StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        _activePosterReference = posterRef;
+
         var cachedPath = AppServices.Poster.GetCachedPosterPath("TMDB", posterRef);
         if (cachedPath != null && File.Exists(cachedPath))
         {
+            _posterRequests.Cancel();
+            _inFlightPosterReference = null;
             PosterImage.Source = new BitmapImage
             {
                 DecodePixelType = DecodePixelType.Logical,
@@ -1624,42 +1668,126 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
                 UriSource = new Uri(cachedPath),
             };
             PosterGlyph.Visibility = Visibility.Collapsed;
+            return;
         }
-        else
-        {
-            PosterImage.Source = null;
-            PosterGlyph.Visibility = Visibility.Visible;
 
-            var request = _posterRequests.Begin();
-            _ = Task.Run(async () =>
+        PosterImage.Source = null;
+        PosterGlyph.Visibility = Visibility.Visible;
+        _inFlightPosterReference = posterRef;
+
+        var dispatcher = DispatcherQueue;
+        var request = _posterRequests.Begin();
+        _ = Task.Run(async () =>
+        {
+            string? downloadedPath = null;
+            try
             {
-                try
+                downloadedPath = await AppServices.Poster.EnsurePosterCachedAsync("TMDB", posterRef, request.Token);
+            }
+            catch (Exception)
+            {
+                // Poster artwork is optional. Keep the fallback glyph visible and do not open a
+                // second ContentDialog while MatchMediaDialog may own this XamlRoot.
+            }
+
+            if (!request.IsCurrent || dispatcher is null) return;
+
+            dispatcher.TryEnqueue(() =>
+            {
+                if (!request.IsCurrent) return;
+
+                if (downloadedPath != null && File.Exists(downloadedPath))
                 {
-                    var downloadedPath = await AppServices.Poster.EnsurePosterCachedAsync("TMDB", posterRef, request.Token);
-                    if (request.IsCurrent && downloadedPath != null && File.Exists(downloadedPath))
+                    if (string.Equals(_activePosterReference, posterRef, StringComparison.Ordinal))
                     {
-                        DispatcherQueue.TryEnqueue(() =>
+                        PosterImage.Source = new BitmapImage
                         {
-                            if (request.IsCurrent && _show.PosterReference == posterRef)
-                            {
-                                PosterImage.Source = new BitmapImage
-                                {
-                                    DecodePixelType = DecodePixelType.Logical,
-                                    DecodePixelWidth = 340,
-                                    UriSource = new Uri(downloadedPath),
-                                };
-                                PosterGlyph.Visibility = Visibility.Collapsed;
-                            }
-                        });
+                            DecodePixelType = DecodePixelType.Logical,
+                            DecodePixelWidth = 340,
+                            UriSource = new Uri(downloadedPath),
+                        };
+                        PosterGlyph.Visibility = Visibility.Collapsed;
                     }
                 }
-                catch (Exception)
+
+                if (string.Equals(_inFlightPosterReference, posterRef, StringComparison.Ordinal))
                 {
-                    // Poster artwork is optional. Keep the fallback glyph visible and do not open a
-                    // second ContentDialog while MatchMediaDialog may own this XamlRoot.
+                    _inFlightPosterReference = null;
                 }
             });
-        }
+        });
+    }
+
+    private string? GetActiveSeasonPosterReference()
+    {
+        if (_seasons.Count == 0) return null;
+        var active = _seasons.FirstOrDefault(s => s.Number == _activeSeasonNumber) ?? _seasons[0];
+        return active.PosterReference;
+    }
+
+    private void PreloadSeasonPosters(TVShowRecord show)
+    {
+        if (!AppServices.IsAvailable) return;
+
+        var posterRefs = show.Seasons
+            .Where(s => s.Number != 0 || s.LocalCount > 0)
+            .Select(s => s.PosterReference?.Trim())
+            .Where(p => !string.IsNullOrEmpty(p))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        _seasonPosterPreloadRequests.Cancel();
+        if (posterRefs.Count == 0) return;
+
+        var request = _seasonPosterPreloadRequests.Begin();
+        _ = Task.Run(async () =>
+        {
+            foreach (var posterRef in posterRefs)
+            {
+                if (!request.IsCurrent || request.Token.IsCancellationRequested || !AppServices.IsAvailable) return;
+                try
+                {
+                    if (AppServices.Poster.GetCachedPosterPath("TMDB", posterRef!) is not null) continue;
+                    await AppServices.Poster.EnsurePosterCachedAsync("TMDB", posterRef!, CancellationToken.None);
+                }
+                catch
+                {
+                    // Preloading is best-effort
+                }
+            }
+        });
+    }
+
+    private void PreloadSeasonEpisodeStills(SeasonDisplayRecord season)
+    {
+        if (!AppServices.IsAvailable) return;
+
+        var stills = season.Episodes
+            .Select(e => e.StillReference?.Trim())
+            .Where(s => !string.IsNullOrEmpty(s))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        _episodeStillPreloadRequests.Cancel();
+        if (stills.Count == 0) return;
+
+        var request = _episodeStillPreloadRequests.Begin();
+        _ = Task.Run(async () =>
+        {
+            foreach (var stillRef in stills)
+            {
+                if (!request.IsCurrent || request.Token.IsCancellationRequested || !AppServices.IsAvailable) return;
+                try
+                {
+                    if (AppServices.Poster.GetCachedPosterPath("TMDB", stillRef!) is not null) continue;
+                    await AppServices.Poster.EnsurePosterCachedAsync("TMDB", stillRef!, CancellationToken.None);
+                }
+                catch
+                {
+                    // Preloading is best-effort
+                }
+            }
+        });
     }
 
     private bool HasExternalId()

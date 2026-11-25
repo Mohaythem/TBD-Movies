@@ -9,6 +9,7 @@ using TBDMovies.Application.Services;
 using TBDMovies.Domain.Library.Movies;
 using TBDMovies.Domain.Library.Shows;
 using TBDMovies.Domain.Media.Parser;
+using TBDMovies.Domain.Metadata.Contracts;
 using TBDMovies.FileSystem.Discovery;
 using TBDMovies.FileSystem.Inspection;
 using TBDMovies.Infrastructure.Persistence.Migrations;
@@ -658,5 +659,100 @@ public sealed class TvHierarchyTests : IDisposable
             TBDMovies.Domain.Metadata.Contracts.MovieSearchQuery query) => [];
 
         public TBDMovies.Domain.Metadata.Contracts.MovieMetadata? GetMovie(string externalId) => null;
+    }
+
+    [Fact]
+    public void Tv_details_propagates_season_poster_from_database()
+    {
+        var import = NewImportService();
+        var path = WriteMedia("Breaking.Bad.S01E01.1080p.mkv");
+        var result = import.RegisterEpisodeImport(Command(path));
+
+        using (var work = _factory.Begin())
+        {
+            var season = work.TvSeasons.GetById(result.Season.Id)!;
+            work.TvSeasons.UpdateMetadata(season.Id, season.Title, season.Overview, "/season1.jpg", season.AirDate, season.ExternalId, DateTimeOffset.UtcNow);
+            work.Commit();
+        }
+
+        var details = NewTvService().GetShowDetails(result.Show.Id);
+        Assert.NotNull(details);
+        Assert.NotEmpty(details.Seasons);
+        Assert.Equal("/season1.jpg", details.Seasons[0].PosterReference);
+    }
+
+    [Fact]
+    public async Task Tv_details_enriched_preserves_or_populates_season_poster()
+    {
+        var import = NewImportService();
+        var path = WriteMedia("Breaking.Bad.S01E01.1080p.mkv");
+        var result = import.RegisterEpisodeImport(Command(path));
+
+        using (var work = _factory.Begin())
+        {
+            var show = work.TvShows.GetById(result.Show.Id)!;
+            work.TvShows.UpdateMetadata(show.Id, new TvShowCatalogData("TMDB", "1399", show.Title, metadataStatus: MetadataStatus.Ready), DateTimeOffset.UtcNow);
+            work.Commit();
+        }
+
+        // Case 1: DB has no poster -> populates from provider
+        var provider = new EnrichedSeasonProvider("/provider_season1.jpg");
+        var service = new TvLibraryService(
+            new PerCallTvShowRepository(_factory),
+            new PerCallTvSeasonRepository(_factory),
+            new PerCallTvEpisodeRepository(_factory),
+            metadataProvider: provider);
+
+        var details = await service.GetShowDetailsEnrichedAsync(result.Show.Id);
+        Assert.NotNull(details);
+        Assert.NotEmpty(details.Seasons);
+        Assert.Equal("/provider_season1.jpg", details.Seasons[0].PosterReference);
+
+        // Case 2: DB has poster -> preserves DB poster even when provider has different poster
+        using (var work = _factory.Begin())
+        {
+            var season = work.TvSeasons.GetById(result.Season.Id)!;
+            work.TvSeasons.UpdateMetadata(season.Id, season.Title, season.Overview, "/db_season1.jpg", season.AirDate, season.ExternalId, DateTimeOffset.UtcNow);
+            work.Commit();
+        }
+
+        var detailsPreserved = await service.GetShowDetailsEnrichedAsync(result.Show.Id);
+        Assert.NotNull(detailsPreserved);
+        Assert.NotEmpty(detailsPreserved.Seasons);
+        Assert.Equal("/db_season1.jpg", detailsPreserved.Seasons[0].PosterReference);
+
+        // Case 3: DB has no poster and provider returns whitespace -> resolves to null
+        using (var work = _factory.Begin())
+        {
+            var season = work.TvSeasons.GetById(result.Season.Id)!;
+            work.TvSeasons.UpdateMetadata(season.Id, season.Title, season.Overview, null, season.AirDate, season.ExternalId, DateTimeOffset.UtcNow);
+            work.Commit();
+        }
+
+        var whitespaceProvider = new EnrichedSeasonProvider("   ");
+        var serviceWhitespace = new TvLibraryService(
+            new PerCallTvShowRepository(_factory),
+            new PerCallTvSeasonRepository(_factory),
+            new PerCallTvEpisodeRepository(_factory),
+            metadataProvider: whitespaceProvider);
+
+        var detailsNull = await serviceWhitespace.GetShowDetailsEnrichedAsync(result.Show.Id);
+        Assert.NotNull(detailsNull);
+        Assert.NotEmpty(detailsNull.Seasons);
+        Assert.Null(detailsNull.Seasons[0].PosterReference);
+    }
+
+    private sealed class EnrichedSeasonProvider(string seasonPosterRef) : IMetadataProvider
+    {
+        public string ProviderName => "enriched_test";
+        public IReadOnlyList<MovieCandidate> Search(MovieSearchQuery query) => [];
+        public MovieMetadata? GetMovie(string externalId) => null;
+        public Task<TvSeasonMetadata?> GetTvSeasonAsync(string showExternalId, int seasonNumber, CancellationToken cancellationToken = default)
+        {
+            var episodes = System.Collections.Immutable.ImmutableArray.Create(new TvEpisodeMetadata(
+                1, "Pilot", "Overview", 45, "2008-01-20", 9.0, "/still1.jpg"));
+            return Task.FromResult<TvSeasonMetadata?>(new TvSeasonMetadata(
+                seasonNumber, "Season 1", "Overview", seasonPosterRef, "2008-01-20", episodes));
+        }
     }
 }

@@ -33,7 +33,7 @@ public sealed record EpisodeRecord(
     string? Overview = null,
     string? AirDate = null);
 
-public sealed record SeasonRecord(int Id, int Number, IReadOnlyList<EpisodeRecord> Episodes)
+public sealed record SeasonRecord(int Id, int Number, IReadOnlyList<EpisodeRecord> Episodes, string? PosterReference = null)
 {
     public int WatchedCount => Episodes.Count(episode => episode.Watched);
 
@@ -242,7 +242,8 @@ public sealed class SeasonDisplayRecord : INotifyPropertyChanged
         string meta,
         double progressValue,
         bool isExpanded,
-        IReadOnlyList<EpisodeDisplayRecord> episodes)
+        IReadOnlyList<EpisodeDisplayRecord> episodes,
+        string? posterReference = null)
     {
         ShowId = showId;
         Number = number;
@@ -252,6 +253,7 @@ public sealed class SeasonDisplayRecord : INotifyPropertyChanged
         ProgressValue = progressValue;
         _isExpanded = isExpanded;
         Episodes = episodes;
+        PosterReference = posterReference;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -262,6 +264,7 @@ public sealed class SeasonDisplayRecord : INotifyPropertyChanged
     public string Title { get; }
     public string Meta { get; }
     public double ProgressValue { get; }
+    public string? PosterReference { get; }
 
     public bool IsExpanded
     {

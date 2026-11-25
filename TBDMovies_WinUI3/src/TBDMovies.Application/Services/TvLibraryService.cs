@@ -116,7 +116,7 @@ public sealed class TvLibraryService(
         {
             var seasonEpisodes = graph.EpisodesBySeason.TryGetValue(season.Id, out var found) ? found : [];
             var displayEpisodes = BuildLocalSeasonEpisodes(season.Number, seasonEpisodes, graph.Files, graph.Watched);
-            seasonDetails.Add(new TvSeasonDetails(season.Id, season.Number, season.Title, displayEpisodes));
+            seasonDetails.Add(new TvSeasonDetails(season.Id, season.Number, season.Title, displayEpisodes, season.PosterReference));
         }
 
         return ComposeDetails(graph.Show, seasonDetails);
@@ -215,7 +215,10 @@ public sealed class TvLibraryService(
                 displayEpisodes = BuildLocalSeasonEpisodes(season.Number, seasonEpisodes, graph.Files, graph.Watched);
             }
 
-            seasonDetails.Add(new TvSeasonDetails(season.Id, season.Number, season.Title, displayEpisodes));
+            var posterRef = !string.IsNullOrWhiteSpace(season.PosterReference)
+                ? season.PosterReference.Trim()
+                : (!string.IsNullOrWhiteSpace(providerSeason?.PosterReference) ? providerSeason.PosterReference.Trim() : null);
+            seasonDetails.Add(new TvSeasonDetails(season.Id, season.Number, season.Title, displayEpisodes, posterRef));
         }
 
         return enrichedAny ? ComposeDetails(graph.Show, seasonDetails) : null;
