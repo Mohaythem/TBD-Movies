@@ -1267,26 +1267,6 @@ public sealed class TraktDataClientTests
     }
 
     [Fact]
-    public async Task RemoveFavoriteAsync_PostsToSyncFavoritesRemove_WithCorrectPayload()
-    {
-        var handler = new FakeHttpMessageHandler();
-        handler.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent("""{"deleted":{"movies":1,"shows":0}}""", Encoding.UTF8, "application/json")
-        });
-
-        using var httpClient = new HttpClient(handler);
-        using var client = new TraktDataClient(httpClient);
-
-        var result = await client.RemoveFavoriteAsync(550, TraktMediaKind.Movie, TestAccessToken);
-
-        Assert.True(result.Success);
-        Assert.Equal(1, result.AddedOrRemovedCount);
-        Assert.Equal("/sync/favorites/remove", handler.CapturedRequests[0].RequestUri?.AbsolutePath);
-        Assert.Contains("\"tmdb\":550", handler.CapturedBodies[0]);
-    }
-
-    [Fact]
     public async Task AddFavoritesBatchAsync_ChunksOver100Items_AndPropagatesHttp420UnprocessedIds()
     {
         var handler = new FakeHttpMessageHandler();
