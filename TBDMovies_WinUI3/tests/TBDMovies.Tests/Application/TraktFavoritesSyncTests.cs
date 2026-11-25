@@ -35,7 +35,7 @@ public sealed class TraktFavoritesSyncTests
             auth,
             dataClient,
             new FakeTraktCacheRepository(),
-            new TraktAuthConfig("client-id", "client-secret"),
+            new TraktAuthConfig("client-id", "https://example.com/callback"),
             settings,
             timeProvider ?? new FixedTimeProvider(FixedNow),
             snapshotBuilder ?? new FakeSnapshotBuilder(new TraktLocalSnapshot([], FixedNow)),
