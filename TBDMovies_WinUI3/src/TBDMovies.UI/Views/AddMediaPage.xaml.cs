@@ -327,24 +327,27 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
     /// <summary>Flips one row between Movie and TV episode, then re-runs the review for the new type.</summary>
     private void OverrideType_Click(object sender, RoutedEventArgs e)
     {
-        var row = RowFromSender(sender);
-        if (row is null || _isAdding || !row.CanOverrideType)
+        if (RowFromSender(sender) is { } row)
+        {
+            _ = OverrideRowTypeAsync(row);
+        }
+    }
+
+    private async Task OverrideRowTypeAsync(DetectedMediaDisplayRecord row)
+    {
+        if (_isAdding || !row.CanOverrideType)
         {
             return;
         }
 
         var item = row.Item;
-        DiscoveredMedia replacement;
         if (item.Classification == DiscoveryClassification.MovieCandidate)
         {
-            _ = CorrectTvRowsAsync(new[] { row }, singleFile: true);
+            await CorrectTvRowsAsync(new[] { row }, singleFile: true);
             return;
         }
-        else
-        {
-            replacement = TvSeriesGrouping.AsMovie(item);
-        }
 
+        var replacement = TvSeriesGrouping.AsMovie(item);
         ReclassifyRows(new Dictionary<string, DiscoveredMedia>(StringComparer.OrdinalIgnoreCase)
         {
             [item.Path] = replacement,
@@ -552,37 +555,131 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
         Grid.SetRow(actions, narrow ? 2 : 0);
     }
 
+    private static Style? TryStyle(string key) =>
+        Microsoft.UI.Xaml.Application.Current.Resources.TryGetValue(key, out var value)
+        && value is Style style
+            ? style
+            : null;
+
     private async void RowDetails_Click(object sender, RoutedEventArgs e)
     {
         var row = RowFromSender(sender);
         if (row is null) return;
-        var text = new TextBlock { IsTextSelectionEnabled = true, TextWrapping = TextWrapping.Wrap };
+
         var preview = row.MetadataPreview;
-        var identity = preview?.MovieCandidate is { } movie ? $"{movie.Provider} · {movie.ExternalId}"
-            : preview?.TvCandidate is { } show ? $"{show.Provider} · {show.ExternalId}" : string.Empty;
-        text.Text = string.Join(Environment.NewLine, new[]
+        var displayTitle = !string.IsNullOrWhiteSpace(row.PreviewTitle) ? row.PreviewTitle : row.Title;
+        var rating = preview?.MovieCandidate?.Rating ?? preview?.TvCandidate?.Rating;
+        var overview = preview?.MovieCandidate?.Overview ?? preview?.TvCandidate?.Overview;
+
+        var subtitleParts = new List<string>(2);
+        if (!string.IsNullOrWhiteSpace(row.IdentityLabel))
         {
-            LocalizationService.Text("ImportSourceIdentity"), row.Title, row.IdentityLabel, row.Item.Path,
-            row.LocalEligibilityLabel, row.StatusLabel, row.Item.Issue?.Message, row.RegistrationFailure,
-            LocalizationService.Text("ImportMetadataEvidence"), row.PreviewTitle, row.PreviewYear,
-            identity, row.PreviewDetails, preview?.Failure,
-        }.Where(value => !string.IsNullOrWhiteSpace(value)));
-        var content = new StackPanel { Spacing = 12 };
-        content.Children.Add(text);
+            subtitleParts.Add(row.IdentityLabel);
+        }
+        if (rating is double ratingValue && ratingValue > 0)
+        {
+            subtitleParts.Add($"★ {ratingValue.ToString("0.0", LocalizationService.Culture)}");
+        }
+
+        var content = new StackPanel
+        {
+            Spacing = 12,
+            Padding = new Thickness(0, 0, 14, 0),
+            MaxWidth = 460,
+        };
+
+        content.Children.Add(new TextBlock
+        {
+            Text = displayTitle,
+            TextWrapping = TextWrapping.Wrap,
+            IsTextSelectionEnabled = true,
+            Style = TryStyle("SubtitleTextBlockStyle"),
+        });
+
+        if (subtitleParts.Count > 0)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = string.Join(" · ", subtitleParts),
+                TextWrapping = TextWrapping.Wrap,
+                Style = TryStyle("SecondaryBodyTextStyle"),
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(overview))
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = overview,
+                TextWrapping = TextWrapping.Wrap,
+                IsTextSelectionEnabled = true,
+                Style = TryStyle("SecondaryBodyTextStyle"),
+            });
+        }
+
+        var statusLines = new[]
+        {
+            row.StatusLabel,
+            row.Item.Issue?.Message,
+            row.RegistrationFailure,
+            row.Status is ImportItemStatus.MetadataError or ImportItemStatus.MetadataUnavailable or ImportItemStatus.NoMatchFound
+                ? preview?.Failure
+                : null,
+        }.Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
+
+        if (statusLines.Length > 0)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = string.Join(Environment.NewLine, statusLines),
+                TextWrapping = TextWrapping.Wrap,
+                Style = TryStyle("SecondaryCaptionTextStyle"),
+            });
+        }
+
+        var fileSection = new StackPanel { Spacing = 4 };
+        fileSection.Children.Add(new TextBlock
+        {
+            Text = LocalizationService.Text("DetailsLocalFile"),
+            Style = TryStyle("SecondaryCaptionTextStyle"),
+        });
+        fileSection.Children.Add(new TextBlock
+        {
+            Text = row.Item.Path,
+            FlowDirection = FlowDirection.LeftToRight,
+            TextWrapping = TextWrapping.Wrap,
+            IsTextSelectionEnabled = true,
+            Style = TryStyle("TertiaryCaptionTextStyle"),
+        });
+        content.Children.Add(fileSection);
+
         var dialog = new ContentDialog
         {
-            XamlRoot = XamlRoot, RequestedTheme = ThemeService.ElementTheme,
-            FlowDirection = LocalizationService.FlowDirection, Title = LocalizationService.Text("Details"),
+            XamlRoot = XamlRoot,
+            RequestedTheme = ThemeService.ElementTheme,
+            FlowDirection = LocalizationService.FlowDirection,
+            Title = LocalizationService.Text("Details"),
             CloseButtonText = LocalizationService.Text("Close"),
-            Content = new ScrollViewer { Content = content, MaxHeight = 480, HorizontalScrollMode = ScrollMode.Disabled },
+            Content = new ScrollViewer
+            {
+                Content = content,
+                MaxHeight = 480,
+                HorizontalScrollMode = ScrollMode.Disabled,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            },
         };
+
         if (row.CanOverrideType && row.CanAdd && !_isAdding)
         {
-            var changeType = new Button { Content = row.OverrideTypeLabel, Tag = row };
-            changeType.Click += (button, args) => { dialog.Hide(); OverrideType_Click(button, args); };
-            content.Children.Add(changeType);
+            dialog.SecondaryButtonText = row.OverrideTypeLabel;
         }
-        await ContentDialogCoordinator.ShowAsync(dialog);
+
+        var result = await ContentDialogCoordinator.ShowAsync(dialog);
+        if (result == ContentDialogResult.Secondary)
+        {
+            await OverrideRowTypeAsync(row);
+        }
     }
 
     /// <summary>Removes the given paths from the active queue, unsubscribing so no handler leaks.</summary>
