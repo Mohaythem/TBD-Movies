@@ -131,8 +131,8 @@ public sealed class HomePageLayoutPolicyTests
         Assert.DoesNotContain("ContinueEmptyState", codeBehind, StringComparison.Ordinal);
         Assert.DoesNotContain("HistoryEmptyState", codeBehind, StringComparison.Ordinal);
 
-        // User-requested bounded stats container preserved
-        Assert.Contains("x:Name=\"StatsContainer\" MaxWidth=\"1200\" HorizontalAlignment=\"Left\"", xaml, StringComparison.Ordinal);
+        // Full-width responsive stats container
+        Assert.Contains("x:Name=\"StatsContainer\" HorizontalAlignment=\"Stretch\"", xaml, StringComparison.Ordinal);
 
         // All 4-state sections present
         Assert.Contains("x:Name=\"OnboardingCard\"", xaml, StringComparison.Ordinal);
