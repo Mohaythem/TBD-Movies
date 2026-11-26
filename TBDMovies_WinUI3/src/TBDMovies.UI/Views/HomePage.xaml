@@ -194,7 +194,7 @@
                 <!--
                     Compact full-width responsive Stat Strip: sleek height with balanced MaxWidth on ultrawides.
                 -->
-                <Grid x:Name="StatsContainer" HorizontalAlignment="Stretch" MaxWidth="1360" Margin="0,0,4,0" Visibility="Collapsed">
+                <Grid x:Name="StatsContainer" HorizontalAlignment="Stretch" Margin="0,0,4,0" Visibility="Collapsed">
                     <ItemsRepeater x:Name="StatsRepeater">
                         <ItemsRepeater.Layout>
                             <UniformGridLayout
@@ -207,7 +207,7 @@
                         <ItemsRepeater.ItemTemplate>
                             <DataTemplate x:DataType="models:StatCardRecord">
                                 <Border Style="{StaticResource CardBorderStyle}" Padding="14,10">
-                                    <Grid ColumnSpacing="10">
+                                    <Grid ColumnSpacing="10" HorizontalAlignment="Center" VerticalAlignment="Center">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
