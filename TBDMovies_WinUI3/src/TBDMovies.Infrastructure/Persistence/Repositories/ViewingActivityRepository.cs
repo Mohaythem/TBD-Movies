@@ -269,14 +269,25 @@ public sealed class ViewingActivityRepository(string connectionString, ILibraryR
     private const string RecentQuery = """
         WITH ranked AS (
             SELECT w.*, ROW_NUMBER() OVER (
-                PARTITION BY CASE WHEN w.media_kind = 'MOVIE' AND w.movie_id IS NOT NULL THEN 'M:' || w.movie_id
-                                  WHEN w.media_kind = 'EPISODE' AND se.show_id IS NOT NULL THEN 'S:' || se.show_id
-                                  WHEN w.media_kind = 'EPISODE' AND w.episode_id IS NOT NULL THEN 'E:' || w.episode_id
-                                  ELSE 'X:' || w.id END
+                PARTITION BY CASE
+                    WHEN w.media_kind = 'MOVIE' AND TRIM(COALESCE(NULLIF(m.title, ''), w.title_snapshot, '')) <> ''
+                        THEN 'M:' || LOWER(TRIM(COALESCE(NULLIF(m.title, ''), w.title_snapshot, '')))
+                             || ':' || COALESCE(CAST(COALESCE(m.year, w.year_snapshot) AS TEXT), '')
+                    WHEN w.media_kind = 'MOVIE' AND w.movie_id IS NOT NULL
+                        THEN 'MID:' || w.movie_id
+                    WHEN w.media_kind = 'EPISODE' AND TRIM(COALESCE(NULLIF(s.title, ''), w.show_title_snapshot, '')) <> ''
+                        THEN 'S:' || LOWER(TRIM(COALESCE(NULLIF(s.title, ''), w.show_title_snapshot, '')))
+                    WHEN w.media_kind = 'EPISODE' AND se.show_id IS NOT NULL
+                        THEN 'SID:' || se.show_id
+                    WHEN w.media_kind = 'EPISODE' AND w.episode_id IS NOT NULL
+                        THEN 'EID:' || w.episode_id
+                    ELSE 'X:' || w.id END
                 ORDER BY julianday(w.watched_at) DESC, w.id DESC) AS viewing_rank
               FROM watch_events w
+              LEFT JOIN movies m ON m.id = w.movie_id
               LEFT JOIN tv_episodes e ON e.id = w.episode_id
-              LEFT JOIN tv_seasons se ON se.id = e.season_id)
+              LEFT JOIN tv_seasons se ON se.id = e.season_id
+              LEFT JOIN tv_shows s ON s.id = se.show_id)
         SELECT w.id, w.media_kind, w.movie_id, w.episode_id, se.show_id,
                COALESCE(NULLIF(m.custom_display_title, ''), m.title, w.title_snapshot), COALESCE(m.year, w.year_snapshot),
                COALESCE(NULLIF(s.custom_display_title, ''), s.title, w.show_title_snapshot), COALESCE(se.season_number, w.season_number_snapshot),

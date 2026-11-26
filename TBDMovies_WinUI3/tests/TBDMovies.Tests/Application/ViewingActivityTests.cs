@@ -171,6 +171,34 @@ public sealed class ViewingActivityTests : IDisposable
     }
 
     [Fact]
+    public void RecentCompletedDeduplicatesDeletedAndReaddedSameMovie()
+    {
+        var history = new PersonalLibraryRepository(_cs);
+        SeedMovie(1, "Interstellar", 2014, MoviePath);
+        history.AddWatchEvent(1, _t0, _t0);
+        Exec("DELETE FROM media_files WHERE id=1; DELETE FROM movies WHERE id=1;");
+
+        SeedMovie(2, "Interstellar", 2014, MoviePath);
+        history.AddWatchEvent(2, _t0.AddHours(1), _t0.AddHours(1));
+        Exec("DELETE FROM media_files WHERE id=2; DELETE FROM movies WHERE id=2;");
+
+        SeedMovie(3, "Interstellar", 2014, MoviePath);
+        history.AddWatchEvent(3, _t0.AddHours(2), _t0.AddHours(2));
+
+        // Ensure another distinct movie remains unaffected (discriminating assertion).
+        SeedMovie(4, "Inception", 2010, MoviePath + ".inception.mkv");
+        history.AddWatchEvent(4, _t0.AddMinutes(30), _t0.AddMinutes(30));
+
+        var recent = Service().ListRecentCompleted();
+        Assert.Equal(2, recent.Count);
+        Assert.Equal("Interstellar", recent[0].Title);
+        Assert.Equal(3, recent[0].MovieId);
+        Assert.True(recent[0].IsAvailable);
+        Assert.Equal("Inception", recent[1].Title);
+        Assert.Equal(4, recent[1].MovieId);
+    }
+
+    [Fact]
     public void RecentCompletedEmptyDatabaseReturnsEmptyForAnyPage()
     {
         var history = new PersonalLibraryRepository(_cs);
