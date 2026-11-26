@@ -1761,7 +1761,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         {
             var movieId = _movie.Id;
             var pathsToIgnore = AppServices.MediaFilesForMovie(movieId)
-                .Select(file => file.Path)
+                .Select(file => file.CurrentPath)
                 .ToArray();
             await Task.Run(() => AppServices.Repair.RemoveMovieFromLibrary(movieId));
             AppSettingsStore.AddInboundIgnoredPathsIfUnderInbound(pathsToIgnore);

@@ -705,7 +705,7 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
             var pathsToIgnore = _show.Seasons
                 .SelectMany(season => season.Episodes)
                 .SelectMany(episode => SafeEpisodeFiles(episode.Id))
-                .Select(file => file.Path)
+                .Select(file => file.CurrentPath)
                 .ToArray();
             await Task.Run(() => AppServices.Repair.RemoveShowFromLibrary(showId));
             AppSettingsStore.AddInboundIgnoredPathsIfUnderInbound(pathsToIgnore);
