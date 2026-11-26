@@ -248,10 +248,10 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         var cards = new List<WatchHistoryCardRecord>();
         foreach (var item in _history)
         {
-            var key = item.MediaKind == WatchEventMediaKind.Movie && item.MovieId is int movieId
-                ? $"m:{movieId}"
-                : item.MediaKind == WatchEventMediaKind.Episode && item.ShowId is int showId && item.SeasonNumber is int s && item.EpisodeNumber is int e
-                    ? $"e:{showId}:{s}:{e}"
+            var key = item.MediaKind == WatchEventMediaKind.Movie
+                ? $"m:{item.Title.Trim().ToUpperInvariant()}:{item.Year?.ToString(CultureInfo.InvariantCulture) ?? string.Empty}"
+                : item.SeasonNumber is int s && item.EpisodeNumber is int e
+                    ? $"e:{(string.IsNullOrWhiteSpace(item.ShowTitle) ? item.Title : item.ShowTitle).Trim().ToUpperInvariant()}:{s}:{e}"
                     : $"id:{item.Id}";
             if (!seen.Add(key))
             {

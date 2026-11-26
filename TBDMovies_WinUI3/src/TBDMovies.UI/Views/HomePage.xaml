@@ -192,36 +192,36 @@
                 </Border>
 
                 <!--
-                    Full-width responsive Stats: expands across the viewport with uniform card sizing.
+                    Compact full-width responsive Stat Strip: sleek height with balanced MaxWidth on ultrawides.
                 -->
-                <Grid x:Name="StatsContainer" HorizontalAlignment="Stretch" Visibility="Collapsed">
+                <Grid x:Name="StatsContainer" HorizontalAlignment="Stretch" MaxWidth="1360" Margin="0,0,4,0" Visibility="Collapsed">
                     <ItemsRepeater x:Name="StatsRepeater">
                         <ItemsRepeater.Layout>
                             <UniformGridLayout
                                 ItemsStretch="Uniform"
                                 MaximumRowsOrColumns="6"
-                                MinColumnSpacing="12"
-                                MinItemWidth="160"
-                                MinRowSpacing="12" />
+                                MinColumnSpacing="10"
+                                MinItemWidth="148"
+                                MinRowSpacing="10" />
                         </ItemsRepeater.Layout>
                         <ItemsRepeater.ItemTemplate>
                             <DataTemplate x:DataType="models:StatCardRecord">
-                                <Border Style="{StaticResource CardBorderStyle}" Padding="16,14">
-                                    <Grid ColumnSpacing="12">
+                                <Border Style="{StaticResource CardBorderStyle}" Padding="14,10">
+                                    <Grid ColumnSpacing="10">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <Border Width="42" Height="42" VerticalAlignment="Center"
+                                        <Border Width="34" Height="34" VerticalAlignment="Center"
                                                 Background="{ThemeResource ControlFillColorDefaultBrush}"
                                                 CornerRadius="{ThemeResource ControlCornerRadius}">
-                                            <FontIcon FontSize="20" Glyph="{x:Bind Glyph}"
+                                            <FontIcon FontSize="17" Glyph="{x:Bind Glyph}"
                                                       Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
                                         </Border>
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                                            <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="{x:Bind Value}" />
-                                            <TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="{x:Bind Label}" TextWrapping="Wrap" />
-                                            <TextBlock Style="{StaticResource TertiaryCaptionTextStyle}" Text="{x:Bind Subtitle}" Visibility="{x:Bind SubtitleVisibility}" TextWrapping="Wrap" />
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="{x:Bind Value}" />
+                                            <TextBlock Style="{StaticResource SecondaryCaptionTextStyle}" FontWeight="SemiBold" Text="{x:Bind Label}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                                            <TextBlock Style="{StaticResource TertiaryCaptionTextStyle}" Text="{x:Bind Subtitle}" Visibility="{x:Bind SubtitleVisibility}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
                                         </StackPanel>
                                     </Grid>
                                 </Border>
