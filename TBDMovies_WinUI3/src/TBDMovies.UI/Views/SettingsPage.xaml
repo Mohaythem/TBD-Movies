@@ -208,6 +208,78 @@
 
                             <Border Style="{StaticResource HairlineDividerStyle}" />
 
+                            <StackPanel Spacing="12">
+                                <Grid ColumnSpacing="16">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock x:Name="InboundAutoScanLabelText" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                        <TextBlock
+                                            x:Name="InboundAutoScanHelpText"
+                                            Style="{StaticResource SecondaryCaptionTextStyle}"
+                                            TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <ToggleSwitch
+                                        x:Name="InboundAutoScanToggle"
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        MinWidth="0"
+                                        OnContent=""
+                                        OffContent=""
+                                        Toggled="InboundAutoScanToggle_Toggled" />
+                                </Grid>
+
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center" Spacing="2">
+                                        <TextBlock x:Name="InboundFolderLabelText" Style="{StaticResource SecondaryCaptionTextStyle}" />
+                                        <TextBlock
+                                            x:Name="InboundFolderPathText"
+                                            IsTextSelectionEnabled="True"
+                                            Style="{StaticResource SecondaryBodyTextStyle}"
+                                            TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <Button
+                                        x:Name="BrowseInboundFolderButton"
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Click="BrowseInboundFolderButton_Click"
+                                        Style="{StaticResource SubtleControlButtonStyle}" />
+                                    <Button
+                                        x:Name="ClearInboundFolderButton"
+                                        Grid.Column="2"
+                                        VerticalAlignment="Center"
+                                        Click="ClearInboundFolderButton_Click"
+                                        Style="{StaticResource SubtleControlButtonStyle}" />
+                                </Grid>
+
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock
+                                        x:Name="InboundIgnoredCountText"
+                                        VerticalAlignment="Center"
+                                        Style="{StaticResource TertiaryCaptionTextStyle}"
+                                        TextWrapping="Wrap" />
+                                    <Button
+                                        x:Name="ClearInboundIgnoredButton"
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Click="ClearInboundIgnoredButton_Click"
+                                        Style="{StaticResource SubtleControlButtonStyle}" />
+                                </Grid>
+                            </StackPanel>
+
+                            <Border Style="{StaticResource HairlineDividerStyle}" />
+
                             <Grid ColumnSpacing="16">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />

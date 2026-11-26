@@ -140,6 +140,7 @@
                 <StackPanel x:Name="SourceActions" Orientation="Horizontal" Spacing="8">
                     <Button x:Name="ScanButton" Click="ScanButton_Click" Style="{StaticResource AccentControlButtonStyle}" />
                     <Button x:Name="AddFilesButton" Click="AddFilesButton_Click" Style="{StaticResource SubtleControlButtonStyle}" />
+                    <Button x:Name="RefreshInboundButton" Click="RefreshInboundButton_Click" Style="{StaticResource SubtleControlButtonStyle}" Visibility="Collapsed" />
                     <Button x:Name="CancelButton" Click="CancelButton_Click" Style="{StaticResource SubtleControlButtonStyle}" Visibility="Collapsed" />
                 </StackPanel>
                 <CheckBox x:Name="LocalOnlyBox" Checked="LocalOnlyBox_Changed" Unchecked="LocalOnlyBox_Changed" />
@@ -148,6 +149,7 @@
                     <ProgressBar x:Name="ScanProgressBar" Height="4" />
                 </StackPanel>
             </StackPanel>
+            <InfoBar x:Name="AutoScanInfoBar" IsClosable="True" IsOpen="False" Severity="Informational" Visibility="Collapsed" Closed="AutoScanInfoBar_Closed" />
             <controls:EmptyStateCard x:Name="EmptyState" Glyph="&#xE8B7;" Visibility="Collapsed" />
             <StackPanel x:Name="ResultsSection" Spacing="12" Visibility="Collapsed">
                 <StackPanel Spacing="4">

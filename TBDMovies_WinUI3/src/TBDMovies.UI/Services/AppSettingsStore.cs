@@ -20,6 +20,9 @@ internal static class AppSettingsStore
     private const string ShowFolderKey = "ui_show_folder";   // legacy, imported once
     private const string LibraryViewModeKey = "ui_library_view_mode";
     private const string WideNavigationPaneOpenKey = "ui_navigation_wide_pane_open";
+    private const string InboundFolderKey = "ui_inbound_folder";
+    private const string InboundAutoScanEnabledKey = "ui_inbound_autoscan_enabled";
+    private const string InboundIgnoredPathsKey = "ui_inbound_ignored_paths";
 
     public static bool IsSubDlConfigured() =>
         AppServices.IsAvailable && AppServices.Settings.IsSubDlConfigured();
@@ -41,6 +44,116 @@ internal static class AppSettingsStore
 
     public static bool WriteLibraryViewMode(LibraryViewMode mode) =>
         Write(LibraryViewModeKey, LibraryViewModePreference.Serialize(mode));
+
+    /// <summary>
+    /// User-configured inbound folder for automatic scanning on Add Media, or null when unset.
+    /// There is intentionally no default folder so the user opts in explicitly.
+    /// </summary>
+    public static string? InboundFolder
+    {
+        get
+        {
+            var raw = Read(InboundFolderKey);
+            return string.IsNullOrWhiteSpace(raw) ? null : raw.Trim();
+        }
+    }
+
+    public static bool SetInboundFolder(string? path)
+    {
+        var normalized = string.IsNullOrWhiteSpace(path) ? null : path.Trim();
+        return Write(InboundFolderKey, normalized);
+    }
+
+    /// <summary>Opt-in flag for inbound auto-scan on AddMediaPage. Defaults to false.</summary>
+    public static bool IsInboundAutoScanEnabled =>
+        bool.TryParse(Read(InboundAutoScanEnabledKey), out var enabled) && enabled;
+
+    public static bool SetInboundAutoScanEnabled(bool enabled) =>
+        Write(InboundAutoScanEnabledKey, enabled ? "true" : "false");
+
+    public static IReadOnlySet<string> GetInboundIgnoredPaths()
+    {
+        var raw = Read(InboundIgnoredPathsKey);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        return raw.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .Select(NormalizeInboundPath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static bool AddInboundIgnoredPaths(IEnumerable<string> paths)
+    {
+        var existing = new HashSet<string>(GetInboundIgnoredPaths(), StringComparer.OrdinalIgnoreCase);
+        var added = false;
+        foreach (var path in paths)
+        {
+            if (string.IsNullOrWhiteSpace(path)) continue;
+            if (existing.Add(NormalizeInboundPath(path)))
+            {
+                added = true;
+            }
+        }
+
+        if (!added)
+        {
+            return true;
+        }
+
+        return Write(InboundIgnoredPathsKey, string.Join("\n", existing.OrderBy(p => p, StringComparer.OrdinalIgnoreCase)));
+    }
+
+    public static bool AddInboundIgnoredPathsIfUnderInbound(IEnumerable<string> paths)
+    {
+        var inboundRoot = InboundFolder;
+        if (string.IsNullOrWhiteSpace(inboundRoot))
+        {
+            return true;
+        }
+
+        var matching = paths.Where(path => IsUnderFolder(path, inboundRoot)).ToArray();
+        return matching.Length == 0 || AddInboundIgnoredPaths(matching);
+    }
+
+    public static bool ClearInboundIgnoredPaths() =>
+        Write(InboundIgnoredPathsKey, null);
+
+    private static bool IsUnderFolder(string? candidatePath, string folderPath)
+    {
+        if (string.IsNullOrWhiteSpace(candidatePath) || string.IsNullOrWhiteSpace(folderPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var fullCandidate = NormalizeInboundPath(candidatePath);
+            var fullFolder = NormalizeInboundPath(folderPath)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                + Path.DirectorySeparatorChar;
+            return fullCandidate.StartsWith(fullFolder, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string NormalizeInboundPath(string path)
+    {
+        var trimmed = path.Trim();
+        try
+        {
+            return Path.IsPathFullyQualified(trimmed) ? Path.GetFullPath(trimmed) : trimmed;
+        }
+        catch
+        {
+            return trimmed;
+        }
+    }
 
     /// <summary>The primary media root: the default Add Media scan target and the Organize destination.</summary>
     public static string? MovieFolder => ConfiguredMediaFolders.FirstOrDefault();

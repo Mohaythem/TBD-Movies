@@ -47,6 +47,7 @@ public static class ApprovedRootsReader
 
             TryAddRoot(roots, settings.Get("ui_movie_folder"), skipNetworkPaths, verifyDirectoryExists, onError);
             TryAddRoot(roots, settings.Get("ui_show_folder"), skipNetworkPaths, verifyDirectoryExists, onError);
+            TryAddRoot(roots, settings.Get("ui_inbound_folder"), skipNetworkPaths, verifyDirectoryExists, onError);
         }
         catch (Exception ex)
         {

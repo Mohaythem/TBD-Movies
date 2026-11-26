@@ -797,6 +797,17 @@ public static class LocalizationService
         ["RemovedFromFavoritesFormat"] = "Removed {0} items from Favorites",
         ["AddedToWatchlistFormat"] = "Added {0} items to Watchlist",
         ["RemovedFromWatchlistFormat"] = "Removed {0} items from Watchlist",
+        ["InboundAutoScan"] = "Automatic inbound scan",
+        ["InboundAutoScanHelp"] = "When enabled, opening Add Media scans your chosen inbound folder once per session, skips active downloads, and auto-imports confident TMDB matches.",
+        ["InboundFolderLabel"] = "Inbound downloads folder",
+        ["InboundFolderNotSet"] = "Not set",
+        ["ClearFolder"] = "Clear",
+        ["InboundIgnoredCountFormat"] = "{0} files ignored in automatic scans",
+        ["ClearIgnoredList"] = "Clear ignored list",
+        ["RefreshInbound"] = "Refresh Inbound",
+        ["AutoScanLockedSkippedFormat"] = "{0} in-progress download(s) were skipped because they are still locked or incomplete.",
+        ["AutoImportSummaryFormat"] = "Auto-imported {0} matched item(s) from your inbound folder.",
+        ["AutoImportPartialSummaryFormat"] = "Auto-imported {0} matched item(s); {1} item(s) remain for manual review.",
     };
 
     private static readonly IReadOnlyDictionary<string, string> Arabic = new Dictionary<string, string>
@@ -1592,6 +1603,17 @@ public static class LocalizationService
         ["RemovedFromFavoritesFormat"] = "تمت إزالة {0} من المفضلة",
         ["AddedToWatchlistFormat"] = "تمت إضافة {0} إلى قائمة الانتظار",
         ["RemovedFromWatchlistFormat"] = "تمت إزالة {0} من قائمة الانتظار",
+        ["InboundAutoScan"] = "الفحص التلقائي لمجلد الوارد",
+        ["InboundAutoScanHelp"] = "عند التفعيل، يفحص التطبيق مجلد الوارد المختار مرة واحدة في كل جلسة عند فتح صفحة إضافة الوسائط، ويتخطى التحميلات النشطة، ويستورد المطابقات الأكيدة تلقائياً.",
+        ["InboundFolderLabel"] = "مجلد الوارد (التنزيلات)",
+        ["InboundFolderNotSet"] = "غير محدد",
+        ["ClearFolder"] = "مسح",
+        ["InboundIgnoredCountFormat"] = "{0} ملفات متجاهلة في الفحص التلقائي",
+        ["ClearIgnoredList"] = "مسح قائمة التجاهل",
+        ["RefreshInbound"] = "تحديث الوارد",
+        ["AutoScanLockedSkippedFormat"] = "تم تخطي {0} ملفات لأنها ما زالت قيد التحميل أو غير مكتملة.",
+        ["AutoImportSummaryFormat"] = "تم استيراد {0} عناصر مطابقة تلقائياً من مجلد الوارد.",
+        ["AutoImportPartialSummaryFormat"] = "تم استيراد {0} عناصر مطابقة تلقائياً؛ وتبقى {1} عناصر للمراجعة اليدوية.",
     };
 
     public static UiLanguage CurrentLanguage { get; private set; } = UiLanguage.English;

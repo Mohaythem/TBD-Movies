@@ -1760,7 +1760,11 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         try
         {
             var movieId = _movie.Id;
+            var pathsToIgnore = AppServices.MediaFilesForMovie(movieId)
+                .Select(file => file.Path)
+                .ToArray();
             await Task.Run(() => AppServices.Repair.RemoveMovieFromLibrary(movieId));
+            AppSettingsStore.AddInboundIgnoredPathsIfUnderInbound(pathsToIgnore);
             BackRequested?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception error)

@@ -121,6 +121,12 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         MediaFoldersLabelText.Text = LocalizationService.Text("MediaFolders");
         MediaFoldersHelpText.Text = LocalizationService.Text("MediaFoldersHelp");
         AddMediaFolderButton.Content = LocalizationService.Text("AddFolder");
+        InboundAutoScanLabelText.Text = LocalizationService.Text("InboundAutoScan");
+        InboundAutoScanHelpText.Text = LocalizationService.Text("InboundAutoScanHelp");
+        InboundFolderLabelText.Text = LocalizationService.Text("InboundFolderLabel");
+        BrowseInboundFolderButton.Content = LocalizationService.Text("BrowseEllipsis");
+        ClearInboundFolderButton.Content = LocalizationService.Text("ClearFolder");
+        ClearInboundIgnoredButton.Content = LocalizationService.Text("ClearIgnoredList");
         ExportMoviesLabelText.Text = LocalizationService.Text("ExportMoviesList");
         ExportMoviesHelpText.Text = LocalizationService.Text("ExportMoviesListHelp");
         ExportMoviesButtonText.Text = LocalizationService.Text("ExportMovies");
@@ -437,6 +443,69 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         MediaFoldersRepeater.ItemsSource = folders.Select(path => new MediaFolderRow(path)).ToList();
         MediaFoldersEmptyText.Text = LocalizationService.Text("MediaFoldersNone");
         MediaFoldersEmptyText.Visibility = folders.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        RefreshInboundSettings();
+    }
+
+    private void RefreshInboundSettings()
+    {
+        var previousSync = _isSyncing;
+        _isSyncing = true;
+        try
+        {
+            InboundAutoScanToggle.IsOn = AppSettingsStore.IsInboundAutoScanEnabled;
+            var inboundFolder = AppSettingsStore.InboundFolder;
+            InboundFolderPathText.Text = string.IsNullOrWhiteSpace(inboundFolder)
+                ? LocalizationService.Text("InboundFolderNotSet")
+                : inboundFolder;
+            ClearInboundFolderButton.IsEnabled = !string.IsNullOrWhiteSpace(inboundFolder);
+            var ignoredCount = AppSettingsStore.GetInboundIgnoredPaths().Count;
+            InboundIgnoredCountText.Text = LocalizationService.Format("InboundIgnoredCountFormat", ignoredCount);
+            ClearInboundIgnoredButton.IsEnabled = ignoredCount > 0;
+        }
+        finally
+        {
+            _isSyncing = previousSync;
+        }
+    }
+
+    private void InboundAutoScanToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_isSyncing || !_hasBeenShown || !AppServices.IsAvailable) return;
+        AppSettingsStore.SetInboundAutoScanEnabled(InboundAutoScanToggle.IsOn);
+        AddMediaPage.ResetInboundAutoScanCooldown();
+    }
+
+    private async void BrowseInboundFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (await PickFolderAsync() is not { } path)
+            {
+                return;
+            }
+
+            AppSettingsStore.SetInboundFolder(path);
+            AddMediaPage.ResetInboundAutoScanCooldown();
+            RefreshInboundSettings();
+        }
+        catch (Exception error)
+        {
+            await ShowMessageAsync(LocalizationService.Text("Failed"), MetadataErrorText.For(error));
+        }
+    }
+
+    private void ClearInboundFolderButton_Click(object sender, RoutedEventArgs e)
+    {
+        AppSettingsStore.SetInboundFolder(null);
+        AddMediaPage.ResetInboundAutoScanCooldown();
+        RefreshInboundSettings();
+    }
+
+    private void ClearInboundIgnoredButton_Click(object sender, RoutedEventArgs e)
+    {
+        AppSettingsStore.ClearInboundIgnoredPaths();
+        AddMediaPage.ResetInboundAutoScanCooldown();
+        RefreshInboundSettings();
     }
 
     private async void ExportMoviesButton_Click(object sender, RoutedEventArgs e)

@@ -45,6 +45,9 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
     private bool _isAdding;
     private bool _isReviewingMetadata;
     private bool _isPickingFolder;
+    private static bool _inboundAutoScanRanThisSession;
+    private bool _isAutoScanningInbound;
+    private int _inboundLockedSkippedCount;
     private long _scanVersion;
     private long _metadataVersion;
     private CancellationTokenSource? _metadataCancellation;
@@ -87,12 +90,19 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
     /// <summary>Raised after media is registered so the shell can refresh the library.</summary>
     public event EventHandler? MediaRegistered;
 
-    public void Activate() => Refresh();
+    public void Activate()
+    {
+        Refresh();
+        TryStartInboundAutoScan(force: false);
+    }
+
+    internal static void ResetInboundAutoScanCooldown() => _inboundAutoScanRanThisSession = false;
 
     public void Deactivate()
     {
         _presentationVersion++;
         _confirmationCancelled = true;
+        _isAutoScanningInbound = false;
         _importCancellation?.Cancel();
         _cancellation?.Cancel();
         CancelMetadataReview();
@@ -113,6 +123,7 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
         FolderLabelText.Text = LocalizationService.Text("MediaFolderLabel");
         BrowseButton.Content = LocalizationService.Text("Browse");
         AddFilesButton.Content = LocalizationService.Text("AddFiles");
+        RefreshInboundButton.Content = LocalizationService.Text("RefreshInbound");
         CancelButton.Content = LocalizationService.Text("CancelReview");
         LocalOnlyBox.Content = LocalizationService.Text("TvBatchLocalOnly");
         ResultsHeadingText.Text = LocalizationService.Text("ReviewMedia");
@@ -147,6 +158,9 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
         ScanButton.Content = LocalizationService.Text(
             _isScanning ? "Cancel" : "ScanFolder");
         AddFilesButton.IsEnabled = !_isScanning && !_isAdding && !_isReviewingMetadata;
+        var hasInboundConfig = AppSettingsStore.IsInboundAutoScanEnabled && !string.IsNullOrWhiteSpace(AppSettingsStore.InboundFolder);
+        RefreshInboundButton.Visibility = hasInboundConfig ? Visibility.Visible : Visibility.Collapsed;
+        RefreshInboundButton.IsEnabled = hasInboundConfig && _state == AddMediaScanState.Idle && !_isScanning && !_isAdding && !_isReviewingMetadata;
         BrowseButton.IsEnabled = !_isScanning && !_isAdding && !_isReviewingMetadata && !_isPickingFolder;
         CancelButton.Content = LocalizationService.Text(_isAdding ? "Cancel" : "CancelReview");
         LocalOnlyBox.IsEnabled = !_isScanning && !_isAdding && !_isReviewingMetadata;
@@ -720,6 +734,7 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
         if (_isAdding) { _importCancellation?.Cancel(); return; }
         if (_isConfirming) { _confirmationCancelled = true; return; }
         var wasScanning = _isScanning;
+        _isAutoScanningInbound = false;
         _cancellation?.Cancel();
         CancelMetadataReview();
         SetDetected([]);
@@ -1082,6 +1097,15 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
                 ApplySort();
                 RebuildVisibleQueue();
                 Refresh();
+
+                var shouldAutoImport = _isAutoScanningInbound
+                    && !cancellation.IsCancellationRequested
+                    && XamlRoot is not null;
+                _isAutoScanningInbound = false;
+                if (shouldAutoImport)
+                {
+                    _ = AutoImportConfidentMatchesAsync();
+                }
             }
 
             // The owner may have cancelled and started a newer review. Dispose only this completed
@@ -1305,6 +1329,270 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
         CancelMetadataReview();
         _isAdding = true;
         RefreshGroupHeaders();
+        await ExecuteImportBatchAsync(selections, showSummaryDialog: true, importPresentationVersion);
+    }
+
+    private void RefreshInboundButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_isScanning || _isAdding || _isReviewingMetadata)
+        {
+            return;
+        }
+
+        _inboundAutoScanRanThisSession = false;
+        TryStartInboundAutoScan(force: true);
+    }
+
+    private void AutoScanInfoBar_Closed(InfoBar sender, InfoBarClosedEventArgs args)
+    {
+        sender.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowAutoScanInfoBar(InfoBarSeverity severity, string message)
+    {
+        AutoScanInfoBar.Severity = severity;
+        AutoScanInfoBar.Message = message;
+        AutoScanInfoBar.Visibility = Visibility.Visible;
+        AutoScanInfoBar.IsOpen = true;
+    }
+
+    private void ClearAutoScanInfoBar()
+    {
+        AutoScanInfoBar.IsOpen = false;
+        AutoScanInfoBar.Visibility = Visibility.Collapsed;
+    }
+
+    private void TryStartInboundAutoScan(bool force)
+    {
+        if (_state != AddMediaScanState.Idle || _isScanning || _isAdding || _isReviewingMetadata)
+        {
+            return;
+        }
+
+        if (!AppSettingsStore.IsInboundAutoScanEnabled)
+        {
+            return;
+        }
+
+        var inboundFolder = AppSettingsStore.InboundFolder;
+        if (string.IsNullOrWhiteSpace(inboundFolder))
+        {
+            return;
+        }
+
+        if (!force && _inboundAutoScanRanThisSession)
+        {
+            return;
+        }
+
+        _ = RunInboundAutoScanAsync(inboundFolder);
+    }
+
+    private async Task RunInboundAutoScanAsync(string inboundFolder)
+    {
+        _inboundAutoScanRanThisSession = true;
+        _isAutoScanningInbound = true;
+        _inboundLockedSkippedCount = 0;
+        ClearAutoScanInfoBar();
+
+        var ignoredPaths = AppSettingsStore.GetInboundIgnoredPaths();
+        var (cancellation, scanVersion) = BeginScan();
+        var token = cancellation.Token;
+
+        try
+        {
+            var outcome = await Task.Run(() =>
+            {
+                var exists = TBDMovies.FileSystem.Inspection.NetworkReadGuard.Shared.Execute(
+                    inboundFolder,
+                    () => Directory.Exists(inboundFolder),
+                    unavailable: () => false,
+                    isCancelled: () => token.IsCancellationRequested);
+                if (!exists)
+                {
+                    return (Exists: false, Items: Array.Empty<DiscoveredMedia>(), LockedSkipped: 0);
+                }
+
+                var session = AppServices.Import.PrepareImportReview(
+                    inboundFolder,
+                    recursive: true,
+                    progress: update => DispatcherQueue.TryEnqueue(() =>
+                    {
+                        if (IsCurrentScan(scanVersion, cancellation))
+                        {
+                            ReportScanProgress(update);
+                        }
+                    }),
+                    isCancelled: () => token.IsCancellationRequested);
+
+                var eligible = new List<DiscoveredMedia>();
+                var lockedSkipped = 0;
+                foreach (var item in session.Items)
+                {
+                    if (token.IsCancellationRequested)
+                    {
+                        throw new OperationCanceledException();
+                    }
+
+                    if (item.Classification == DiscoveryClassification.Error)
+                    {
+                        continue;
+                    }
+
+                    if (TBDMovies.FileSystem.Inspection.FileLockGuard.Shared.IsIncomplete(item.Path))
+                    {
+                        lockedSkipped++;
+                        continue;
+                    }
+
+                    string normalizedPath;
+                    try
+                    {
+                        normalizedPath = Path.GetFullPath(item.Path);
+                    }
+                    catch
+                    {
+                        normalizedPath = item.Path;
+                    }
+
+                    if (ignoredPaths.Contains(normalizedPath) || AppServices.Import.IsMediaFileRegistered(item.Path))
+                    {
+                        continue;
+                    }
+
+                    eligible.Add(item);
+                }
+
+                return (Exists: true, Items: eligible.ToArray(), LockedSkipped: lockedSkipped);
+            });
+
+            if (!IsCurrentScan(scanVersion, cancellation))
+            {
+                _inboundAutoScanRanThisSession = false;
+                return;
+            }
+
+            if (token.IsCancellationRequested)
+            {
+                _inboundAutoScanRanThisSession = false;
+                _isAutoScanningInbound = false;
+                _state = AddMediaScanState.Idle;
+                return;
+            }
+
+            _inboundLockedSkippedCount = outcome.LockedSkipped;
+            if (outcome.LockedSkipped > 0)
+            {
+                ShowAutoScanInfoBar(
+                    InfoBarSeverity.Informational,
+                    LocalizationService.Format("AutoScanLockedSkippedFormat", outcome.LockedSkipped));
+            }
+
+            if (!outcome.Exists || outcome.Items.Length == 0)
+            {
+                _isAutoScanningInbound = false;
+                _state = AddMediaScanState.Idle;
+                return;
+            }
+
+            SetDetected(outcome.Items, inboundFolder);
+            _state = AddMediaScanState.Results;
+            BeginMetadataReview();
+        }
+        catch (OperationCanceledException)
+        {
+            _inboundAutoScanRanThisSession = false;
+            _isAutoScanningInbound = false;
+            if (IsCurrentScan(scanVersion, cancellation))
+            {
+                _state = AddMediaScanState.Idle;
+            }
+        }
+        catch (Exception error)
+        {
+            _inboundAutoScanRanThisSession = false;
+            _isAutoScanningInbound = false;
+            if (IsCurrentScan(scanVersion, cancellation))
+            {
+                _state = AddMediaScanState.Idle;
+                ShowAutoScanInfoBar(InfoBarSeverity.Error, MetadataErrorText.For(error));
+            }
+        }
+        finally
+        {
+            EndScan(scanVersion, cancellation);
+        }
+    }
+
+    private async Task AutoImportConfidentMatchesAsync()
+    {
+        if (_isAdding || _isConfirming || _isReviewingMetadata || LocalOnlyBox.IsChecked == true)
+        {
+            return;
+        }
+
+        var confidentSelections = _rows
+            .Where(row => row.CanAdd
+                && row.Status == ImportItemStatus.Matched
+                && row.MetadataPreview?.MatchStatus == MatchStatus.Matched)
+            .Select(row => new ImportSelection(
+                row.Item,
+                row.MetadataPreview,
+                row.ExistingShowId,
+                row.OriginalLocalTitle,
+                IsExcluded: false,
+                LocalOnly: false))
+            .ToArray();
+
+        if (confidentSelections.Length == 0)
+        {
+            return;
+        }
+
+        var importPresentationVersion = _presentationVersion;
+        var importCancellation = _importCancellation = new CancellationTokenSource();
+        var importToken = importCancellation.Token;
+        _isAdding = true;
+        RefreshGroupHeaders();
+        var addedCount = await ExecuteImportBatchAsync(
+            confidentSelections,
+            showSummaryDialog: false,
+            importPresentationVersion);
+
+        if (importPresentationVersion != _presentationVersion
+            || importToken.IsCancellationRequested
+            || addedCount == 0
+            || XamlRoot is null)
+        {
+            return;
+        }
+
+        var remainingCount = _rows.Count;
+        var summary = remainingCount == 0
+            ? LocalizationService.Format("AutoImportSummaryFormat", addedCount)
+            : LocalizationService.Format("AutoImportPartialSummaryFormat", addedCount, remainingCount);
+        if (_inboundLockedSkippedCount > 0)
+        {
+            summary += " · " + LocalizationService.Format("AutoScanLockedSkippedFormat", _inboundLockedSkippedCount);
+        }
+
+        ShowAutoScanInfoBar(InfoBarSeverity.Success, summary);
+    }
+
+    private async Task<int> ExecuteImportBatchAsync(
+        ImportSelection[] selections,
+        bool showSummaryDialog,
+        long importPresentationVersion)
+    {
+        if (showSummaryDialog)
+        {
+            var excludedPaths = selections.Where(s => s.IsExcluded).Select(s => s.Item.Path).ToArray();
+            if (excludedPaths.Length > 0)
+            {
+                AppSettingsStore.AddInboundIgnoredPathsIfUnderInbound(excludedPaths);
+            }
+        }
+
         _addCompleted = false;
         _addProcessed = 0;
         _addTotal = selections.Length;
@@ -1345,8 +1633,13 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
             }
             Refresh();
             if (importPresentationVersion == _presentationVersion && XamlRoot is not null)
-                await ShowMessageAsync(LocalizationService.Text("Failed"), MetadataErrorText.For(error));
-            return;
+            {
+                if (showSummaryDialog)
+                    await ShowMessageAsync(LocalizationService.Text("Failed"), MetadataErrorText.For(error));
+                else
+                    ShowAutoScanInfoBar(InfoBarSeverity.Error, MetadataErrorText.For(error));
+            }
+            return 0;
         }
         finally
         {
@@ -1391,54 +1684,49 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
         MediaRegistered?.Invoke(this, EventArgs.Empty);
         Refresh();
 
-        var summaryLines = new List<string>
+        if (showSummaryDialog && importPresentationVersion == _presentationVersion && XamlRoot is not null)
         {
-            LocalizationService.Format("ImportAddedFormat", result.AddedCount),
-            LocalizationService.Format("ImportMatchedFormat", result.MatchedCount),
-            LocalizationService.Format("ImportNeedsAttentionFormat", result.NeedsAttentionCount),
-            LocalizationService.Format("TvBatchSkippedCount", result.SkippedCount),
-            LocalizationService.Format("TvBatchCancelledCount", result.NotProcessedCount),
-        };
+            var summaryLines = new List<string>
+            {
+                LocalizationService.Format("ImportAddedFormat", result.AddedCount),
+                LocalizationService.Format("ImportMatchedFormat", result.MatchedCount),
+                LocalizationService.Format("ImportNeedsAttentionFormat", result.NeedsAttentionCount),
+                LocalizationService.Format("TvBatchSkippedCount", result.SkippedCount),
+                LocalizationService.Format("TvBatchCancelledCount", result.NotProcessedCount),
+            };
 
-        // The three lines above are the result users need every time. Only append actionable
-        // failure detail when a failure actually occurred; zero-value implementation categories
-        // made a successful import look like an accounting report.
-        if (result.RegistrationFailuresCount > 0)
-        {
-            summaryLines.Add(LocalizationService.Format(
-                "ImportRegistrationErrorsFormat", result.RegistrationFailuresCount));
-        }
+            if (result.RegistrationFailuresCount > 0)
+            {
+                summaryLines.Add(LocalizationService.Format(
+                    "ImportRegistrationErrorsFormat", result.RegistrationFailuresCount));
+            }
 
-        if (result.ExistingCount > 0)
-        {
-            summaryLines.Add(LocalizationService.Format(
-                "ImportExistingFormat", result.ExistingCount));
-        }
+            if (result.ExistingCount > 0)
+            {
+                summaryLines.Add(LocalizationService.Format(
+                    "ImportExistingFormat", result.ExistingCount));
+            }
 
-        foreach (var kind in result.Items
-            .Where(item => item.MetadataFailureKind is not null)
-            .Select(item => item.MetadataFailureKind!.Value)
-            .Distinct())
-        {
-            summaryLines.Add(LocalizationService.Text(MetadataErrorKey.For(kind)));
-        }
+            foreach (var kind in result.Items
+                .Where(item => item.MetadataFailureKind is not null)
+                .Select(item => item.MetadataFailureKind!.Value)
+                .Distinct())
+            {
+                summaryLines.Add(LocalizationService.Text(MetadataErrorKey.For(kind)));
+            }
 
-        // Cached queue state and shell catalog notifications stay truthful after navigation.
-        // A completed operation must not present a dialog from a page that was left meanwhile.
-        if (importPresentationVersion == _presentationVersion && XamlRoot is not null)
             await ShowMessageAsync(
                 LocalizationService.Text("AddMedia"),
                 string.Join(Environment.NewLine, summaryLines));
+        }
 
-        // Only the successfully added rows have been removed. If the whole queue is now empty the page
-        // returns to its idle state; otherwise the remaining items (failures / not-yet-resolved) stay on
-        // screen so the user can act on them without reopening.
         if (_rows.Count == 0)
         {
             _state = AddMediaScanState.Idle;
         }
 
         Refresh();
+        return result.AddedCount;
     }
 
     /// <summary>

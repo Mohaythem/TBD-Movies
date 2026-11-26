@@ -702,7 +702,13 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
             if (await ContentDialogCoordinator.ShowAsync(confirm) != ContentDialogResult.Primary
                 || !request.IsCurrent) return;
             RemoveShowFromLibraryItem.IsEnabled = false;
+            var pathsToIgnore = _show.Seasons
+                .SelectMany(season => season.Episodes)
+                .SelectMany(episode => SafeEpisodeFiles(episode.Id))
+                .Select(file => file.Path)
+                .ToArray();
             await Task.Run(() => AppServices.Repair.RemoveShowFromLibrary(showId));
+            AppSettingsStore.AddInboundIgnoredPathsIfUnderInbound(pathsToIgnore);
             if (request.IsCurrent) BackRequested?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception error)

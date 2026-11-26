@@ -17,6 +17,8 @@ public sealed class ImportFileValidator(NetworkReadGuard? networkReads = null) :
         _reads.Execute(path, () =>
         {
             PathPolicy.AssertNoReparseComponents(path);
+            if (FileLockGuard.HasTempExtension(path) || FileLockGuard.HasActiveSidecar(path))
+                throw new IOException("The media file is an incomplete download.");
             var info = new FileInfo(path);
             if (!info.Exists || (info.Attributes & FileAttributes.Directory) != 0)
                 throw new IOException("The media file is missing or storage is unavailable.");
@@ -25,7 +27,7 @@ public sealed class ImportFileValidator(NetworkReadGuard? networkReads = null) :
             if (size != item.FileSize || item.Observation is { } observed
                 && (size != observed.FileSize || modified != observed.LastWriteTimeUtc))
                 throw new IOException("The media file changed after scanning. Scan it again before importing.");
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
             if (stream.Length != size) throw new IOException("The media file changed after scanning.");
             return true;
         }, () => throw new NetworkStorageUnavailableException(path), () => cancellationToken.IsCancellationRequested);
