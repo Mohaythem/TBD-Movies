@@ -201,6 +201,7 @@
                                 ItemsStretch="Uniform"
                                 MaximumRowsOrColumns="6"
                                 MinColumnSpacing="10"
+                                MinItemHeight="72"
                                 MinItemWidth="148"
                                 MinRowSpacing="10" />
                         </ItemsRepeater.Layout>
