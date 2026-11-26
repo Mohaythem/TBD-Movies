@@ -23,6 +23,9 @@ internal static class AppSettingsStore
     private const string InboundFolderKey = "ui_inbound_folder";
     private const string InboundAutoScanEnabledKey = "ui_inbound_autoscan_enabled";
     private const string InboundIgnoredPathsKey = "ui_inbound_ignored_paths";
+    private const string CloudPosterRefsKey = "ui_cloud_poster_refs";
+    private static readonly object CloudPosterGate = new();
+    private static Dictionary<string, string>? _cloudPosterRefs;
 
     public static bool IsSubDlConfigured() =>
         AppServices.IsAvailable && AppServices.Settings.IsSubDlConfigured();
@@ -120,6 +123,88 @@ internal static class AppSettingsStore
 
     public static bool ClearInboundIgnoredPaths() =>
         Write(InboundIgnoredPathsKey, null);
+
+    public static string? GetCloudPosterReference(bool isShow, int tmdbId)
+    {
+        if (tmdbId <= 0)
+        {
+            return null;
+        }
+
+        var key = CloudPosterKey(isShow, tmdbId);
+        lock (CloudPosterGate)
+        {
+            var map = EnsureCloudPosterMapLocked();
+            return map.TryGetValue(key, out var posterRef) && !string.IsNullOrWhiteSpace(posterRef)
+                ? posterRef
+                : null;
+        }
+    }
+
+    public static void SaveCloudPosterReferences(IReadOnlyDictionary<(bool IsShow, int TmdbId), string> updates)
+    {
+        if (updates.Count == 0)
+        {
+            return;
+        }
+
+        lock (CloudPosterGate)
+        {
+            var map = EnsureCloudPosterMapLocked();
+            var changed = false;
+            foreach (var ((isShow, tmdbId), posterRef) in updates)
+            {
+                if (tmdbId <= 0 || string.IsNullOrWhiteSpace(posterRef))
+                {
+                    continue;
+                }
+
+                var key = CloudPosterKey(isShow, tmdbId);
+                if (!map.TryGetValue(key, out var existing) || !string.Equals(existing, posterRef, StringComparison.Ordinal))
+                {
+                    map[key] = posterRef;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                Write(CloudPosterRefsKey, System.Text.Json.JsonSerializer.Serialize(map));
+            }
+        }
+    }
+
+    private static string CloudPosterKey(bool isShow, int tmdbId) =>
+        $"{(isShow ? "tv" : "movie")}:{tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+
+    private static Dictionary<string, string> EnsureCloudPosterMapLocked()
+    {
+        if (_cloudPosterRefs is not null)
+        {
+            return _cloudPosterRefs;
+        }
+
+        var raw = Read(CloudPosterRefsKey);
+        if (!string.IsNullOrWhiteSpace(raw))
+        {
+            try
+            {
+                var parsed = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(raw);
+                if (parsed is not null)
+                {
+                    _cloudPosterRefs = new Dictionary<string, string>(parsed, StringComparer.OrdinalIgnoreCase);
+                    return _cloudPosterRefs;
+                }
+            }
+            catch
+            {
+                // Corrupt cache falls back cleanly to empty map.
+            }
+        }
+
+        _cloudPosterRefs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        return _cloudPosterRefs;
+    }
 
     private static bool IsUnderFolder(string? candidatePath, string folderPath)
     {

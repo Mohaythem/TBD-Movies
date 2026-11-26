@@ -720,6 +720,7 @@ public sealed partial class MyListsPage
         _traktCts?.Cancel();
         _traktWriteCts?.Cancel();
         _traktDisplayCts?.Cancel();
+        _cloudPosterCts?.Cancel();
         ++_traktDisplayGeneration;
     }
 
@@ -739,6 +740,7 @@ public sealed partial class MyListsPage
         _traktCts?.Cancel();
         _traktWriteCts?.Cancel();
         _traktDisplayCts?.Cancel();
+        _cloudPosterCts?.Cancel();
         ++_traktDisplayGeneration;
     }
 

@@ -314,6 +314,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
     {
         if (IsTraktKey(_selectedKey))
         {
+            _cloudPosterCts?.Cancel();
             RefreshTrakt();
             return;
         }
@@ -407,6 +408,7 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
 
         if (!isEmpty)
         {
+            _ = HydrateCloudPostersAsync(_displayedItems);
             return;
         }
 
@@ -673,24 +675,106 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         }
     }
 
+    private CancellationTokenSource? _cloudPosterCts;
+
     /// <summary>Projects a mixed custom-list member (movie or TV show) onto a card item.</summary>
     private static ListMediaItem ToListItem(CustomListItem item)
     {
         var isCloud = item.IsCloudOnly;
         var badgeText = isCloud ? LocalizationService.Text("CloudItem") : LocalizationService.Text(!item.IsMissing ? "Local" : "OnlineOnly");
+        var posterRef = item.PosterReference;
+        if (isCloud && string.IsNullOrWhiteSpace(posterRef) && item.TmdbId is int tmdbId && tmdbId > 0)
+        {
+            posterRef = AppSettingsStore.GetCloudPosterReference(item.Kind == CustomListMediaKind.Show, tmdbId);
+        }
+
         if (item.Kind == CustomListMediaKind.Show)
         {
             var show = new TVShowRecord(
-                item.Id, item.Title, item.Year ?? 0, [], string.Empty, [], PosterReference: item.PosterReference,
+                item.Id, item.Title, item.Year ?? 0, [], string.Empty, [], PosterReference: posterRef,
                 CustomDisplayTitle: item.CustomDisplayTitle, CanonicalTitle: item.CanonicalTitle);
             return new ListMediaItem(show, isCloud, !item.IsMissing && !isCloud, badgeText, item.TmdbId);
         }
 
         var movie = new MovieRecord(
             item.Id, item.Title, item.Year ?? 0, string.Empty, 0, [], string.Empty,
-            HasLocalFile: !item.IsMissing && !isCloud, PosterReference: item.PosterReference,
+            HasLocalFile: !item.IsMissing && !isCloud, PosterReference: posterRef,
             CustomDisplayTitle: item.CustomDisplayTitle, CanonicalTitle: item.CanonicalTitle);
         return new ListMediaItem(movie, isCloud, !item.IsMissing && !isCloud, badgeText, item.TmdbId);
+    }
+
+    private async Task HydrateCloudPostersAsync(IReadOnlyList<ListMediaItem> items)
+    {
+        _cloudPosterCts?.Cancel();
+        _cloudPosterCts?.Dispose();
+        var cts = _cloudPosterCts = new CancellationTokenSource();
+        var token = cts.Token;
+
+        var missing = items
+            .Where(i => i.ShowLocalBadge && i.IsPosterMissing && i.TmdbId is > 0)
+            .ToArray();
+        if (missing.Length == 0 || !AppServices.IsAvailable || AppServices.Metadata is not { IsConfigured: true })
+        {
+            return;
+        }
+
+        var updates = new Dictionary<(bool IsShow, int TmdbId), string>();
+        try
+        {
+            await Task.Run(async () =>
+            {
+                foreach (var item in missing)
+                {
+                    if (token.IsCancellationRequested || item.TmdbId is not int tmdbId || tmdbId <= 0)
+                    {
+                        break;
+                    }
+
+                    var key = (item.IsShow, tmdbId);
+                    var posterRef = AppSettingsStore.GetCloudPosterReference(item.IsShow, tmdbId);
+                    if (string.IsNullOrWhiteSpace(posterRef))
+                    {
+                        try
+                        {
+                            var externalId = tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                            posterRef = item.IsShow
+                                ? (await AppServices.Metadata.GetTvShowAsync(externalId, token).ConfigureAwait(false))?.PosterReference
+                                : (await AppServices.Metadata.GetMovieAsync(externalId, token).ConfigureAwait(false))?.PosterReference;
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            break;
+                        }
+                        catch
+                        {
+                            posterRef = null;
+                        }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(posterRef))
+                    {
+                        updates[key] = posterRef!;
+                        await AppServices.Poster.EnsurePosterCachedAsync("TMDB", posterRef!, token).ConfigureAwait(false);
+                        DispatcherQueue?.TryEnqueue(() =>
+                        {
+                            if (!token.IsCancellationRequested)
+                            {
+                                item.UpdatePosterReference(posterRef!);
+                            }
+                        });
+                    }
+                }
+
+                if (updates.Count > 0)
+                {
+                    AppSettingsStore.SaveCloudPosterReferences(updates);
+                }
+            }, token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected on navigation away or list switch.
+        }
     }
 
     // APPEND_MARKER3

@@ -138,7 +138,25 @@ public sealed record ShowCardItem(TVShowRecord Show, string SecondaryLine) : INo
 
     private ImageSource? _posterSource;
     private bool _posterRequested;
+    private string? _overridePosterReference;
     private ArtworkLoader? _horizontalArtwork;
+
+    private string? EffectivePosterReference => _overridePosterReference ?? Show.PosterReference;
+
+    internal void UpdatePosterReference(string posterReference)
+    {
+        if (string.IsNullOrWhiteSpace(posterReference)
+            || string.Equals(EffectivePosterReference, posterReference, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _overridePosterReference = posterReference;
+        _posterSource = null;
+        _posterRequested = false;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PosterSource)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPosterMissing)));
+    }
 
     public string Title => Show.Title;
 
@@ -163,12 +181,13 @@ public sealed record ShowCardItem(TVShowRecord Show, string SecondaryLine) : INo
                 return _posterSource;
             }
 
-            if (string.IsNullOrWhiteSpace(Show.PosterReference) || !AppServices.IsAvailable)
+            var posterRef = EffectivePosterReference;
+            if (string.IsNullOrWhiteSpace(posterRef) || !AppServices.IsAvailable)
             {
                 return null;
             }
 
-            var cachedPath = AppServices.Poster.GetCachedPosterPath("TMDB", Show.PosterReference);
+            var cachedPath = AppServices.Poster.GetCachedPosterPath("TMDB", posterRef);
             if (cachedPath != null)
             {
                 _posterSource = new BitmapImage(new Uri(cachedPath)) { DecodePixelWidth = 360 };
@@ -178,7 +197,6 @@ public sealed record ShowCardItem(TVShowRecord Show, string SecondaryLine) : INo
             if (!_posterRequested)
             {
                 _posterRequested = true;
-                var posterRef = Show.PosterReference;
                 _ = Task.Run(async () =>
                 {
                     try
@@ -188,7 +206,7 @@ public sealed record ShowCardItem(TVShowRecord Show, string SecondaryLine) : INo
                         {
                             AppServices.UiDispatcherQueue?.TryEnqueue(() =>
                             {
-                                if (Show.PosterReference == posterRef)
+                                if (EffectivePosterReference == posterRef)
                                 {
                                     _posterSource = new BitmapImage(new Uri(downloaded)) { DecodePixelWidth = 360 };
                                     PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PosterSource)));
@@ -209,7 +227,7 @@ public sealed record ShowCardItem(TVShowRecord Show, string SecondaryLine) : INo
         }
     }
 
-    public bool IsPosterMissing => _posterSource is null && (string.IsNullOrWhiteSpace(Show.PosterReference) || !AppServices.IsAvailable || AppServices.Poster.GetCachedPosterPath("TMDB", Show.PosterReference) is null);
+    public bool IsPosterMissing => _posterSource is null && (string.IsNullOrWhiteSpace(EffectivePosterReference) || !AppServices.IsAvailable || AppServices.Poster.GetCachedPosterPath("TMDB", EffectivePosterReference) is null);
 
     /// <summary>Landscape artwork for horizontal Library cards, with the existing poster as view fallback.</summary>
     public ImageSource? HorizontalArtworkSource => HorizontalArtwork.Source;

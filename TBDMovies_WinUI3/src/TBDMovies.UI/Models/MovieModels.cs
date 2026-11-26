@@ -73,8 +73,24 @@ public sealed record MovieRecord(
     string? ExternalId = null) : INotifyPropertyChanged
 {
     public DateTimeOffset? LastOpenedAt { get; private set; } = LastOpenedAt;
+    public string? PosterReference { get; private set; } = PosterReference;
 
     internal void RecordOpened(DateTimeOffset openedAt) => LastOpenedAt = openedAt;
+
+    internal void UpdatePosterReference(string posterReference)
+    {
+        if (string.IsNullOrWhiteSpace(posterReference)
+            || string.Equals(PosterReference, posterReference, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        PosterReference = posterReference;
+        _posterSource = null;
+        _posterRequested = false;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PosterSource)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPosterMissing)));
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -343,6 +359,18 @@ public sealed record ListMediaItem : INotifyPropertyChanged, IDisposable
     public ImageSource? PosterSource => Movie is not null ? Movie.PosterSource : _showCard?.PosterSource;
 
     public bool IsPosterMissing => Movie is not null ? Movie.IsPosterMissing : (_showCard?.IsPosterMissing ?? true);
+
+    internal void UpdatePosterReference(string posterReference)
+    {
+        if (Movie is not null)
+        {
+            Movie.UpdatePosterReference(posterReference);
+        }
+        else
+        {
+            _showCard?.UpdatePosterReference(posterReference);
+        }
+    }
 
     public bool IsRemote => !IsLocal;
 
