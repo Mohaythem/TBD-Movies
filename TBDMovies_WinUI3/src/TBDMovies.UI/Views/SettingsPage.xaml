@@ -12,9 +12,19 @@
             </Grid.ColumnDefinitions>
 
             <StackPanel Spacing="24">
-                <TextBlock x:Name="PageTitleText" Style="{StaticResource TitleTextBlockStyle}" />
-                <TextBlock x:Name="AppVersionText" Style="{StaticResource SecondaryCaptionTextStyle}" FlowDirection="LeftToRight" TextWrapping="Wrap" />
+                <StackPanel Spacing="4">
+                    <TextBlock x:Name="PageTitleText" Style="{StaticResource TitleTextBlockStyle}" />
+                    <TextBlock x:Name="AppVersionText" Style="{StaticResource SecondaryCaptionTextStyle}" FlowDirection="LeftToRight" TextWrapping="Wrap" />
+                </StackPanel>
 
+                <SelectorBar x:Name="SettingsTabs" SelectionChanged="SettingsTabs_SelectionChanged">
+                    <SelectorBarItem x:Name="TabGeneralItem" Tag="general" />
+                    <SelectorBarItem x:Name="TabLibraryItem" Tag="library" />
+                    <SelectorBarItem x:Name="TabIntegrationsItem" Tag="integrations" />
+                    <SelectorBarItem x:Name="TabDataItem" Tag="data" />
+                </SelectorBar>
+
+                <StackPanel x:Name="GeneralSectionPanel" Spacing="24">
                 <!--  Appearance: the section heading sits above its card, like the design source.  -->
                 <StackPanel Spacing="12">
                     <TextBlock x:Name="AppearanceHeadingText" Style="{StaticResource SubtitleTextBlockStyle}" />
@@ -135,6 +145,9 @@
                     </Border>
                 </StackPanel>
 
+                </StackPanel>
+
+                <StackPanel x:Name="LibrarySectionPanel" Spacing="24" Visibility="Collapsed">
                 <!--  Library folders  -->
                 <StackPanel Spacing="12">
                     <TextBlock x:Name="LibraryHeadingText" Style="{StaticResource SubtitleTextBlockStyle}" />
@@ -320,21 +333,9 @@
                         </StackPanel>
                     </Border>
                 </StackPanel>
-                <!--  Storage and advanced details  -->
-                <StackPanel Spacing="12">
-                    <TextBlock x:Name="StorageAdvancedHeadingText" Style="{StaticResource SubtitleTextBlockStyle}" />
-                    <Border Style="{StaticResource CardBorderStyle}">
-                        <Grid ColumnSpacing="16">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                            <StackPanel VerticalAlignment="Center" Spacing="2">
-                                <TextBlock x:Name="DataFolderLabelText" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                                <TextBlock x:Name="DataFolderPathText" Style="{StaticResource TertiaryCaptionTextStyle}" TextTrimming="CharacterEllipsis" />
-                                <TextBlock x:Name="DataFolderHelpText" Style="{StaticResource SecondaryCaptionTextStyle}" TextWrapping="Wrap" />
-                            </StackPanel>
-                            <Button x:Name="OpenDataFolderButton" Grid.Column="1" VerticalAlignment="Center" Click="OpenDataFolderButton_Click" Style="{StaticResource SubtleControlButtonStyle}" />
-                        </Grid>
-                    </Border>
                 </StackPanel>
+
+                <StackPanel x:Name="IntegrationsSectionPanel" Spacing="24" Visibility="Collapsed">
                 <!--  TMDB  -->
                 <StackPanel Spacing="12">
                     <TextBlock x:Name="TmdbHeadingText" Style="{StaticResource SubtitleTextBlockStyle}" />
@@ -557,6 +558,25 @@
                     </Border>
                 </StackPanel>
 
+                </StackPanel>
+
+                <StackPanel x:Name="DataSectionPanel" Spacing="24" Visibility="Collapsed">
+                <!--  Storage and advanced details  -->
+                <StackPanel Spacing="12">
+                    <TextBlock x:Name="StorageAdvancedHeadingText" Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <Border Style="{StaticResource CardBorderStyle}">
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                <TextBlock x:Name="DataFolderLabelText" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                <TextBlock x:Name="DataFolderPathText" Style="{StaticResource TertiaryCaptionTextStyle}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="DataFolderHelpText" Style="{StaticResource SecondaryCaptionTextStyle}" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Button x:Name="OpenDataFolderButton" Grid.Column="1" VerticalAlignment="Center" Click="OpenDataFolderButton_Click" Style="{StaticResource SubtleControlButtonStyle}" />
+                        </Grid>
+                    </Border>
+                </StackPanel>
+
                 <!--  History and recovery  -->
                 <StackPanel Spacing="12">
                     <TextBlock x:Name="HistoryHeadingText" Style="{StaticResource SubtitleTextBlockStyle}" />
@@ -704,6 +724,7 @@
                             </Grid>
                         </StackPanel>
                     </Border>
+                </StackPanel>
                 </StackPanel>
             </StackPanel>
         </Grid>

@@ -72,6 +72,8 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
     public SettingsPage()
     {
         this.InitializeComponent();
+        SettingsTabs.SelectedItem = TabGeneralItem;
+        UpdateTabVisibility("general");
         ApplyLocalization();
     }
 
@@ -94,6 +96,10 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
     {
         FlowDirection = LocalizationService.FlowDirection;
         PageTitleText.Text = LocalizationService.Text("Settings");
+        TabGeneralItem.Text = LocalizationService.Text("SettingsTabGeneral");
+        TabLibraryItem.Text = LocalizationService.Text("SettingsTabLibrary");
+        TabIntegrationsItem.Text = LocalizationService.Text("SettingsTabIntegrations");
+        TabDataItem.Text = LocalizationService.Text("SettingsTabData");
         LoadVersionInfo();
 
         AppearanceHeadingText.Text = LocalizationService.Text("Appearance");
@@ -196,6 +202,22 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
         RefreshTmdbStatus();
         RefreshTraktStatus();
         RefreshSubDlStatus();
+    }
+
+    private void SettingsTabs_SelectionChanged(SelectorBar sender, SelectorBarSelectionChangedEventArgs args)
+    {
+        if (sender.SelectedItem is SelectorBarItem { Tag: string tag })
+        {
+            UpdateTabVisibility(tag);
+        }
+    }
+
+    private void UpdateTabVisibility(string activeTag)
+    {
+        GeneralSectionPanel.Visibility = activeTag == "general" ? Visibility.Visible : Visibility.Collapsed;
+        LibrarySectionPanel.Visibility = activeTag == "library" ? Visibility.Visible : Visibility.Collapsed;
+        IntegrationsSectionPanel.Visibility = activeTag == "integrations" ? Visibility.Visible : Visibility.Collapsed;
+        DataSectionPanel.Visibility = activeTag == "data" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void LoadVersionInfo()

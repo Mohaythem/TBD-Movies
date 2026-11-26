@@ -571,7 +571,10 @@ public sealed record EpisodeActionLabels(
     string UnmarkWatched = "",
     string Relink = "");
 
-public sealed record StatCardRecord(string Label, string Value, string Glyph = "");
+public sealed record StatCardRecord(string Label, string Value, string Glyph = "", string Subtitle = "")
+{
+    public Visibility SubtitleVisibility => string.IsNullOrWhiteSpace(Subtitle) ? Visibility.Collapsed : Visibility.Visible;
+}
 
 /// <summary>A durable history snapshot rendered on Home, including unavailable catalog entries.</summary>
 public sealed class WatchHistoryCardRecord : INotifyPropertyChanged

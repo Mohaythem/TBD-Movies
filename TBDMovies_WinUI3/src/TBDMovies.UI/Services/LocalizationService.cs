@@ -808,6 +808,18 @@ public static class LocalizationService
         ["AutoScanLockedSkippedFormat"] = "{0} in-progress download(s) were skipped because they are still locked or incomplete.",
         ["AutoImportSummaryFormat"] = "Auto-imported {0} matched item(s) from your inbound folder.",
         ["AutoImportPartialSummaryFormat"] = "Auto-imported {0} matched item(s); {1} item(s) remain for manual review.",
+        ["WelcomeFirstTime"] = "Hello! Let's get started",
+        ["YourLibraryEmpty"] = "Set up your library to start watching.",
+        ["StatMoviesWatchedFormat"] = "{0} watched",
+        ["StatEpisodesCountFormat"] = "{0} episodes",
+        ["StatEpisodesOnDiskSub"] = "episodes",
+        ["StatWatchedThisMonthFormat"] = "{0} this month",
+        ["StatCompletionSubFormat"] = "{0} / {1} watched",
+        ["StatInWatchlistSub"] = "in watchlist",
+        ["SettingsTabGeneral"] = "General",
+        ["SettingsTabLibrary"] = "Library",
+        ["SettingsTabIntegrations"] = "Integrations",
+        ["SettingsTabData"] = "Data & Backups",
     };
 
     private static readonly IReadOnlyDictionary<string, string> Arabic = new Dictionary<string, string>
@@ -1614,6 +1626,18 @@ public static class LocalizationService
         ["AutoScanLockedSkippedFormat"] = "تم تخطي {0} ملفات لأنها ما زالت قيد التحميل أو غير مكتملة.",
         ["AutoImportSummaryFormat"] = "تم استيراد {0} عناصر مطابقة تلقائياً من مجلد الوارد.",
         ["AutoImportPartialSummaryFormat"] = "تم استيراد {0} عناصر مطابقة تلقائياً؛ وتبقى {1} عناصر للمراجعة اليدوية.",
+        ["WelcomeFirstTime"] = "أهلاً بك! يلا نبدأ",
+        ["YourLibraryEmpty"] = "جهّز مكتبتك عشان تبدأ المشاهدة.",
+        ["StatMoviesWatchedFormat"] = "{0} مُشاهد",
+        ["StatEpisodesCountFormat"] = "{0} حلقة",
+        ["StatEpisodesOnDiskSub"] = "حلقة",
+        ["StatWatchedThisMonthFormat"] = "{0} هذا الشهر",
+        ["StatCompletionSubFormat"] = "{0} / {1} مُشاهد",
+        ["StatInWatchlistSub"] = "في قائمة الانتظار",
+        ["SettingsTabGeneral"] = "عام",
+        ["SettingsTabLibrary"] = "المكتبة",
+        ["SettingsTabIntegrations"] = "الربط والترجمة",
+        ["SettingsTabData"] = "البيانات والنسخ الاحتياطي",
     };
 
     public static UiLanguage CurrentLanguage { get; private set; } = UiLanguage.English;
