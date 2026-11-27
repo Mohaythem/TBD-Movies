@@ -315,6 +315,23 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
                         s.PosterReference))
                     .ToArray();
 
+                var updated = cloudShow with
+                {
+                    Title = string.IsNullOrWhiteSpace(cloudShow.CustomDisplayTitle) && !string.IsNullOrWhiteSpace(metadata.Title)
+                        ? metadata.Title
+                        : cloudShow.Title,
+                    CanonicalTitle = metadata.Title ?? cloudShow.CanonicalTitle,
+                    Year = metadata.FirstAirYear ?? cloudShow.Year,
+                    Genres = metadata.Genres.Length > 0 ? metadata.Genres : cloudShow.Genres,
+                    Overview = metadata.Overview ?? cloudShow.Overview,
+                    Rating = metadata.Rating,
+                    PosterReference = metadata.PosterReference ?? cloudShow.PosterReference,
+                    BackdropReference = metadata.BackdropReference ?? cloudShow.BackdropReference,
+                    Seasons = seasons.Length > 0 ? seasons : cloudShow.Seasons,
+                    ExternalId = metadata.ExternalId ?? cloudShow.ExternalId,
+                };
+
+                var materializedId = AppServices.EnsureCloudShow(updated);
                 DispatcherQueue.TryEnqueue(() =>
                 {
                     if (!request.IsCurrent)
@@ -322,23 +339,14 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
                         return;
                     }
 
-                    var updated = _show with
+                    if (materializedId is > 0)
                     {
-                        Title = string.IsNullOrWhiteSpace(_show.CustomDisplayTitle) && !string.IsNullOrWhiteSpace(metadata.Title)
-                            ? metadata.Title
-                            : _show.Title,
-                        CanonicalTitle = metadata.Title ?? _show.CanonicalTitle,
-                        Year = metadata.FirstAirYear ?? _show.Year,
-                        Genres = metadata.Genres.Length > 0 ? metadata.Genres : _show.Genres,
-                        Overview = metadata.Overview ?? _show.Overview,
-                        Rating = metadata.Rating,
-                        PosterReference = metadata.PosterReference ?? _show.PosterReference,
-                        BackdropReference = metadata.BackdropReference ?? _show.BackdropReference,
-                        Seasons = seasons.Length > 0 ? seasons : _show.Seasons,
-                        ExternalId = metadata.ExternalId ?? _show.ExternalId,
-                    };
-
-                    SetShow(updated);
+                        SetShow(updated with { Id = materializedId.Value });
+                    }
+                    else
+                    {
+                        SetShow(updated);
+                    }
                 });
             }
             catch (OperationCanceledException)

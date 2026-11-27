@@ -312,9 +312,19 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
                     updated.UpdatePosterReference(metadata.PosterReference);
                 }
 
+                var materializedId = AppServices.EnsureCloudMovie(updated);
                 DispatcherQueue?.TryEnqueue(() =>
                 {
-                    if (request.IsCurrent && _movie.Id <= 0)
+                    if (!request.IsCurrent || _movie.Id > 0)
+                    {
+                        return;
+                    }
+
+                    if (materializedId is > 0)
+                    {
+                        LoadMovie(materializedId.Value);
+                    }
+                    else
                     {
                         SetMovie(updated);
                     }

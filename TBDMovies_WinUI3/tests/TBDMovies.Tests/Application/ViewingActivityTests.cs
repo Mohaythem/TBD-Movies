@@ -199,6 +199,65 @@ public sealed class ViewingActivityTests : IDisposable
     }
 
     [Fact]
+    public void RecentCompletedResolvesOrphanedMovieWhenReaddedWithoutNewWatchEvent()
+    {
+        var history = new PersonalLibraryRepository(_cs);
+        SeedMovie(1, "Interstellar", 2014, MoviePath);
+        history.AddWatchEvent(1, _t0, _t0);
+        Exec("DELETE FROM media_files WHERE id=1; DELETE FROM movies WHERE id=1;");
+
+        // Re-add the same movie under a new ID without creating a new watch event.
+        SeedMovie(2, "Interstellar", 2014, MoviePath);
+
+        // Keep a distinct deleted movie un-readded to verify negative case.
+        SeedMovie(3, "Inception", 2010, MoviePath + ".inception.mkv");
+        history.AddWatchEvent(3, _t0.AddMinutes(-5), _t0.AddMinutes(-5));
+        Exec("DELETE FROM media_files WHERE id=3; DELETE FROM movies WHERE id=3;");
+
+        var recent = Service().ListRecentCompleted();
+        Assert.Equal(2, recent.Count);
+        Assert.Equal("Interstellar", recent[0].Title);
+        Assert.Equal(2, recent[0].MovieId);
+        Assert.True(recent[0].IsAvailable);
+
+        Assert.Equal("Inception", recent[1].Title);
+        Assert.Null(recent[1].MovieId);
+        Assert.False(recent[1].IsAvailable);
+    }
+
+    [Fact]
+    public void CloudOnlyMoviesAndShowsAreHiddenFromLibraryQueriesUntilPromoted()
+    {
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection(_cs);
+        connection.Open();
+        var movies = new MovieRepository(connection);
+        var shows = new TvShowRepository(connection);
+        var now = _t0;
+
+        var localMovie = movies.Create(new MovieCatalogData("TMDB", "101", "Local Movie", null, 2024, null, [], null, null, null), now);
+        var cloudMovie = movies.Create(new MovieCatalogData("TMDB", "202", "Cloud Movie", null, 2024, null, [], null, null, null), now);
+        movies.SetCloudOnly(cloudMovie.Id, true);
+
+        Assert.Single(movies.ListAll());
+        Assert.Equal(localMovie.Id, movies.ListAll()[0].Id);
+        Assert.Equal(1, movies.CountAll());
+        Assert.NotNull(movies.GetById(cloudMovie.Id));
+        Assert.NotNull(movies.GetByExternalId("TMDB", "202"));
+
+        movies.SetCloudOnly(cloudMovie.Id, false);
+        Assert.Equal(2, movies.CountAll());
+
+        var localShow = shows.Create(new TvShowCatalogData("TMDB", "301", "Local Show"), now);
+        var cloudShow = shows.Create(new TvShowCatalogData("TMDB", "402", "Cloud Show"), now);
+        shows.SetCloudOnly(cloudShow.Id, true);
+
+        Assert.Single(shows.ListAll());
+        Assert.Equal(localShow.Id, shows.ListAll()[0].Id);
+        Assert.Equal(1, shows.CountAll());
+        Assert.NotNull(shows.GetById(cloudShow.Id));
+    }
+
+    [Fact]
     public void RecentCompletedEmptyDatabaseReturnsEmptyForAnyPage()
     {
         var history = new PersonalLibraryRepository(_cs);

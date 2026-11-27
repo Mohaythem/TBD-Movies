@@ -282,6 +282,108 @@ internal static class AppServices
         return null;
     }
 
+    public static int? EnsureCloudMovie(MovieRecord cloudMovie)
+    {
+        if (_catalogFactory is null || string.IsNullOrWhiteSpace(cloudMovie.ExternalId) || string.IsNullOrWhiteSpace(cloudMovie.Title))
+        {
+            return null;
+        }
+
+        var externalId = cloudMovie.ExternalId.Trim();
+        try
+        {
+            using var uow = _catalogFactory.Begin();
+            var existing = uow.Movies.GetByExternalId("TMDB", externalId)
+                ?? uow.Movies.GetByExternalId("tmdb", externalId);
+            if (existing is not null)
+            {
+                return existing.Id;
+            }
+
+            int? runtimeMinutes = null;
+            if (!string.IsNullOrWhiteSpace(cloudMovie.Runtime))
+            {
+                var digits = new string(cloudMovie.Runtime.TakeWhile(char.IsDigit).ToArray());
+                if (int.TryParse(digits, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var mins) && mins > 0)
+                {
+                    runtimeMinutes = mins;
+                }
+            }
+
+            var data = new TBDMovies.Domain.Library.Movies.MovieCatalogData(
+                provider: "TMDB",
+                externalId: externalId,
+                title: cloudMovie.Title.Trim(),
+                originalTitle: string.IsNullOrWhiteSpace(cloudMovie.OriginalTitle) ? null : cloudMovie.OriginalTitle.Trim(),
+                year: cloudMovie.Year is >= 1888 and <= 2100 ? cloudMovie.Year : null,
+                overview: string.IsNullOrWhiteSpace(cloudMovie.Overview) ? null : cloudMovie.Overview.Trim(),
+                genres: cloudMovie.Genres is { Count: > 0 } ? System.Collections.Immutable.ImmutableArray.CreateRange(cloudMovie.Genres) : System.Collections.Immutable.ImmutableArray<string>.Empty,
+                runtimeMinutes: runtimeMinutes,
+                rating: cloudMovie.Rating is >= 0 and <= 10 ? cloudMovie.Rating : null,
+                posterReference: string.IsNullOrWhiteSpace(cloudMovie.PosterReference) ? null : cloudMovie.PosterReference.Trim(),
+                metadataStatus: TBDMovies.Domain.Library.Movies.MetadataStatus.Ready,
+                backdropReference: string.IsNullOrWhiteSpace(cloudMovie.BackdropReference) ? null : cloudMovie.BackdropReference.Trim());
+
+            var created = uow.Movies.Create(data, DateTimeOffset.UtcNow);
+            uow.Movies.SetCloudOnly(created.Id, true);
+            uow.Commit();
+            return created.Id;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static int? EnsureCloudShow(TVShowRecord cloudShow)
+    {
+        if (_catalogFactory is null || string.IsNullOrWhiteSpace(cloudShow.ExternalId) || string.IsNullOrWhiteSpace(cloudShow.Title))
+        {
+            return null;
+        }
+
+        var externalId = cloudShow.ExternalId.Trim();
+        try
+        {
+            using var uow = _catalogFactory.Begin();
+            var existing = uow.TvShows.GetByExternalId("TMDB", externalId)
+                ?? uow.TvShows.GetByExternalId("tmdb", externalId);
+            if (existing is not null)
+            {
+                return existing.Id;
+            }
+
+            var data = new TBDMovies.Domain.Library.Shows.TvShowCatalogData(
+                provider: "TMDB",
+                externalId: externalId,
+                title: cloudShow.Title.Trim(),
+                originalTitle: null,
+                year: cloudShow.Year is >= 1888 and <= 2100 ? cloudShow.Year : null,
+                overview: string.IsNullOrWhiteSpace(cloudShow.Overview) ? null : cloudShow.Overview.Trim(),
+                genres: cloudShow.Genres is { Count: > 0 } ? System.Collections.Immutable.ImmutableArray.CreateRange(cloudShow.Genres) : System.Collections.Immutable.ImmutableArray<string>.Empty,
+                posterReference: string.IsNullOrWhiteSpace(cloudShow.PosterReference) ? null : cloudShow.PosterReference.Trim(),
+                metadataStatus: TBDMovies.Domain.Library.Movies.MetadataStatus.Ready,
+                rating: cloudShow.Rating is >= 0 and <= 10 ? cloudShow.Rating : null,
+                backdropReference: string.IsNullOrWhiteSpace(cloudShow.BackdropReference) ? null : cloudShow.BackdropReference.Trim());
+
+            var bySort = uow.TvShows.GetBySortTitle(data.SortTitle);
+            if (bySort is not null)
+            {
+                return bySort.Id;
+            }
+
+            var created = uow.TvShows.Create(data, DateTimeOffset.UtcNow);
+            uow.TvShows.SetCloudOnly(created.Id, true);
+            uow.TvShows.RegisterAlias(created.Id, data.SortTitle, DateTimeOffset.UtcNow);
+            uow.Commit();
+            return created.Id;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
 
     public static ITraktLocalSnapshotBuilder? TraktLocalSnapshot => _traktLocalSnapshot;
     private static ITraktLocalSnapshotBuilder? _traktLocalSnapshot;

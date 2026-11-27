@@ -6,7 +6,7 @@ namespace TBDMovies.Infrastructure.Persistence.Migrations;
 
 public class DatabaseMigrator
 {
-    public const int LatestVersion = 25;
+    public const int LatestVersion = 26;
     private readonly string _connectionString;
 
     public DatabaseMigrator(string connectionString)
@@ -759,6 +759,13 @@ public class DatabaseMigrator
         // Migration 25: Drop playback_progress table
         """
             DROP TABLE IF EXISTS playback_progress;
+        """,
+        // Migration 26: Cloud-only flag for movies and TV shows
+        """
+            ALTER TABLE movies ADD COLUMN is_cloud_only INTEGER NOT NULL DEFAULT 0;
+            ALTER TABLE tv_shows ADD COLUMN is_cloud_only INTEGER NOT NULL DEFAULT 0;
+            CREATE INDEX IF NOT EXISTS idx_movies_cloud_only ON movies(is_cloud_only);
+            CREATE INDEX IF NOT EXISTS idx_tv_shows_cloud_only ON tv_shows(is_cloud_only);
         """
     };
 
@@ -833,7 +840,8 @@ public class DatabaseMigrator
                         includeScaleIndexes: i + 1 >= 20, includePlaybackProgress: i + 1 >= 21 && i + 1 < 25,
                         includeUnifiedTraktLists: i + 1 >= 22,
                         includeRelaxedPendingActions: i + 1 >= 23,
-                        includeTraktPendingActions: i + 1 >= 24);
+                        includeTraktPendingActions: i + 1 >= 24,
+                        includeCloudOnly: i + 1 >= 26);
 
                 cmd.CommandText = $"PRAGMA user_version = {i + 1};";
                 cmd.ExecuteNonQuery();
@@ -861,7 +869,7 @@ public class DatabaseMigrator
         bool includeTrakt = true, bool includeCustomTitle = true, bool includeScaleIndexes = true,
         bool includePlaybackProgress = false, bool includeUnifiedTraktLists = true,
         bool includeRelaxedPendingActions = true, bool includeTraktPendingActions = true,
-        bool exhaustive = true)
+        bool includeCloudOnly = true, bool exhaustive = true)
     {
         var requiredTables = new[]
         {
@@ -982,6 +990,13 @@ public class DatabaseMigrator
             {
                 RequireTableColumns(connection, "movies", transaction, "custom_display_title");
                 RequireTableColumns(connection, "tv_shows", transaction, "custom_display_title");
+            }
+            if (includeCloudOnly)
+            {
+                RequireSchemaObject(connection, "index", "idx_movies_cloud_only", transaction);
+                RequireSchemaObject(connection, "index", "idx_tv_shows_cloud_only", transaction);
+                RequireTableColumns(connection, "movies", transaction, "is_cloud_only");
+                RequireTableColumns(connection, "tv_shows", transaction, "is_cloud_only");
             }
             EnsureForeignKeyIntegrity(connection, transaction, "Database schema");
         }

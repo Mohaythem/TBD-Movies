@@ -20,6 +20,7 @@ public interface IMovieRepository
     /// <summary>Sets the persisted "review match recommended" flag without touching metadata or timestamps.</summary>
     void SetReviewMatch(int id, bool value);
     void SetCustomDisplayTitle(int id, string? customDisplayTitle);
+    void SetCloudOnly(int id, bool isCloudOnly) { }
     void RecordOpened(int id, DateTimeOffset openedAt);
     void Delete(int id);
 }

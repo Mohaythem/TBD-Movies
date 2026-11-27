@@ -69,6 +69,12 @@ public sealed class UnitOfWorkMovieRepository(ICatalogUnitOfWorkFactory factory)
         return null;
     });
 
+    public void SetCloudOnly(int id, bool isCloudOnly) => Write<object?>(movies =>
+    {
+        movies.SetCloudOnly(id, isCloudOnly);
+        return null;
+    });
+
     public void Delete(int id) => Write<object?>(movies =>
     {
         movies.Delete(id);
@@ -182,6 +188,12 @@ public sealed class UnitOfWorkTvShowRepository(ICatalogUnitOfWorkFactory factory
     public void SetCustomDisplayTitle(int id, string? customDisplayTitle) => Write<object?>(shows =>
     {
         shows.SetCustomDisplayTitle(id, customDisplayTitle);
+        return null;
+    });
+
+    public void SetCloudOnly(int id, bool isCloudOnly) => Write<object?>(shows =>
+    {
+        shows.SetCloudOnly(id, isCloudOnly);
         return null;
     });
 

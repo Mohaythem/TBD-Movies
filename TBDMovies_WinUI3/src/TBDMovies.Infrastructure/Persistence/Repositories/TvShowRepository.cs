@@ -95,16 +95,25 @@ public sealed class TvShowRepository(SqliteConnection connection, SqliteTransact
         if (command.ExecuteNonQuery() != 1) throw new KeyNotFoundException($"TV show {id} was not found.");
     }
 
+    public void SetCloudOnly(int id, bool isCloudOnly)
+    {
+        if (id <= 0) throw new ArgumentOutOfRangeException(nameof(id));
+        using var command = Command("UPDATE tv_shows SET is_cloud_only = $v WHERE id = $id;");
+        command.Parameters.AddWithValue("$v", isCloudOnly ? 1 : 0);
+        command.Parameters.AddWithValue("$id", id);
+        command.ExecuteNonQuery();
+    }
+
     public IReadOnlyList<TvShow> ListAll()
     {
         using var command = Command(
-            $"SELECT {Columns} FROM tv_shows ORDER BY date_added DESC, id DESC;");
+            $"SELECT {Columns} FROM tv_shows WHERE is_cloud_only = 0 ORDER BY date_added DESC, id DESC;");
         return ReadMany(command);
     }
 
     public int CountAll()
     {
-        using var command = Command("SELECT COUNT(*) FROM tv_shows;");
+        using var command = Command("SELECT COUNT(*) FROM tv_shows WHERE is_cloud_only = 0;");
         return Convert.ToInt32(command.ExecuteScalar());
     }
 
@@ -128,6 +137,7 @@ public sealed class TvShowRepository(SqliteConnection connection, SqliteTransact
               FROM tv_shows sh
               LEFT JOIN tv_seasons s ON s.show_id = sh.id
               LEFT JOIN episode_availability e ON e.season_id = s.id
+             WHERE sh.is_cloud_only = 0
              GROUP BY sh.id
              ORDER BY sh.date_added DESC, sh.id DESC;
             """);

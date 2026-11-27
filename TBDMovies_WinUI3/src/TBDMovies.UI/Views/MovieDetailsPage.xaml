@@ -80,8 +80,6 @@
                         <Setter Target="HeroPosterColumn.Width" Value="340" />
                         <Setter Target="PosterSurface.Width" Value="340" />
                         <Setter Target="PosterSurface.Height" Value="510" />
-                        <Setter Target="PrimaryCommandsPanel.Orientation" Value="Horizontal" />
-                        <Setter Target="SecondaryCommandsPanel.Orientation" Value="Horizontal" />
                         <Setter Target="WatchCard.(Grid.Row)" Value="0" />
                         <Setter Target="WatchCard.(Grid.Column)" Value="0" />
                         <Setter Target="WatchCard.(Grid.ColumnSpan)" Value="1" />
@@ -103,8 +101,6 @@
                         <Setter Target="HeroPosterColumn.Width" Value="300" />
                         <Setter Target="PosterSurface.Width" Value="300" />
                         <Setter Target="PosterSurface.Height" Value="450" />
-                        <Setter Target="PrimaryCommandsPanel.Orientation" Value="Horizontal" />
-                        <Setter Target="SecondaryCommandsPanel.Orientation" Value="Horizontal" />
                         <Setter Target="WatchCard.(Grid.Row)" Value="0" />
                         <Setter Target="WatchCard.(Grid.Column)" Value="0" />
                         <Setter Target="WatchCard.(Grid.ColumnSpan)" Value="1" />
@@ -127,8 +123,6 @@
                         <Setter Target="GalleryPanel.MaxWidth" Value="220" />
                         <Setter Target="PosterSurface.Width" Value="220" />
                         <Setter Target="PosterSurface.Height" Value="330" />
-                        <Setter Target="PrimaryCommandsPanel.Orientation" Value="Vertical" />
-                        <Setter Target="SecondaryCommandsPanel.Orientation" Value="Horizontal" />
                         <Setter Target="WatchedDateControlsPanel.Orientation" Value="Vertical" />
                         <Setter Target="WatchCard.(Grid.Row)" Value="0" />
                         <Setter Target="WatchCard.(Grid.Column)" Value="0" />
@@ -247,70 +241,66 @@
                             </StackPanel>
                         </Border>
                         <controls:WrapPanel x:Name="CommandsPanel" Orientation="Horizontal" RowSpacing="8" ColumnSpacing="8" HorizontalAlignment="Left">
-                            <StackPanel x:Name="PrimaryCommandsPanel" Orientation="Horizontal" Spacing="8">
-                                <Button x:Name="PlayButton" Click="PlayButton_Click" Style="{StaticResource DetailsAccentButtonStyle}" MinHeight="40">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon x:Name="PlayGlyph" Glyph="&#xE768;" FontSize="16" VerticalAlignment="Center" />
-                                        <TextBlock x:Name="PlayText" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Button>
-                                <DropDownButton x:Name="AddToListButton" Style="{StaticResource DetailsButtonStyle}" MinHeight="40">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon Glyph="&#xE710;" FontSize="16" VerticalAlignment="Center" />
-                                        <TextBlock x:Name="AddToListText" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                    <DropDownButton.Flyout>
-                                        <MenuFlyout x:Name="AddToListFlyout" Opening="AddToListFlyout_Opening" Placement="BottomEdgeAlignedLeft" />
-                                    </DropDownButton.Flyout>
-                                </DropDownButton>
-                            </StackPanel>
-                            <controls:WrapPanel x:Name="SecondaryCommandsPanel" Orientation="Horizontal" RowSpacing="8" ColumnSpacing="8">
-                                <DropDownButton x:Name="MatchButton" Style="{StaticResource DetailsButtonStyle}" MinHeight="40">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon x:Name="MatchGlyph" VerticalAlignment="Center" FontSize="14" Glyph="&#xE72C;" />
-                                        <ProgressRing x:Name="MatchProgress" Width="14" Height="14" VerticalAlignment="Center" IsActive="False" Visibility="Collapsed" />
-                                        <TextBlock x:Name="MatchText" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                    <DropDownButton.Flyout>
-                                        <MenuFlyout Placement="BottomEdgeAlignedLeft">
-                                            <MenuFlyoutItem x:Name="RefreshMetadataMenuItem" Click="RefreshMetadataMenuItem_Click">
-                                                <MenuFlyoutItem.Icon>
-                                                    <FontIcon Glyph="&#xE72C;" />
-                                                </MenuFlyoutItem.Icon>
-                                            </MenuFlyoutItem>
-                                            <MenuFlyoutItem x:Name="ChangeMatchButton" Click="ChangeMatchButton_Click">
-                                                <MenuFlyoutItem.Icon>
-                                                    <FontIcon Glyph="&#xE721;" />
-                                                </MenuFlyoutItem.Icon>
-                                            </MenuFlyoutItem>
-                                        </MenuFlyout>
-                                    </DropDownButton.Flyout>
-                                </DropDownButton>
-                                <Button x:Name="FavoriteButton" Click="FavoriteButton_Click" Style="{StaticResource DetailsButtonStyle}" MinHeight="40">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon x:Name="FavoriteGlyph" VerticalAlignment="Center" FontSize="14" Glyph="&#xEB51;" />
-                                        <TextBlock x:Name="FavoriteText" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Button>
-                                <Button x:Name="WatchlistButton" Click="WatchlistButton_Click" Style="{StaticResource DetailsButtonStyle}" MinHeight="40">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon x:Name="WatchlistGlyph" VerticalAlignment="Center" FontSize="14" Glyph="&#xE8FD;" />
-                                        <TextBlock x:Name="WatchlistText" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Button>
-                                <Button x:Name="OpenOnTmdbButton" Click="OpenOnTmdbButton_Click" Style="{StaticResource DetailsButtonStyle}" MinHeight="40" Visibility="Collapsed">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon VerticalAlignment="Center" FontSize="14" Glyph="&#xE8A7;" />
-                                        <TextBlock x:Name="OpenOnTmdbText" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Button>
-                                <Button x:Name="OpenOnLetterboxdButton" Click="OpenOnLetterboxdButton_Click" Style="{StaticResource DetailsButtonStyle}" MinHeight="40" Visibility="Collapsed">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon VerticalAlignment="Center" FontSize="14" Glyph="&#xE8A7;" />
-                                        <TextBlock x:Name="OpenOnLetterboxdText" VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </Button>
-                            </controls:WrapPanel>
+                            <Button x:Name="PlayButton" Click="PlayButton_Click" Style="{StaticResource DetailsAccentButtonStyle}" MinHeight="40">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon x:Name="PlayGlyph" Glyph="&#xE768;" FontSize="16" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="PlayText" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <DropDownButton x:Name="AddToListButton" Style="{StaticResource DetailsButtonStyle}" MinHeight="40">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon Glyph="&#xE710;" FontSize="16" VerticalAlignment="Center" />
+                                    <TextBlock x:Name="AddToListText" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <DropDownButton.Flyout>
+                                    <MenuFlyout x:Name="AddToListFlyout" Opening="AddToListFlyout_Opening" Placement="BottomEdgeAlignedLeft" />
+                                </DropDownButton.Flyout>
+                            </DropDownButton>
+                            <DropDownButton x:Name="MatchButton" Style="{StaticResource DetailsButtonStyle}" MinHeight="40">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon x:Name="MatchGlyph" VerticalAlignment="Center" FontSize="14" Glyph="&#xE72C;" />
+                                    <ProgressRing x:Name="MatchProgress" Width="14" Height="14" VerticalAlignment="Center" IsActive="False" Visibility="Collapsed" />
+                                    <TextBlock x:Name="MatchText" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <DropDownButton.Flyout>
+                                    <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                                        <MenuFlyoutItem x:Name="RefreshMetadataMenuItem" Click="RefreshMetadataMenuItem_Click">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE72C;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem x:Name="ChangeMatchButton" Click="ChangeMatchButton_Click">
+                                            <MenuFlyoutItem.Icon>
+                                                <FontIcon Glyph="&#xE721;" />
+                                            </MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                    </MenuFlyout>
+                                </DropDownButton.Flyout>
+                            </DropDownButton>
+                            <Button x:Name="FavoriteButton" Click="FavoriteButton_Click" Style="{StaticResource DetailsButtonStyle}" MinHeight="40">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon x:Name="FavoriteGlyph" VerticalAlignment="Center" FontSize="14" Glyph="&#xEB51;" />
+                                    <TextBlock x:Name="FavoriteText" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="WatchlistButton" Click="WatchlistButton_Click" Style="{StaticResource DetailsButtonStyle}" MinHeight="40">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon x:Name="WatchlistGlyph" VerticalAlignment="Center" FontSize="14" Glyph="&#xE8FD;" />
+                                    <TextBlock x:Name="WatchlistText" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="OpenOnTmdbButton" Click="OpenOnTmdbButton_Click" Style="{StaticResource DetailsButtonStyle}" MinHeight="40" Visibility="Collapsed">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon VerticalAlignment="Center" FontSize="14" Glyph="&#xE8A7;" />
+                                    <TextBlock x:Name="OpenOnTmdbText" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button x:Name="OpenOnLetterboxdButton" Click="OpenOnLetterboxdButton_Click" Style="{StaticResource DetailsButtonStyle}" MinHeight="40" Visibility="Collapsed">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon VerticalAlignment="Center" FontSize="14" Glyph="&#xE8A7;" />
+                                    <TextBlock x:Name="OpenOnLetterboxdText" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
                         </controls:WrapPanel>
                     </StackPanel>
                 </Grid>

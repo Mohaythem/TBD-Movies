@@ -52,6 +52,8 @@ public interface ITvShowRepository
 
     void SetCustomDisplayTitle(int id, string? customDisplayTitle);
 
+    void SetCloudOnly(int id, bool isCloudOnly) { }
+
     void Delete(int id);
 }
 

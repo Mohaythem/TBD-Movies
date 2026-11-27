@@ -935,6 +935,7 @@ public class ImportService : IImportUiActions
         {
             uow.MediaFiles.LinkToMovie(fileId, existing.Id);
         }
+        uow.Movies.SetCloudOnly(existing.Id, false);
         uow.Commit();
 
         results[pending.ResultIndex] = results[pending.ResultIndex] with
@@ -1105,6 +1106,7 @@ public class ImportService : IImportUiActions
             && !string.IsNullOrWhiteSpace(candidate.ExternalId)
             ? uow.Movies.GetByExternalId(candidate.Provider, candidate.ExternalId) : null;
         movie ??= uow.Movies.Create(movieData, _clock());
+        uow.Movies.SetCloudOnly(movie.Id, false);
         var mediaFile = existingFile == null 
             ? uow.MediaFiles.Add(fileFacts, movie.Id)
             : uow.MediaFiles.LinkToMovie(existingFile.Id, movie.Id);
@@ -1281,7 +1283,11 @@ public class ImportService : IImportUiActions
         if (command.SelectedCandidate is { } candidate)
         {
             var providerOwner = uow.TvShows.GetByExternalId(candidate.Provider, candidate.ExternalId);
-            if (providerOwner is not null && providerOwner.Id != show?.Id)
+            if (providerOwner is not null && show is null && uow.TvSeasons.ListByShow(providerOwner.Id).Count == 0)
+            {
+                show = providerOwner;
+            }
+            else if (providerOwner is not null && providerOwner.Id != show?.Id)
                 throw new InvalidOperationException("The selected metadata belongs to another series. Select that existing series explicitly.");
             if (show?.Data.Provider is { } provider &&
                 (!string.Equals(provider, candidate.Provider, StringComparison.OrdinalIgnoreCase)
@@ -1292,6 +1298,7 @@ public class ImportService : IImportUiActions
         {
             show = uow.TvShows.Create(showData, now);
         }
+        uow.TvShows.SetCloudOnly(show.Id, false);
 
         uow.TvShows.RegisterAlias(show.Id, showData.SortTitle, now);
         if (originalAlias is not null) uow.TvShows.RegisterAlias(show.Id, originalAlias, now);

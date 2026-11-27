@@ -267,28 +267,54 @@ public sealed class ViewingActivityRepository(string connectionString, ILibraryR
         """;
 
     private const string RecentQuery = """
-        WITH ranked AS (
+        WITH resolved AS (
+            SELECT w.*,
+                   COALESCE(w.movie_id,
+                       CASE WHEN w.media_kind = 'MOVIE' AND TRIM(COALESCE(w.title_snapshot, '')) <> '' THEN (
+                           SELECT m2.id FROM movies m2
+                            WHERE m2.is_cloud_only = 0
+                              AND LOWER(TRIM(m2.title)) = LOWER(TRIM(w.title_snapshot))
+                              AND (w.year_snapshot IS NULL OR m2.year IS NULL OR m2.year = w.year_snapshot)
+                            ORDER BY m2.id DESC LIMIT 1
+                       ) ELSE NULL END) AS resolved_movie_id,
+                   COALESCE(w.episode_id,
+                       CASE WHEN w.media_kind = 'EPISODE'
+                             AND TRIM(COALESCE(w.show_title_snapshot, '')) <> ''
+                             AND w.season_number_snapshot IS NOT NULL
+                             AND w.episode_number_snapshot IS NOT NULL THEN (
+                           SELECT e2.id FROM tv_episodes e2
+                             JOIN tv_seasons se2 ON se2.id = e2.season_id
+                             JOIN tv_shows s2 ON s2.id = se2.show_id
+                            WHERE s2.is_cloud_only = 0
+                              AND LOWER(TRIM(s2.title)) = LOWER(TRIM(w.show_title_snapshot))
+                              AND se2.season_number = w.season_number_snapshot
+                              AND e2.episode_number = w.episode_number_snapshot
+                            ORDER BY e2.id DESC LIMIT 1
+                       ) ELSE NULL END) AS resolved_episode_id
+              FROM watch_events w
+        ),
+        ranked AS (
             SELECT w.*, ROW_NUMBER() OVER (
                 PARTITION BY CASE
                     WHEN w.media_kind = 'MOVIE' AND TRIM(COALESCE(NULLIF(m.title, ''), w.title_snapshot, '')) <> ''
                         THEN 'M:' || LOWER(TRIM(COALESCE(NULLIF(m.title, ''), w.title_snapshot, '')))
                              || ':' || COALESCE(CAST(COALESCE(m.year, w.year_snapshot) AS TEXT), '')
-                    WHEN w.media_kind = 'MOVIE' AND w.movie_id IS NOT NULL
-                        THEN 'MID:' || w.movie_id
+                    WHEN w.media_kind = 'MOVIE' AND w.resolved_movie_id IS NOT NULL
+                        THEN 'MID:' || w.resolved_movie_id
                     WHEN w.media_kind = 'EPISODE' AND TRIM(COALESCE(NULLIF(s.title, ''), w.show_title_snapshot, '')) <> ''
                         THEN 'S:' || LOWER(TRIM(COALESCE(NULLIF(s.title, ''), w.show_title_snapshot, '')))
                     WHEN w.media_kind = 'EPISODE' AND se.show_id IS NOT NULL
                         THEN 'SID:' || se.show_id
-                    WHEN w.media_kind = 'EPISODE' AND w.episode_id IS NOT NULL
-                        THEN 'EID:' || w.episode_id
+                    WHEN w.media_kind = 'EPISODE' AND w.resolved_episode_id IS NOT NULL
+                        THEN 'EID:' || w.resolved_episode_id
                     ELSE 'X:' || w.id END
                 ORDER BY julianday(w.watched_at) DESC, w.id DESC) AS viewing_rank
-              FROM watch_events w
-              LEFT JOIN movies m ON m.id = w.movie_id
-              LEFT JOIN tv_episodes e ON e.id = w.episode_id
+              FROM resolved w
+              LEFT JOIN movies m ON m.id = w.resolved_movie_id
+              LEFT JOIN tv_episodes e ON e.id = w.resolved_episode_id
               LEFT JOIN tv_seasons se ON se.id = e.season_id
               LEFT JOIN tv_shows s ON s.id = se.show_id)
-        SELECT w.id, w.media_kind, w.movie_id, w.episode_id, se.show_id,
+        SELECT w.id, w.media_kind, w.resolved_movie_id, w.resolved_episode_id, se.show_id,
                COALESCE(NULLIF(m.custom_display_title, ''), m.title, w.title_snapshot), COALESCE(m.year, w.year_snapshot),
                COALESCE(NULLIF(s.custom_display_title, ''), s.title, w.show_title_snapshot), COALESCE(se.season_number, w.season_number_snapshot),
                COALESCE(e.episode_number, w.episode_number_snapshot),
@@ -296,12 +322,12 @@ public sealed class ViewingActivityRepository(string connectionString, ILibraryR
                COALESCE(w.backdrop_reference, s.backdrop_path), COALESCE(w.poster_reference, m.poster_path, s.poster_path),
                w.watched_at, w.created_at,
                CASE WHEN w.media_kind = 'MOVIE' THEN
-                   EXISTS(SELECT 1 FROM media_files f WHERE f.movie_id = w.movie_id AND f.status = 'PRESENT')
+                   EXISTS(SELECT 1 FROM media_files f WHERE f.movie_id = w.resolved_movie_id AND f.status = 'PRESENT')
                ELSE EXISTS(SELECT 1 FROM episode_media_files ef JOIN media_files f ON f.id = ef.media_file_id
-                            WHERE ef.episode_id = w.episode_id AND f.status = 'PRESENT') END
+                            WHERE ef.episode_id = w.resolved_episode_id AND f.status = 'PRESENT') END
           FROM ranked w
-          LEFT JOIN movies m ON m.id = w.movie_id
-          LEFT JOIN tv_episodes e ON e.id = w.episode_id
+          LEFT JOIN movies m ON m.id = w.resolved_movie_id
+          LEFT JOIN tv_episodes e ON e.id = w.resolved_episode_id
           LEFT JOIN tv_seasons se ON se.id = e.season_id
           LEFT JOIN tv_shows s ON s.id = se.show_id
          WHERE w.viewing_rank = 1

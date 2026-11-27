@@ -254,7 +254,7 @@ public sealed class MovieRepository : IMovieRepository
 
     public IReadOnlyList<Movie> ListAll()
     {
-        using var command = Command($"SELECT {Columns} FROM movies ORDER BY date_added DESC, id DESC;");
+        using var command = Command($"SELECT {Columns} FROM movies WHERE is_cloud_only = 0 ORDER BY date_added DESC, id DESC;");
         return ReadMany(command);
     }
 
@@ -262,7 +262,7 @@ public sealed class MovieRepository : IMovieRepository
     {
         if (afterId < 0) throw new ArgumentOutOfRangeException(nameof(afterId));
         if (limit <= 0) throw new ArgumentOutOfRangeException(nameof(limit));
-        using var command = Command($"SELECT {Columns} FROM movies WHERE id > $after ORDER BY id LIMIT $limit;");
+        using var command = Command($"SELECT {Columns} FROM movies WHERE is_cloud_only = 0 AND id > $after ORDER BY id LIMIT $limit;");
         command.Parameters.AddWithValue("$after", afterId);
         command.Parameters.AddWithValue("$limit", limit);
         return ReadMany(command);
@@ -270,7 +270,7 @@ public sealed class MovieRepository : IMovieRepository
 
     public int CountAll()
     {
-        using var command = Command("SELECT COUNT(*) FROM movies;");
+        using var command = Command("SELECT COUNT(*) FROM movies WHERE is_cloud_only = 0;");
         return Convert.ToInt32(command.ExecuteScalar());
     }
 
@@ -287,6 +287,15 @@ public sealed class MovieRepository : IMovieRepository
         // concurrency snapshot.
         using var command = Command("UPDATE movies SET review_match = $v WHERE id = $id;");
         command.Parameters.AddWithValue("$v", value ? 1 : 0);
+        command.Parameters.AddWithValue("$id", id);
+        command.ExecuteNonQuery();
+    }
+
+    public void SetCloudOnly(int id, bool isCloudOnly)
+    {
+        if (id <= 0) throw new ArgumentOutOfRangeException(nameof(id));
+        using var command = Command("UPDATE movies SET is_cloud_only = $v WHERE id = $id;");
+        command.Parameters.AddWithValue("$v", isCloudOnly ? 1 : 0);
         command.Parameters.AddWithValue("$id", id);
         command.ExecuteNonQuery();
     }

@@ -43,13 +43,13 @@ public class LibraryMaintenanceRepository : ILibraryMaintenanceRepository
         if (Convert.ToInt32(cmd.ExecuteScalar()) != 0)
             throw new InvalidOperationException("An unresolved file operation must be completed before clearing the library.");
 
-        cmd.CommandText = "SELECT COUNT(*) FROM movies;";
+        cmd.CommandText = "SELECT COUNT(*) FROM movies WHERE is_cloud_only = 0;";
         var movies = Convert.ToInt32(cmd.ExecuteScalar());
         cmd.CommandText = "SELECT COUNT(*) FROM media_files;";
         var mediaFiles = Convert.ToInt32(cmd.ExecuteScalar());
         cmd.CommandText = "SELECT COUNT(*) FROM metadata_cache;";
         var metadata = Convert.ToInt32(cmd.ExecuteScalar());
-        cmd.CommandText = "SELECT COUNT(*) FROM tv_shows;";
+        cmd.CommandText = "SELECT COUNT(*) FROM tv_shows WHERE is_cloud_only = 0;";
         var shows = Convert.ToInt32(cmd.ExecuteScalar());
         cmd.CommandText = "SELECT COUNT(*) FROM tv_seasons;";
         var seasons = Convert.ToInt32(cmd.ExecuteScalar());
