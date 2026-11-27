@@ -57,7 +57,7 @@ public sealed class HomePageLayoutPolicyTests
 
         Assert.Equal(HomeLayoutState.ContinueWatching, withHistory.State);
         Assert.False(withHistory.ShowOnboarding);
-        Assert.True(withHistory.ShowStats);
+        Assert.False(withHistory.ShowStats);
         Assert.True(withHistory.ShowContinueShelf);
         Assert.False(withHistory.ShowWatchlistShelf);
         Assert.False(withHistory.ShowCompactStrip);
@@ -81,7 +81,7 @@ public sealed class HomePageLayoutPolicyTests
 
         Assert.Equal(HomeLayoutState.WatchlistPromoted, result.State);
         Assert.False(result.ShowOnboarding);
-        Assert.True(result.ShowStats);
+        Assert.False(result.ShowStats);
         Assert.False(result.ShowContinueShelf);
         Assert.True(result.ShowWatchlistShelf);
         Assert.False(result.ShowCompactStrip);
@@ -101,7 +101,7 @@ public sealed class HomePageLayoutPolicyTests
 
         Assert.Equal(HomeLayoutState.CompactStrip, result.State);
         Assert.False(result.ShowOnboarding);
-        Assert.True(result.ShowStats);
+        Assert.False(result.ShowStats);
         Assert.False(result.ShowContinueShelf);
         Assert.False(result.ShowWatchlistShelf);
         Assert.True(result.ShowCompactStrip);
@@ -131,8 +131,8 @@ public sealed class HomePageLayoutPolicyTests
         Assert.DoesNotContain("ContinueEmptyState", codeBehind, StringComparison.Ordinal);
         Assert.DoesNotContain("HistoryEmptyState", codeBehind, StringComparison.Ordinal);
 
-        // Full-width responsive stats container
-        Assert.Contains("x:Name=\"StatsContainer\" HorizontalAlignment=\"Stretch\"", xaml, StringComparison.Ordinal);
+        // Stats strip removed from HomePage
+        Assert.DoesNotContain("StatsContainer", xaml, StringComparison.Ordinal);
 
         // All 4-state sections present
         Assert.Contains("x:Name=\"OnboardingCard\"", xaml, StringComparison.Ordinal);

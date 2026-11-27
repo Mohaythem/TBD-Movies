@@ -108,7 +108,6 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         _shows = LoadShows();
         _history = LoadHistory();
         _watchlistMovies = LoadWatchlistMovies();
-        StatsRepeater.ItemsSource = BuildStats();
         _continueCards = BuildContinueWatching();
         _historyCards = BuildHistoryCards();
         ApplyAdaptiveLayoutState();
@@ -131,7 +130,6 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
     {
         _history = LoadHistory();
         _watchlistMovies = LoadWatchlistMovies();
-        StatsRepeater.ItemsSource = BuildStats();
         _continueCards = BuildContinueWatching();
         _historyCards = BuildHistoryCards();
         ApplyAdaptiveLayoutState();
@@ -337,7 +335,6 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
 
         UpdateGreetingText(layout.ShowOnboarding);
         OnboardingCard.Visibility = layout.ShowOnboarding ? Visibility.Visible : Visibility.Collapsed;
-        StatsContainer.Visibility = layout.ShowStats ? Visibility.Visible : Visibility.Collapsed;
         ContinueSection.Visibility = layout.ShowContinueShelf ? Visibility.Visible : Visibility.Collapsed;
         WatchlistSection.Visibility = layout.ShowWatchlistShelf ? Visibility.Visible : Visibility.Collapsed;
         CompactStripCard.Visibility = layout.ShowCompactStrip ? Visibility.Visible : Visibility.Collapsed;
@@ -491,94 +488,6 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         PageTitleText.Text = LocalizationService.Text(isEmptyLibrary ? "WelcomeFirstTime" : "WelcomeBack");
         PageSubtitleText.Text = LocalizationService.Text(isEmptyLibrary ? "YourLibraryEmpty" : "YourLibrary");
     }
-
-    private IReadOnlyList<StatCardRecord> BuildStats()
-    {
-        var onDisk = _shows.Sum(show => show.LocalEpisodeCount);
-        var watchedMovies = _movies.Count(m => m.Watched);
-        var totalEpisodes = _shows.Sum(s => s.EpisodeCount);
-        var watchedEpisodes = _shows.Sum(s => s.WatchedEpisodeCount);
-
-        // 1. Calculate Total Watch Time from watch history & media runtimes
-        var movieMinutes = _movies
-            .Where(m => m.Watched)
-            .Sum(m => ParseRuntimeMinutes(m.Runtime, defaultMinutes: 100));
-
-        var episodeMinutes = watchedEpisodes * 45;
-
-        var totalMinutes = movieMinutes + episodeMinutes;
-        if (totalMinutes == 0 && _history.Count > 0)
-        {
-            totalMinutes = _history.Sum(h => h.MediaKind == WatchEventMediaKind.Movie ? 100 : 45);
-        }
-
-        var totalHours = (int)Math.Round((double)totalMinutes / 60.0);
-        if (totalHours == 0 && totalMinutes > 0)
-        {
-            totalHours = 1;
-        }
-
-        var watchTimeText = LocalizationService.Digits(
-            LocalizationService.Format("StatWatchTimeHours", LocalizationService.Number(totalHours)));
-
-        // 2. Watched this month & completion rate
-        var now = DateTimeOffset.UtcNow;
-        var startOfMonth = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
-        var watchedThisMonth = _history.Count(item => item.WatchedAt >= startOfMonth);
-
-        var totalMedia = _movies.Count + totalEpisodes;
-        var watchedMedia = watchedMovies + watchedEpisodes;
-        var completionPercent = totalMedia > 0
-            ? (int)Math.Round((double)watchedMedia / totalMedia * 100.0)
-            : 0;
-
-        return new StatCardRecord[]
-        {
-            new(
-                LocalizationService.Text("StatMovies"),
-                Count(_movies.Count),
-                "\uE8B2",
-                LocalizationService.Format("StatMoviesWatchedFormat", watchedMovies)),
-            new(
-                LocalizationService.Text("StatShows"),
-                Count(_shows.Count),
-                "\uE7F4",
-                LocalizationService.Format("StatEpisodesCountFormat", totalEpisodes)),
-            new(
-                LocalizationService.Text("StatEpisodesOnDisk"),
-                Count(onDisk),
-                "\uEDA2",
-                LocalizationService.Text("StatEpisodesOnDiskSub")),
-            new(
-                LocalizationService.Text("StatWatchTime"),
-                watchTimeText,
-                "\uE823",
-                LocalizationService.Format("StatWatchedThisMonthFormat", watchedThisMonth)),
-            new(
-                LocalizationService.Text("StatCompletionRate"),
-                LocalizationService.Digits($"{LocalizationService.Number(completionPercent)}%"),
-                "\uE73E",
-                LocalizationService.Format("StatCompletionSubFormat", watchedMedia, totalMedia)),
-            new(
-                LocalizationService.Text("Watchlist"),
-                Count(_watchlistMovies.Count),
-                "\uE728",
-                LocalizationService.Text("StatInWatchlistSub")),
-        };
-    }
-
-    private static int ParseRuntimeMinutes(string? runtime, int defaultMinutes)
-    {
-        if (string.IsNullOrWhiteSpace(runtime)) return defaultMinutes;
-        var digits = new string(runtime.TakeWhile(char.IsDigit).ToArray());
-        if (int.TryParse(digits, NumberStyles.Integer, CultureInfo.InvariantCulture, out var minutes) && minutes > 0)
-        {
-            return minutes;
-        }
-        return defaultMinutes;
-    }
-
-    private static string Count(int value) => LocalizationService.Number(value);
 
     private void ContinueDetails_Click(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {

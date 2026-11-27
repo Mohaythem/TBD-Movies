@@ -74,7 +74,7 @@ public static class HomePageLayoutPolicy
         return new HomeLayoutVisibility(
             State: state,
             ShowOnboarding: false,
-            ShowStats: true,
+            ShowStats: false,
             ShowContinueShelf: state == HomeLayoutState.ContinueWatching,
             ShowWatchlistShelf: state == HomeLayoutState.WatchlistPromoted,
             ShowCompactStrip: state == HomeLayoutState.CompactStrip,

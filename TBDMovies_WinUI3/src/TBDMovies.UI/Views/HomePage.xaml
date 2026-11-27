@@ -191,46 +191,6 @@
                     </StackPanel>
                 </Border>
 
-                <!--
-                    Compact full-width responsive Stat Strip: sleek height with balanced MaxWidth on ultrawides.
-                -->
-                <Grid x:Name="StatsContainer" HorizontalAlignment="Stretch" Margin="0,0,4,0" Visibility="Collapsed">
-                    <ItemsRepeater x:Name="StatsRepeater">
-                        <ItemsRepeater.Layout>
-                            <UniformGridLayout
-                                ItemsStretch="Uniform"
-                                MaximumRowsOrColumns="6"
-                                MinColumnSpacing="10"
-                                MinItemHeight="72"
-                                MinItemWidth="148"
-                                MinRowSpacing="10" />
-                        </ItemsRepeater.Layout>
-                        <ItemsRepeater.ItemTemplate>
-                            <DataTemplate x:DataType="models:StatCardRecord">
-                                <Border Style="{StaticResource CardBorderStyle}" Padding="14,10">
-                                    <Grid ColumnSpacing="10" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <Border Width="34" Height="34" VerticalAlignment="Center"
-                                                Background="{ThemeResource ControlFillColorDefaultBrush}"
-                                                CornerRadius="{ThemeResource ControlCornerRadius}">
-                                            <FontIcon FontSize="17" Glyph="{x:Bind Glyph}"
-                                                      Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                        </Border>
-                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
-                                            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="{x:Bind Value}" />
-                                            <TextBlock Style="{StaticResource SecondaryCaptionTextStyle}" FontWeight="SemiBold" Text="{x:Bind Label}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
-                                            <TextBlock Style="{StaticResource TertiaryCaptionTextStyle}" Text="{x:Bind Subtitle}" Visibility="{x:Bind SubtitleVisibility}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsRepeater.ItemTemplate>
-                    </ItemsRepeater>
-                </Grid>
-
                 <!-- State 2: Continue Watching Shelf -->
                 <StackPanel x:Name="ContinueSection" Spacing="12" Visibility="Collapsed">
                     <Grid>
