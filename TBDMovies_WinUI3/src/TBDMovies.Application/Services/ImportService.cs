@@ -1283,7 +1283,7 @@ public class ImportService : IImportUiActions
         if (command.SelectedCandidate is { } candidate)
         {
             var providerOwner = uow.TvShows.GetByExternalId(candidate.Provider, candidate.ExternalId);
-            if (providerOwner is not null && show is null && uow.TvSeasons.ListByShow(providerOwner.Id).Count == 0)
+            if (providerOwner is not null && show is null && !uow.TvShows.ListAll().Any(s => s.Id == providerOwner.Id))
             {
                 show = providerOwner;
             }
