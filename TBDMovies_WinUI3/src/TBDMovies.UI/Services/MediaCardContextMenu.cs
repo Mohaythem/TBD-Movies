@@ -428,6 +428,36 @@ public static class MediaCardContextMenu
         };
         try { await ContentDialogCoordinator.ShowAsync(dialog); } catch { }
     }
+
+    private static int? ResolveTmdbId(int id, string? externalId, int? explicitTmdbId, bool isShow)
+    {
+        if (explicitTmdbId is > 0) return explicitTmdbId;
+        if (!string.IsNullOrWhiteSpace(externalId) && int.TryParse(externalId, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
+            return parsed;
+        if (id > 0 && AppServices.IsAvailable)
+            return isShow ? AppServices.GetShowTmdbId(id) : AppServices.GetMovieTmdbId(id);
+        return null;
+    }
+
+    private static void AddExternalLinks(MenuFlyout menu, bool isShow, int? tmdbId)
+    {
+        if (tmdbId is not > 0) return;
+
+        var tmdbItem = new MenuFlyoutItem { Text = LocalizationService.Text("OpenOnTmdb") };
+        var tmdbUrl = isShow
+            ? $"https://www.themoviedb.org/tv/{tmdbId.Value}"
+            : $"https://www.themoviedb.org/movie/{tmdbId.Value}";
+        tmdbItem.Click += (_, _) => _ = Windows.System.Launcher.LaunchUriAsync(new Uri(tmdbUrl));
+        menu.Items.Add(tmdbItem);
+
+        if (!isShow)
+        {
+            var lbItem = new MenuFlyoutItem { Text = LocalizationService.Text("OpenOnLetterboxd") };
+            var lbUrl = $"https://letterboxd.com/tmdb/{tmdbId.Value}";
+            lbItem.Click += (_, _) => _ = Windows.System.Launcher.LaunchUriAsync(new Uri(lbUrl));
+            menu.Items.Add(lbItem);
+        }
+    }
 }
 
 internal static class ArtworkViewer
@@ -484,36 +514,6 @@ internal static class ArtworkViewer
         root.Changed += rootChanged; image.ImageOpened += imageOpened; viewer.Opened += OnOpened;
         try { Resize(); viewer.ShowAt(owner); await closed.Task; }
         finally { root.Changed -= rootChanged; image.ImageOpened -= imageOpened; viewer.Opened -= OnOpened; }
-    }
-
-    private static int? ResolveTmdbId(int id, string? externalId, int? explicitTmdbId, bool isShow)
-    {
-        if (explicitTmdbId is > 0) return explicitTmdbId;
-        if (!string.IsNullOrWhiteSpace(externalId) && int.TryParse(externalId, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
-            return parsed;
-        if (id > 0 && AppServices.IsAvailable)
-            return isShow ? AppServices.GetShowTmdbId(id) : AppServices.GetMovieTmdbId(id);
-        return null;
-    }
-
-    private static void AddExternalLinks(MenuFlyout menu, bool isShow, int? tmdbId)
-    {
-        if (tmdbId is not > 0) return;
-
-        var tmdbItem = new MenuFlyoutItem { Text = LocalizationService.Text("OpenOnTmdb") };
-        var tmdbUrl = isShow
-            ? $"https://www.themoviedb.org/tv/{tmdbId.Value}"
-            : $"https://www.themoviedb.org/movie/{tmdbId.Value}";
-        tmdbItem.Click += (_, _) => _ = Windows.System.Launcher.LaunchUriAsync(new Uri(tmdbUrl));
-        menu.Items.Add(tmdbItem);
-
-        if (!isShow)
-        {
-            var lbItem = new MenuFlyoutItem { Text = LocalizationService.Text("OpenOnLetterboxd") };
-            var lbUrl = $"https://letterboxd.com/tmdb/{tmdbId.Value}";
-            lbItem.Click += (_, _) => _ = Windows.System.Launcher.LaunchUriAsync(new Uri(lbUrl));
-            menu.Items.Add(lbItem);
-        }
     }
 
     private static Style? FindStyle<T>(FrameworkElement owner, string key) where T : FrameworkElement

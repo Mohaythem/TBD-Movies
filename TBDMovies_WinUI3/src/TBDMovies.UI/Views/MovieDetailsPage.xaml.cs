@@ -305,9 +305,12 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
                     Genres = metadata.Genres is { IsDefaultOrEmpty: false } ? metadata.Genres : cloudMovie.Genres,
                     Runtime = metadata.RuntimeMinutes is > 0 ? $"{metadata.RuntimeMinutes.Value} min" : cloudMovie.Runtime,
                     Rating = metadata.Rating ?? cloudMovie.Rating,
-                    PosterReference = string.IsNullOrWhiteSpace(metadata.PosterReference) ? cloudMovie.PosterReference : metadata.PosterReference,
                     ExternalId = string.IsNullOrWhiteSpace(metadata.ExternalId) ? cloudMovie.ExternalId : metadata.ExternalId
                 };
+                if (!string.IsNullOrWhiteSpace(metadata.PosterReference))
+                {
+                    updated.UpdatePosterReference(metadata.PosterReference);
+                }
 
                 DispatcherQueue?.TryEnqueue(() =>
                 {

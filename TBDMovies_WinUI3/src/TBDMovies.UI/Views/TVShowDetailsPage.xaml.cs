@@ -328,7 +328,6 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
                             ? metadata.Title
                             : _show.Title,
                         CanonicalTitle = metadata.Title ?? _show.CanonicalTitle,
-                        OriginalTitle = metadata.OriginalTitle ?? _show.OriginalTitle,
                         Year = metadata.FirstAirYear ?? _show.Year,
                         Genres = metadata.Genres.Length > 0 ? metadata.Genres : _show.Genres,
                         Overview = metadata.Overview ?? _show.Overview,
