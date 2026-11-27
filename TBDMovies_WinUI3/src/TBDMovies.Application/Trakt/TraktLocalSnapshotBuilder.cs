@@ -236,71 +236,59 @@ public sealed class TraktLocalSnapshotBuilder : ITraktLocalSnapshotBuilder
         return TraktAvailability.Missing;
     }
 
-    private static TraktIdentity ParseMovieIdentity(Movie movie)
-    {
-        if (string.IsNullOrWhiteSpace(movie.Provider) || string.IsNullOrWhiteSpace(movie.ExternalId))
-            return new TraktIdentity(TraktMediaKind.Movie);
+    private const string ProviderTmdb = "tmdb";
+    private const string ProviderImdb = "imdb";
+    private const string ProviderTrakt = "trakt";
+    private const string ProviderTvdb = "tvdb";
 
-        var provider = movie.Provider.Trim().ToLowerInvariant();
-        var externalId = movie.ExternalId.Trim();
+    /// <summary>
+    /// The single provider-to-ids mapping for catalog rows. Only well-formed ids map; an
+    /// unparseable id for a numeric provider maps to null provider, meaning "identity unknown".
+    /// </summary>
+    private static (string? Provider, int? TmdbId, string? ImdbId, long? TraktId, int? TvdbId) MapProviderIds(string? providerRaw, string? externalIdRaw)
+    {
+        if (string.IsNullOrWhiteSpace(providerRaw) || string.IsNullOrWhiteSpace(externalIdRaw))
+        {
+            return (null, null, null, null, null);
+        }
+
+        var provider = providerRaw.Trim().ToLowerInvariant();
+        var externalId = externalIdRaw.Trim();
 
         return provider switch
         {
-            "tmdb" => int.TryParse(externalId, out var id) && id > 0
-                ? new TraktIdentity(TraktMediaKind.Movie, TmdbId: id)
-                : new TraktIdentity(TraktMediaKind.Movie),
-            "imdb" => new TraktIdentity(TraktMediaKind.Movie, ImdbId: externalId),
-            "trakt" => long.TryParse(externalId, out var id) && id > 0
-                ? new TraktIdentity(TraktMediaKind.Movie, TraktId: id)
-                : new TraktIdentity(TraktMediaKind.Movie),
-            "tvdb" => int.TryParse(externalId, out var id) && id > 0
-                ? new TraktIdentity(TraktMediaKind.Movie, TvdbId: id)
-                : new TraktIdentity(TraktMediaKind.Movie),
-            _ => new TraktIdentity(TraktMediaKind.Movie)
+            ProviderTmdb => int.TryParse(externalId, out var tmdb) && tmdb > 0 ? (ProviderTmdb, tmdb, null, null, null) : (null, null, null, null, null),
+            ProviderImdb => (ProviderImdb, null, externalId, null, null),
+            ProviderTrakt => long.TryParse(externalId, out var trakt) && trakt > 0 ? (ProviderTrakt, null, null, trakt, null) : (null, null, null, null, null),
+            ProviderTvdb => int.TryParse(externalId, out var tvdb) && tvdb > 0 ? (ProviderTvdb, null, null, null, tvdb) : (null, null, null, null, null),
+            _ => (null, null, null, null, null)
         };
+    }
+
+    private static TraktIdentity ParseMovieIdentity(Movie movie)
+    {
+        var mapped = MapProviderIds(movie.Provider, movie.ExternalId);
+        return new TraktIdentity(
+            TraktMediaKind.Movie,
+            TmdbId: mapped.TmdbId,
+            ImdbId: mapped.ImdbId,
+            TraktId: mapped.TraktId,
+            TvdbId: mapped.TvdbId);
     }
 
     private static TraktIdentity ParseShowIdentity(TvShow show)
     {
-        if (string.IsNullOrWhiteSpace(show.Provider) || string.IsNullOrWhiteSpace(show.ExternalId))
-            return new TraktIdentity(TraktMediaKind.Show);
-
-        var provider = show.Provider.Trim().ToLowerInvariant();
-        var externalId = show.ExternalId.Trim();
-
-        return provider switch
-        {
-            "tmdb" => int.TryParse(externalId, out var id) && id > 0
-                ? new TraktIdentity(TraktMediaKind.Show, TmdbId: id)
-                : new TraktIdentity(TraktMediaKind.Show),
-            "imdb" => new TraktIdentity(TraktMediaKind.Show, ImdbId: externalId),
-            "trakt" => long.TryParse(externalId, out var id) && id > 0
-                ? new TraktIdentity(TraktMediaKind.Show, TraktId: id)
-                : new TraktIdentity(TraktMediaKind.Show),
-            "tvdb" => int.TryParse(externalId, out var id) && id > 0
-                ? new TraktIdentity(TraktMediaKind.Show, TvdbId: id)
-                : new TraktIdentity(TraktMediaKind.Show),
-            _ => new TraktIdentity(TraktMediaKind.Show)
-        };
+        var mapped = MapProviderIds(show.Provider, show.ExternalId);
+        return new TraktIdentity(
+            TraktMediaKind.Show,
+            TmdbId: mapped.TmdbId,
+            ImdbId: mapped.ImdbId,
+            TraktId: mapped.TraktId,
+            TvdbId: mapped.TvdbId);
     }
 
-    private static (string? Provider, int? TmdbId, string? ImdbId, long? TraktId, int? TvdbId) GetShowProviderInfo(TvShow show)
-    {
-        if (string.IsNullOrWhiteSpace(show.Provider) || string.IsNullOrWhiteSpace(show.ExternalId))
-            return (null, null, null, null, null);
-
-        var provider = show.Provider.Trim().ToLowerInvariant();
-        var externalId = show.ExternalId.Trim();
-
-        return provider switch
-        {
-            "tmdb" => int.TryParse(externalId, out var id) && id > 0 ? ("tmdb", id, null, null, null) : (null, null, null, null, null),
-            "imdb" => ("imdb", null, externalId, null, null),
-            "trakt" => long.TryParse(externalId, out var id) && id > 0 ? ("trakt", null, null, id, null) : (null, null, null, null, null),
-            "tvdb" => int.TryParse(externalId, out var id) && id > 0 ? ("tvdb", null, null, null, id) : (null, null, null, null, null),
-            _ => (null, null, null, null, null)
-        };
-    }
+    private static (string? Provider, int? TmdbId, string? ImdbId, long? TraktId, int? TvdbId) GetShowProviderInfo(TvShow show) =>
+        MapProviderIds(show.Provider, show.ExternalId);
 
     private static TraktIdentity BuildSeasonIdentity(
         (string? Provider, int? TmdbId, string? ImdbId, long? TraktId, int? TvdbId) showInfo,
@@ -310,7 +298,7 @@ public sealed class TraktLocalSnapshotBuilder : ITraktLocalSnapshotBuilder
 
         // Lineage verification: in TBDMovies, only the TMDB enrich path stores external_id on seasons.
         // Direct season external ID is never inferred from TVDB, IMDb, or Trakt show providers.
-        if (string.Equals(showInfo.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(season.ExternalId))
+        if (string.Equals(showInfo.Provider, ProviderTmdb, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(season.ExternalId))
         {
             if (int.TryParse(season.ExternalId.Trim(), out var id) && id > 0)
             {
@@ -337,7 +325,7 @@ public sealed class TraktLocalSnapshotBuilder : ITraktLocalSnapshotBuilder
 
         // Lineage verification: in TBDMovies, only the TMDB enrich path stores external_id on episodes.
         // Direct episode external ID is never inferred from TVDB, IMDb, or Trakt show providers.
-        if (string.Equals(showInfo.Provider, "tmdb", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(episode.ExternalId))
+        if (string.Equals(showInfo.Provider, ProviderTmdb, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(episode.ExternalId))
         {
             if (int.TryParse(episode.ExternalId.Trim(), out var id) && id > 0)
             {
