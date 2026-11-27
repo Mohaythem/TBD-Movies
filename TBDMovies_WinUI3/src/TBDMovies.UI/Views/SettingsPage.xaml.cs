@@ -5,6 +5,7 @@ using TBDMovies.Application.Diagnostics;
 using TBDMovies.UI.Models;
 using TBDMovies.Application.External;
 using TBDMovies.Application.Trakt;
+using TBDMovies.Application.Configuration;
 using TBDMovies.UI.Services;
 using UiLanguage = TBDMovies.Domain.Configuration.UiLanguage;
 using Microsoft.UI.Xaml;
@@ -247,8 +248,8 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
                 _ => 0
             };
             CustomPlayerPanel.Visibility = playerType == TBDMovies.Domain.Playback.MediaPlayerType.Custom ? Visibility.Visible : Visibility.Collapsed;
-            CustomPlayerPathBox.Text = AppServices.SettingsStore.Get("playback_player_custom_path") ?? string.Empty;
-            CustomPlayerArgsBox.Text = AppServices.SettingsStore.Get("playback_player_custom_args") ?? string.Empty;
+            CustomPlayerPathBox.Text = AppServices.SettingsStore.Get(SettingsKeys.PlaybackPlayerCustomPath) ?? string.Empty;
+            CustomPlayerArgsBox.Text = AppServices.SettingsStore.Get(SettingsKeys.PlaybackPlayerCustomArgs) ?? string.Empty;
         }
         _isSyncing = false;
     }

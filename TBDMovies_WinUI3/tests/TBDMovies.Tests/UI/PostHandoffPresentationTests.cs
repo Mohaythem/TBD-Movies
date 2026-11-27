@@ -121,7 +121,8 @@ public sealed class PostHandoffPresentationTests
         Assert.Contains("deferStartupSecretReclaim: true", appServices, StringComparison.Ordinal);
         Assert.Contains("WindowsSubDlCredentialStore.MigrateLegacyPlaintext(", appServices, StringComparison.Ordinal);
         Assert.Contains("SettingsService.CompleteStartupSecretReclaim(", appServices, StringComparison.Ordinal);
-        Assert.Contains("security_l6_baseline_vacuumed", appServices, StringComparison.Ordinal);
+        var settingsKeys = File.ReadAllText(Path.Combine(UiRoot, "..", "TBDMovies.Application", "Configuration", "SettingsKeys.cs"));
+        Assert.Contains("security_l6_baseline_vacuumed", settingsKeys, StringComparison.Ordinal);
         Assert.DoesNotContain("FolderWatcher", appServices, StringComparison.Ordinal);
         Assert.DoesNotContain("SmartRelink", appServices, StringComparison.Ordinal);
     }

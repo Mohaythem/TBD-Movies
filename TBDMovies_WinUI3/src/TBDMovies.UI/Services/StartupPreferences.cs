@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using TBDMovies.Application.Diagnostics;
+using TBDMovies.Application.Configuration;
 using UiLanguage = TBDMovies.Domain.Configuration.UiLanguage;
 
 namespace TBDMovies.UI.Services;
@@ -93,7 +94,7 @@ internal static class StartupPreferences
             conn.Open();
 
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT key, value FROM settings WHERE key IN ('ui_theme', 'ui_language');";
+            cmd.CommandText = $"SELECT key, value FROM settings WHERE key IN ('{SettingsKeys.UiTheme}', '{SettingsKeys.UiLanguage}');";
             using var reader = cmd.ExecuteReader();
 
             string? themeVal = null;
@@ -103,11 +104,11 @@ internal static class StartupPreferences
             {
                 var key = reader.IsDBNull(0) ? null : reader.GetString(0);
                 var val = reader.IsDBNull(1) ? null : reader.GetString(1);
-                if (string.Equals(key, "ui_theme", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(key, SettingsKeys.UiTheme, StringComparison.OrdinalIgnoreCase))
                 {
                     themeVal = val;
                 }
-                else if (string.Equals(key, "ui_language", StringComparison.OrdinalIgnoreCase))
+                else if (string.Equals(key, SettingsKeys.UiLanguage, StringComparison.OrdinalIgnoreCase))
                 {
                     langVal = val;
                 }

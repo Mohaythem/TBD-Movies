@@ -1,4 +1,5 @@
 using TBDMovies.Application.Contracts;
+using TBDMovies.Application.Configuration;
 using TBDMovies.Application.Diagnostics;
 using TBDMovies.Application.External;
 using TBDMovies.Application.Repositories;
@@ -203,7 +204,7 @@ internal static class AppServices
             if (store is null) return (TraktDefaults.OfficialClientId, TraktDefaults.DefaultRedirectUri);
             try
             {
-                var json = store.Get("trakt_api_config");
+                var json = store.Get(SettingsKeys.TraktApiConfig);
                 if (!string.IsNullOrWhiteSpace(json))
                 {
                     var dto = JsonSerializer.Deserialize<TraktConfigDto>(json, TraktJsonOptions);
@@ -584,8 +585,6 @@ internal static class AppServices
     private static DateTimeOffset _lastFailure = DateTimeOffset.MinValue;
 
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(2);
-    // [L6] Baseline key ("security_l6_baseline_vacuumed") hosted on SettingsService.SecurityL6BaselineVacuumedKey.
-    internal const string SecurityL6BaselineVacuumedKey = "security_l6_baseline_vacuumed";
 
     /// <summary>
     /// Opens and migrates the database, then builds the services. Safe to call repeatedly.
@@ -995,7 +994,7 @@ internal static class AppServices
             {
                 ObjectDisposedException.ThrowIf(_closed, typeof(AppServices));
                 cancellationToken.ThrowIfCancellationRequested();
-                Require(_settingsRepository).Set("trakt_api_config", json, DateTimeOffset.UtcNow);
+                Require(_settingsRepository).Set(SettingsKeys.TraktApiConfig, json, DateTimeOffset.UtcNow);
                 oldSync = _traktSyncService;
                 oldAuth = _traktAuthClient;
                 oldData = _traktDataClient;
@@ -1045,7 +1044,7 @@ internal static class AppServices
                 isolatedProfileRoot: GetTestDataRoot(),
                 settings: settingsRepository);
 
-            var configJson = settingsRepository.Get("trakt_api_config");
+            var configJson = settingsRepository.Get(SettingsKeys.TraktApiConfig);
             string? trimmedClientId = null;
             string? trimmedRedirectUri = null;
 
@@ -1069,7 +1068,7 @@ internal static class AppServices
                     try
                     {
                         var json = JsonSerializer.Serialize(new TraktConfigDto(trimmedClientId, trimmedRedirectUri));
-                        settingsRepository.Set("trakt_api_config", json, DateTimeOffset.UtcNow);
+                        settingsRepository.Set(SettingsKeys.TraktApiConfig, json, DateTimeOffset.UtcNow);
                     }
                     catch (Exception ex)
                     {

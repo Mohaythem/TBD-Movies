@@ -10,12 +10,12 @@ namespace TBDMovies.Application.Services;
 
 public sealed class SettingsService : ISettingsUiActions
 {
-    public const string SecurityVacuumPendingKey = "security_vacuum_pending";
-    public const string SecurityL6BaselineVacuumedKey = "security_l6_baseline_vacuumed";
-    public const string LegacyTmdbPlaintextKey = "tmdb_read_access_token";
-    public const string LegacySubDlPlaintextKey = "subdl_api_key";
-    public const string LegacyTmdbDpapiKey = "tmdb_credential_dpapi";
-    public const string LegacyTraktDpapiKey = "trakt_credential_dpapi";
+    public const string SecurityVacuumPendingKey = Configuration.SettingsKeys.SecurityVacuumPending;
+    public const string SecurityL6BaselineVacuumedKey = Configuration.SettingsKeys.SecurityL6BaselineVacuumed;
+    public const string LegacyTmdbPlaintextKey = Configuration.SettingsKeys.LegacyTmdbReadAccessToken;
+    public const string LegacySubDlPlaintextKey = Configuration.SettingsKeys.LegacySubDlApiKey;
+    public const string LegacyTmdbDpapiKey = Configuration.SettingsKeys.LegacyTmdbDpapiCredential;
+    public const string LegacyTraktDpapiKey = Configuration.SettingsKeys.LegacyTraktDpapiCredential;
 
     private readonly ILibraryMaintenanceRepository _maintenanceRepository;
     private readonly IPosterCacheMaintenance? _posterCache;
@@ -996,7 +996,7 @@ public sealed class SettingsService : ISettingsUiActions
 
     public UiLanguage CurrentUiLanguage()
     {
-        var raw = _settings?.Get("ui_language");
+        var raw = _settings?.Get(Configuration.SettingsKeys.UiLanguage);
         if (string.IsNullOrWhiteSpace(raw))
         {
             return UiLanguage.English;
@@ -1017,11 +1017,11 @@ public sealed class SettingsService : ISettingsUiActions
     public UiLanguage SetUiLanguage(UiLanguage language)
     {
         if (!Enum.IsDefined(language)) throw new ArgumentOutOfRangeException(nameof(language));
-        _settings?.Set("ui_language", language == UiLanguage.Arabic ? "ar" : "en", _clock());
+        _settings?.Set(Configuration.SettingsKeys.UiLanguage, language == UiLanguage.Arabic ? "ar" : "en", _clock());
         return language;
     }
 
-    public UiTheme CurrentUiTheme() => (_settings?.Get("ui_theme"))?.Trim().ToLowerInvariant() switch
+    public UiTheme CurrentUiTheme() => (_settings?.Get(Configuration.SettingsKeys.UiTheme))?.Trim().ToLowerInvariant() switch
     {
         "dark" or "charcoal" => UiTheme.Dark,
         "light" or "light_blue" => UiTheme.Light,
@@ -1033,7 +1033,7 @@ public sealed class SettingsService : ISettingsUiActions
     {
         if (!Enum.IsDefined(theme)) throw new ArgumentOutOfRangeException(nameof(theme));
         var normalized = theme == UiTheme.Main ? UiTheme.Slate : theme;
-        _settings?.Set("ui_theme", normalized.ToString().ToLowerInvariant(), _clock());
+        _settings?.Set(Configuration.SettingsKeys.UiTheme, normalized.ToString().ToLowerInvariant(), _clock());
         return normalized;
     }
 }

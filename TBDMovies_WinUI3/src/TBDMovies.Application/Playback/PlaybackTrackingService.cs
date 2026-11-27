@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using TBDMovies.Application.Configuration;
 using TBDMovies.Application.Repositories;
 using TBDMovies.Application.Trakt;
 using TBDMovies.Domain.Playback;
@@ -106,8 +107,8 @@ public sealed class PlaybackTrackingService
             const double startPosition = 0.0;
 
             var playerType = ResolvePlayerType();
-            var customPath = _settingsRepository?.Get("playback_player_custom_path");
-            var customArgs = _settingsRepository?.Get("playback_player_custom_args");
+            var customPath = _settingsRepository?.Get(SettingsKeys.PlaybackPlayerCustomPath);
+            var customArgs = _settingsRepository?.Get(SettingsKeys.PlaybackPlayerCustomArgs);
 
             ActivePlaybackSession? existingSession;
             lock (_sessionLock)
@@ -466,7 +467,7 @@ public sealed class PlaybackTrackingService
 
     public MediaPlayerType ResolvePlayerType()
     {
-        var raw = _settingsRepository?.Get("playback_player_type")?.Trim().ToLowerInvariant();
+        var raw = _settingsRepository?.Get(SettingsKeys.PlaybackPlayerType)?.Trim().ToLowerInvariant();
         return raw switch
         {
             "vlc" => MediaPlayerType.Vlc,
@@ -487,27 +488,27 @@ public sealed class PlaybackTrackingService
             MediaPlayerType.Custom => "custom",
             _ => "default"
         };
-        _settingsRepository?.Set("playback_player_type", key, _clock());
+        _settingsRepository?.Set(SettingsKeys.PlaybackPlayerType, key, _clock());
     }
 
     public void SetCustomPlayerConfig(string? path, string? args)
     {
         if (string.IsNullOrWhiteSpace(path))
         {
-            _settingsRepository?.Delete("playback_player_custom_path");
+            _settingsRepository?.Delete(SettingsKeys.PlaybackPlayerCustomPath);
         }
         else
         {
-            _settingsRepository?.Set("playback_player_custom_path", path.Trim(), _clock());
+            _settingsRepository?.Set(SettingsKeys.PlaybackPlayerCustomPath, path.Trim(), _clock());
         }
 
         if (string.IsNullOrWhiteSpace(args))
         {
-            _settingsRepository?.Delete("playback_player_custom_args");
+            _settingsRepository?.Delete(SettingsKeys.PlaybackPlayerCustomArgs);
         }
         else
         {
-            _settingsRepository?.Set("playback_player_custom_args", args.Trim(), _clock());
+            _settingsRepository?.Set(SettingsKeys.PlaybackPlayerCustomArgs, args.Trim(), _clock());
         }
     }
 }

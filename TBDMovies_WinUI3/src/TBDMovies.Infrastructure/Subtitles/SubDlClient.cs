@@ -11,7 +11,6 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using TBDMovies.Application.Subtitles;
-using TBDMovies.Application.Subtitles;
 
 namespace TBDMovies.Infrastructure.Subtitles;
 

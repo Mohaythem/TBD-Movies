@@ -14,7 +14,7 @@ namespace TBDMovies.Infrastructure.Security;
 /// </summary>
 public sealed class WindowsTraktCredentialStore : ITraktCredentialStore
 {
-    public const string LegacyDpapiSettingsKey = "trakt_credential_dpapi";
+    public const string LegacyDpapiSettingsKey = TBDMovies.Application.Configuration.SettingsKeys.LegacyTraktDpapiCredential;
     private const string LegacyLiveTargetBase64 = "RHJvcFNvcnQvVHJha3Q=";
     private const string LegacyQaPrefixBase64 = "RHJvcFNvcnQvVHJha3QvUUEv";
     private static readonly byte[] Entropy = "TBDMovies.Trakt.DPAPI.Entropy.v1"u8.ToArray();

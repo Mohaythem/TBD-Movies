@@ -9,7 +9,7 @@ namespace TBDMovies.Infrastructure.Security;
 /// <summary>One generic credential in the current Windows user's native credential set.</summary>
 public sealed class WindowsTmdbCredentialStore : ITmdbCredentialStore
 {
-    public const string LegacyDpapiSettingsKey = "tmdb_credential_dpapi";
+    public const string LegacyDpapiSettingsKey = TBDMovies.Application.Configuration.SettingsKeys.LegacyTmdbDpapiCredential;
     private const string LegacyLiveTargetBase64 = "RHJvcFNvcnQvVE1EQg==";
     private const string LegacyQaPrefixBase64 = "RHJvcFNvcnQvVE1EQi9RQS8=";
     private static readonly byte[] Entropy = "TBDMovies.Tmdb.DPAPI.Entropy.v1"u8.ToArray();
