@@ -32,12 +32,14 @@ public static class MediaCardContextMenu
                 case LibraryCardItem card when card.Movie is { } movie: BuildMovieMenu(menu, owner, movie, horizontalMovies, onChanged, removeFromList); break;
                 case LibraryCardItem card when card.Show is { } show:
                     AddImageItem(menu, owner, card.PosterSource, card.Title);
-                    BuildShowActions(menu, owner, show, onChanged);
+                    AddExternalLinks(menu, isShow: true, ResolveTmdbId(show.Id, show.ExternalId, null, isShow: true));
+                    if (show.Id > 0) BuildShowActions(menu, owner, show, onChanged);
                     AddRemove(menu, removeFromList); break;
-                case ListMediaItem list when list.Movie is { } movie: BuildMovieMenu(menu, owner, movie, horizontalMovies, onChanged, removeFromList); break;
+                case ListMediaItem list when list.Movie is { } movie: BuildMovieMenu(menu, owner, movie, horizontalMovies, onChanged, removeFromList, list.TmdbId); break;
                 case ListMediaItem list when list.Show is { } show:
                     AddImageItem(menu, owner, list.PosterSource, list.Title);
-                    BuildShowActions(menu, owner, show, onChanged);
+                    AddExternalLinks(menu, isShow: true, ResolveTmdbId(show.Id, show.ExternalId, list.TmdbId, isShow: true));
+                    if (show.Id > 0) BuildShowActions(menu, owner, show, onChanged);
                     AddRemove(menu, removeFromList); break;
                 case HomeActivityCard activity: BuildActivityMenu(menu, owner, activity, onChanged); break;
                 case WatchHistoryCardRecord history: BuildHistoryMenu(menu, owner, history, onChanged); break;
@@ -78,9 +80,10 @@ public static class MediaCardContextMenu
     }
 
     private static void BuildMovieMenu(MenuFlyout menu, FrameworkElement owner, MovieRecord movie,
-        bool horizontal, Action? changed, Action? remove)
+        bool horizontal, Action? changed, Action? remove, int? explicitTmdbId = null)
     {
         AddImageItem(menu, owner, horizontal ? movie.HorizontalArtworkSource ?? movie.PosterSource : movie.PosterSource, movie.Title);
+        AddExternalLinks(menu, isShow: false, ResolveTmdbId(movie.Id, movie.ExternalId, explicitTmdbId, isShow: false));
         if (movie.Id <= 0)
         {
             AddRemove(menu, remove);
@@ -126,6 +129,7 @@ public static class MediaCardContextMenu
     {
         var show = card.Show;
         AddImageItem(menu, owner, horizontal ? card.HorizontalArtworkSource ?? card.PosterSource : card.PosterSource, card.Title);
+        AddExternalLinks(menu, isShow: true, ResolveTmdbId(show.Id, show.ExternalId, null, isShow: true));
         if (show.Id <= 0)
         {
             AddRemove(menu, remove);
@@ -169,6 +173,7 @@ public static class MediaCardContextMenu
         AddImageItem(menu, owner, card.ArtworkSource ?? card.PosterSource, card.Title);
         if (card.MovieId is int movieId)
         {
+            AddExternalLinks(menu, isShow: false, ResolveTmdbId(movieId, null, null, isShow: false));
             try
             {
                 var movie = AppServices.Library.GetMovieItem(movieId);
@@ -178,6 +183,7 @@ public static class MediaCardContextMenu
         }
         else if (card.ShowId is int showId)
         {
+            AddExternalLinks(menu, isShow: true, ResolveTmdbId(showId, null, null, isShow: true));
             try
             {
                 var show = AppServices.Tv.GetShowDetails(showId);
@@ -193,6 +199,7 @@ public static class MediaCardContextMenu
         if (!card.IsAvailable) return;
         if (card.MediaKind == WatchEventMediaKind.Movie && card.MovieId is int movieId)
         {
+            AddExternalLinks(menu, isShow: false, ResolveTmdbId(movieId, null, null, isShow: false));
             try
             {
                 var movie = AppServices.Library.GetMovieItem(movieId);
@@ -202,6 +209,7 @@ public static class MediaCardContextMenu
         }
         else if (card.MediaKind == WatchEventMediaKind.Episode && card.ShowId is int showId)
         {
+            AddExternalLinks(menu, isShow: true, ResolveTmdbId(showId, null, null, isShow: true));
             try
             {
                 var show = AppServices.Tv.GetShowDetails(showId);
@@ -476,6 +484,36 @@ internal static class ArtworkViewer
         root.Changed += rootChanged; image.ImageOpened += imageOpened; viewer.Opened += OnOpened;
         try { Resize(); viewer.ShowAt(owner); await closed.Task; }
         finally { root.Changed -= rootChanged; image.ImageOpened -= imageOpened; viewer.Opened -= OnOpened; }
+    }
+
+    private static int? ResolveTmdbId(int id, string? externalId, int? explicitTmdbId, bool isShow)
+    {
+        if (explicitTmdbId is > 0) return explicitTmdbId;
+        if (!string.IsNullOrWhiteSpace(externalId) && int.TryParse(externalId, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed) && parsed > 0)
+            return parsed;
+        if (id > 0 && AppServices.IsAvailable)
+            return isShow ? AppServices.GetShowTmdbId(id) : AppServices.GetMovieTmdbId(id);
+        return null;
+    }
+
+    private static void AddExternalLinks(MenuFlyout menu, bool isShow, int? tmdbId)
+    {
+        if (tmdbId is not > 0) return;
+
+        var tmdbItem = new MenuFlyoutItem { Text = LocalizationService.Text("OpenOnTmdb") };
+        var tmdbUrl = isShow
+            ? $"https://www.themoviedb.org/tv/{tmdbId.Value}"
+            : $"https://www.themoviedb.org/movie/{tmdbId.Value}";
+        tmdbItem.Click += (_, _) => _ = Windows.System.Launcher.LaunchUriAsync(new Uri(tmdbUrl));
+        menu.Items.Add(tmdbItem);
+
+        if (!isShow)
+        {
+            var lbItem = new MenuFlyoutItem { Text = LocalizationService.Text("OpenOnLetterboxd") };
+            var lbUrl = $"https://letterboxd.com/tmdb/{tmdbId.Value}";
+            lbItem.Click += (_, _) => _ = Windows.System.Launcher.LaunchUriAsync(new Uri(lbUrl));
+            menu.Items.Add(lbItem);
+        }
     }
 
     private static Style? FindStyle<T>(FrameworkElement owner, string key) where T : FrameworkElement

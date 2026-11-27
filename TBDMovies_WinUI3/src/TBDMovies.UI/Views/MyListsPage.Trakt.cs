@@ -323,10 +323,13 @@ public sealed partial class MyListsPage
             }
         }
 
+        int? tmdbInt = tmdbId is > 0 and <= int.MaxValue ? (int)tmdbId.Value : null;
+        string? externalId = tmdbInt?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
         if (isShow)
         {
-            var placeholderShow = new TVShowRecord(0, displayTitle, year ?? 0, [], string.Empty, [], null, posterRef);
-            return new ListMediaItem(placeholderShow, showLocalBadge: true, isLocal: false, localBadgeText: LocalizationService.Text("Unavailable"));
+            var placeholderShow = new TVShowRecord(0, displayTitle, year ?? 0, [], string.Empty, [], null, posterRef, ExternalId: externalId);
+            return new ListMediaItem(placeholderShow, showLocalBadge: true, isLocal: false, localBadgeText: LocalizationService.Text("Unavailable"), tmdbId: tmdbInt);
         }
 
         var placeholderMovie = new MovieRecord(
@@ -338,9 +341,10 @@ public sealed partial class MyListsPage
             [],
             string.Empty,
             HasLocalFile: false,
-            PosterReference: posterRef);
+            PosterReference: posterRef,
+            ExternalId: externalId);
 
-        return new ListMediaItem(placeholderMovie, showLocalBadge: true, isLocal: false, localBadgeText: LocalizationService.Text("Unavailable"));
+        return new ListMediaItem(placeholderMovie, showLocalBadge: true, isLocal: false, localBadgeText: LocalizationService.Text("Unavailable"), tmdbId: tmdbInt);
     }
 
     private static WatchHistoryCardRecord CreateHistoryCardFromTrakt(
@@ -468,6 +472,28 @@ public sealed partial class MyListsPage
         var eventId = checked((int)(item.HistoryId % int.MaxValue));
         var mediaKind = isEpisode ? WatchEventMediaKind.Episode : WatchEventMediaKind.Movie;
 
+        int? parsedYear = null;
+        if (!isEpisode &&
+            item.RawElement.ValueKind == JsonValueKind.Object &&
+            item.RawElement.TryGetProperty("movie", out var movieObjForYear) &&
+            movieObjForYear.ValueKind == JsonValueKind.Object &&
+            movieObjForYear.TryGetProperty("year", out var yPropForYear) &&
+            yPropForYear.ValueKind == JsonValueKind.Number &&
+            yPropForYear.TryGetInt32(out var yVal))
+        {
+            parsedYear = yVal;
+        }
+        else if (isEpisode &&
+            item.RawElement.ValueKind == JsonValueKind.Object &&
+            item.RawElement.TryGetProperty("show", out var showObjForYear) &&
+            showObjForYear.ValueKind == JsonValueKind.Object &&
+            showObjForYear.TryGetProperty("year", out var syProp) &&
+            syProp.ValueKind == JsonValueKind.Number &&
+            syProp.TryGetInt32(out var syVal))
+        {
+            parsedYear = syVal;
+        }
+
         return new WatchHistoryCardRecord(
             eventId,
             mediaKind,
@@ -478,7 +504,8 @@ public sealed partial class MyListsPage
             watchedAtText,
             isAvailable,
             availabilityText,
-            artwork);
+            artwork,
+            parsedYear);
     }
 
     private static long? ParseTraktListId(string key) => key.StartsWith("trakt:list:", StringComparison.Ordinal) && long.TryParse(key.AsSpan(11), out var id) && id > 0 ? id : null;

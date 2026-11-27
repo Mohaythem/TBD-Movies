@@ -557,7 +557,8 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
             : item.Year is int year ? LocalizationService.Digits(year.ToString(CultureInfo.InvariantCulture)) : string.Empty,
         LocalizationService.Digits(item.WatchedAt.ToLocalTime().ToString("d", LocalizationService.Culture)), item.IsAvailable,
         item.IsAvailable ? string.Empty : LocalizationService.Text("Unavailable"),
-        new[] { item.PosterReference, item.ArtworkReference, item.BackdropReference });
+        new[] { item.PosterReference, item.ArtworkReference, item.BackdropReference },
+        item.Year);
 
     private void ActivityGrid_ItemClick(object sender, ItemClickEventArgs e)
     {
@@ -582,7 +583,10 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 }
                 catch
                 {
-                    card = new MovieRecord(movieId, string.Empty, 0, string.Empty, 0, [], string.Empty);
+                    var fallbackTitle = e.ClickedItem is WatchHistoryCardRecord h ? h.Title
+                        : e.ClickedItem is HomeActivityCard a ? a.Title
+                        : string.Empty;
+                    card = new MovieRecord(movieId, fallbackTitle, 0, string.Empty, 0, [], string.Empty);
                 }
                 MovieSelected?.Invoke(this, card);
                 return;
@@ -597,10 +601,24 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 }
                 catch
                 {
-                    card = new TVShowRecord(showId, string.Empty, 0, [], string.Empty, []);
+                    var fallbackTitle = e.ClickedItem is WatchHistoryCardRecord h ? h.Title
+                        : e.ClickedItem is HomeActivityCard a ? a.Title
+                        : string.Empty;
+                    card = new TVShowRecord(showId, fallbackTitle, 0, [], string.Empty, []);
                 }
                 ShowSelected?.Invoke(this, card);
                 return;
+            }
+            if (e.ClickedItem is WatchHistoryCardRecord deletedHistory)
+            {
+                if (deletedHistory.MediaKind == WatchEventMediaKind.Movie)
+                {
+                    MovieSelected?.Invoke(this, new MovieRecord(0, deletedHistory.Title, deletedHistory.Year ?? 0, string.Empty, 0, [], string.Empty));
+                }
+                else if (deletedHistory.MediaKind == WatchEventMediaKind.Episode)
+                {
+                    ShowSelected?.Invoke(this, new TVShowRecord(0, deletedHistory.Title, deletedHistory.Year ?? 0, [], string.Empty, []));
+                }
             }
         }
         catch (Exception error)
@@ -692,14 +710,16 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
         {
             var show = new TVShowRecord(
                 item.Id, item.Title, item.Year ?? 0, [], string.Empty, [], PosterReference: posterRef,
-                CustomDisplayTitle: item.CustomDisplayTitle, CanonicalTitle: item.CanonicalTitle);
+                CustomDisplayTitle: item.CustomDisplayTitle, CanonicalTitle: item.CanonicalTitle,
+                ExternalId: item.TmdbId?.ToString(CultureInfo.InvariantCulture));
             return new ListMediaItem(show, isCloud, !item.IsMissing && !isCloud, badgeText, item.TmdbId);
         }
 
         var movie = new MovieRecord(
             item.Id, item.Title, item.Year ?? 0, string.Empty, 0, [], string.Empty,
             HasLocalFile: !item.IsMissing && !isCloud, PosterReference: posterRef,
-            CustomDisplayTitle: item.CustomDisplayTitle, CanonicalTitle: item.CanonicalTitle);
+            CustomDisplayTitle: item.CustomDisplayTitle, CanonicalTitle: item.CanonicalTitle,
+            ExternalId: item.TmdbId?.ToString(CultureInfo.InvariantCulture));
         return new ListMediaItem(movie, isCloud, !item.IsMissing && !isCloud, badgeText, item.TmdbId);
     }
 
@@ -880,15 +900,13 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 }
                 else
                 {
-                    try
-                    {
-                        _ = Windows.System.Launcher.LaunchUriAsync(new Uri($"https://www.themoviedb.org/tv/{item.TmdbId.Value}"));
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[MyListsPage] Failed to launch TMDB show URL: {ex.Message}");
-                    }
+                    var externalId = show.ExternalId ?? item.TmdbId.Value.ToString(CultureInfo.InvariantCulture);
+                    ShowSelected?.Invoke(this, show with { ExternalId = externalId });
                 }
+            }
+            else
+            {
+                ShowSelected?.Invoke(this, show);
             }
         }
         else if (item.Movie is { } movie)
@@ -906,15 +924,13 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                 }
                 else
                 {
-                    try
-                    {
-                        _ = Windows.System.Launcher.LaunchUriAsync(new Uri($"https://www.themoviedb.org/movie/{item.TmdbId.Value}"));
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"[MyListsPage] Failed to launch TMDB movie URL: {ex.Message}");
-                    }
+                    var externalId = movie.ExternalId ?? item.TmdbId.Value.ToString(CultureInfo.InvariantCulture);
+                    MovieSelected?.Invoke(this, movie with { ExternalId = externalId });
                 }
+            }
+            else
+            {
+                MovieSelected?.Invoke(this, movie);
             }
         }
     }

@@ -242,6 +242,116 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         }
     }
 
+    public void LoadCloudShow(TVShowRecord cloudShow)
+    {
+        ArgumentNullException.ThrowIfNull(cloudShow);
+        SetShow(cloudShow);
+        IsLoadedSuccessfully = true;
+
+        if (!AppServices.IsAvailable || AppServices.Metadata is not { IsConfigured: true })
+        {
+            return;
+        }
+
+        var request = _metadataRequests.Begin();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                TBDMovies.Domain.Metadata.Contracts.TvShowMetadata? metadata = null;
+                if (!string.IsNullOrWhiteSpace(cloudShow.ExternalId))
+                {
+                    metadata = await AppServices.Metadata.GetTvShowAsync(cloudShow.ExternalId, request.Token).ConfigureAwait(false);
+                }
+                else if (!string.IsNullOrWhiteSpace(cloudShow.Title))
+                {
+                    var query = new TBDMovies.Domain.Metadata.Contracts.TvSearchQuery(
+                        cloudShow.Title,
+                        cloudShow.Year > 0 ? cloudShow.Year : null);
+                    var candidates = await AppServices.Metadata.SearchTvAsync(query, request.Token).ConfigureAwait(false);
+                    var top = candidates.FirstOrDefault();
+                    if (top is not null && !string.IsNullOrWhiteSpace(top.ExternalId))
+                    {
+                        metadata = await AppServices.Metadata.GetTvShowAsync(top.ExternalId, request.Token).ConfigureAwait(false);
+                    }
+                }
+
+                if (metadata is null || request.Token.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(metadata.PosterReference))
+                {
+                    try
+                    {
+                        await AppServices.Poster.EnsurePosterCachedAsync("TMDB", metadata.PosterReference, request.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+                    catch
+                    {
+                        // Keep the fetched metadata even if poster caching fails.
+                    }
+                }
+
+                var seasons = metadata.Seasons
+                    .OrderBy(s => s.SeasonNumber)
+                    .Select(s => new SeasonRecord(
+                        0,
+                        s.SeasonNumber,
+                        s.Episodes.Select(ep => new EpisodeRecord(
+                            0,
+                            ep.EpisodeNumber,
+                            string.IsNullOrWhiteSpace(ep.Title) ? $"Episode {ep.EpisodeNumber}" : ep.Title!,
+                            ep.RuntimeMinutes is int mins && mins > 0 ? $"{mins} min" : string.Empty,
+                            Watched: false,
+                            HasLocalFile: false,
+                            IsFileMissing: false,
+                            Overview: ep.Overview ?? string.Empty,
+                            StillReference: ep.StillReference)).ToArray(),
+                        s.PosterReference))
+                    .ToArray();
+
+                DispatcherQueue.TryEnqueue(() =>
+                {
+                    if (!request.IsCurrent)
+                    {
+                        return;
+                    }
+
+                    var updated = _show with
+                    {
+                        Title = string.IsNullOrWhiteSpace(_show.CustomDisplayTitle) && !string.IsNullOrWhiteSpace(metadata.Title)
+                            ? metadata.Title
+                            : _show.Title,
+                        CanonicalTitle = metadata.Title ?? _show.CanonicalTitle,
+                        OriginalTitle = metadata.OriginalTitle ?? _show.OriginalTitle,
+                        Year = metadata.FirstAirYear ?? _show.Year,
+                        Genres = metadata.Genres.Length > 0 ? metadata.Genres : _show.Genres,
+                        Overview = metadata.Overview ?? _show.Overview,
+                        Rating = metadata.Rating,
+                        PosterReference = metadata.PosterReference ?? _show.PosterReference,
+                        BackdropReference = metadata.BackdropReference ?? _show.BackdropReference,
+                        Seasons = seasons.Length > 0 ? seasons : _show.Seasons,
+                        ExternalId = metadata.ExternalId ?? _show.ExternalId,
+                    };
+
+                    SetShow(updated);
+                });
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception error)
+            {
+                System.Diagnostics.Debug.WriteLine($"[TVShowDetailsPage] LoadCloudShow metadata failed: {error.Message}");
+            }
+        }, request.Token);
+    }
+
     public void SetShow(TVShowRecord show)
     {
         _metadataRequests.Cancel();
@@ -273,7 +383,13 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         OverviewText.Visibility = hasOverview ? Visibility.Visible : Visibility.Collapsed;
 
         UpdateShowSummary();
-        MatchButton.IsEnabled = !_isMatching;
+        var isLocalCatalogEntry = show.Id > 0;
+        MatchButton.IsEnabled = isLocalCatalogEntry && !_isMatching;
+        MatchButton.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        AddToListButton.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        ShowFavoriteButton.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        ShowWatchLaterButton.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        UpdateExternalLinksVisibility();
         ApplyLocalization();
         if (_seasons.Count == 0)
         {
@@ -303,6 +419,8 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         OpenShowFolderItem.Text = LocalizationService.Text("OpenFolder");
         RemoveShowFromLibraryItem.Text = LocalizationService.Text("RemoveFromLibrary");
         RemoveShowFromLibraryItem.IsEnabled = _show.Id > 0;
+        OpenOnTmdbItem.Text = LocalizationService.Text("OpenOnTmdb");
+        UpdateExternalLinksVisibility();
         SeasonsTitleText.Text = LocalizationService.Text("Seasons");
 
         UpdateShowSummary();
@@ -676,6 +794,31 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
         catch (Exception error)
         {
             _ = ShowMessageAsync(LocalizationService.Text("Failed"), MetadataErrorText.For(error));
+        }
+    }
+
+    private int? ResolveShowTmdbId()
+    {
+        if (_show.Id > 0 && AppServices.IsAvailable && AppServices.GetShowTmdbId(_show.Id) is int dbTmdb && dbTmdb > 0)
+        {
+            return dbTmdb;
+        }
+
+        return int.TryParse(_show.ExternalId, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed) && parsed > 0
+            ? parsed
+            : null;
+    }
+
+    private void UpdateExternalLinksVisibility()
+    {
+        OpenOnTmdbItem.Visibility = ResolveShowTmdbId() is > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void OpenOnTmdbItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (ResolveShowTmdbId() is int tmdbId)
+        {
+            _ = Windows.System.Launcher.LaunchUriAsync(new Uri($"https://www.themoviedb.org/tv/{tmdbId}"));
         }
     }
 

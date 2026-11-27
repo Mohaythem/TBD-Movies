@@ -820,6 +820,8 @@ public static class LocalizationService
         ["SettingsTabLibrary"] = "Library",
         ["SettingsTabIntegrations"] = "Integrations",
         ["SettingsTabData"] = "Data & Backups",
+        ["OpenOnTmdb"] = "Open on TMDB",
+        ["OpenOnLetterboxd"] = "Open on Letterboxd",
     };
 
     private static readonly IReadOnlyDictionary<string, string> Arabic = new Dictionary<string, string>
@@ -1638,6 +1640,8 @@ public static class LocalizationService
         ["SettingsTabLibrary"] = "المكتبة",
         ["SettingsTabIntegrations"] = "الربط والترجمة",
         ["SettingsTabData"] = "البيانات والنسخ الاحتياطي",
+        ["OpenOnTmdb"] = "فتح على TMDB",
+        ["OpenOnLetterboxd"] = "فتح على Letterboxd",
     };
 
     public static UiLanguage CurrentLanguage { get; private set; } = UiLanguage.English;

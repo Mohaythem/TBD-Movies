@@ -609,7 +609,8 @@ public sealed class WatchHistoryCardRecord : INotifyPropertyChanged
         string watchedAt,
         bool isAvailable,
         string availabilityText,
-        IEnumerable<string?> artworkReferences)
+        IEnumerable<string?> artworkReferences,
+        int? year = null)
     {
         EventId = eventId;
         MediaKind = mediaKind;
@@ -620,6 +621,7 @@ public sealed class WatchHistoryCardRecord : INotifyPropertyChanged
         WatchedAt = watchedAt;
         IsAvailable = isAvailable;
         AvailabilityText = availabilityText;
+        Year = year;
         _artwork = new ArtworkLoader(artworkReferences, () =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ArtworkSource))));
     }
@@ -635,6 +637,7 @@ public sealed class WatchHistoryCardRecord : INotifyPropertyChanged
     public string WatchedAt { get; }
     public bool IsAvailable { get; }
     public string AvailabilityText { get; }
+    public int? Year { get; }
     public string AccessibleName => string.Join(", ", new[] { Title, Context, WatchedAt, AvailabilityText }
         .Where(value => !string.IsNullOrWhiteSpace(value)));
     public ImageSource? ArtworkSource => _artwork.Source;

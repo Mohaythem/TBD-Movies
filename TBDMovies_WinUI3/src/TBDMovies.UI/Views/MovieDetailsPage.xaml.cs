@@ -236,6 +236,98 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         }
     }
 
+    public void LoadCloudMovie(MovieRecord cloudMovie)
+    {
+        IsLoadedSuccessfully = false;
+        _metadataRequests.Cancel();
+        SetMovie(cloudMovie);
+        IsLoadedSuccessfully = true;
+
+        if (!AppServices.IsAvailable || AppServices.Metadata is not { IsConfigured: true })
+        {
+            return;
+        }
+
+        var request = _metadataRequests.Begin();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                TBDMovies.Domain.Metadata.Contracts.MovieMetadata? metadata = null;
+                if (!string.IsNullOrWhiteSpace(cloudMovie.ExternalId))
+                {
+                    metadata = await AppServices.Metadata.GetMovieAsync(cloudMovie.ExternalId, request.Token).ConfigureAwait(false);
+                }
+                else if (!string.IsNullOrWhiteSpace(cloudMovie.Title))
+                {
+                    var query = new TBDMovies.Domain.Metadata.Contracts.MovieSearchQuery(
+                        cloudMovie.Title,
+                        cloudMovie.Year > 0 ? cloudMovie.Year : null);
+                    var candidates = await AppServices.Metadata.SearchMoviesAsync(query, request.Token).ConfigureAwait(false);
+                    var best = candidates.FirstOrDefault();
+                    if (best is not null && !string.IsNullOrWhiteSpace(best.ExternalId))
+                    {
+                        metadata = await AppServices.Metadata.GetMovieAsync(best.ExternalId, request.Token).ConfigureAwait(false);
+                    }
+                }
+
+                if (metadata is null || request.Token.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(metadata.PosterReference))
+                {
+                    try
+                    {
+                        await AppServices.Poster.EnsurePosterCachedAsync("TMDB", metadata.PosterReference, request.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+                    catch
+                    {
+                        // Keep the fetched metadata even if poster caching fails.
+                    }
+                }
+
+                if (request.Token.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                var updated = cloudMovie with
+                {
+                    Title = string.IsNullOrWhiteSpace(metadata.Title) ? cloudMovie.Title : metadata.Title,
+                    Year = metadata.Year ?? cloudMovie.Year,
+                    Overview = string.IsNullOrWhiteSpace(metadata.Overview) ? cloudMovie.Overview : metadata.Overview,
+                    Genres = metadata.Genres is { IsDefaultOrEmpty: false } ? metadata.Genres : cloudMovie.Genres,
+                    Runtime = metadata.RuntimeMinutes is > 0 ? $"{metadata.RuntimeMinutes.Value} min" : cloudMovie.Runtime,
+                    Rating = metadata.Rating ?? cloudMovie.Rating,
+                    PosterReference = string.IsNullOrWhiteSpace(metadata.PosterReference) ? cloudMovie.PosterReference : metadata.PosterReference,
+                    ExternalId = string.IsNullOrWhiteSpace(metadata.ExternalId) ? cloudMovie.ExternalId : metadata.ExternalId
+                };
+
+                DispatcherQueue?.TryEnqueue(() =>
+                {
+                    if (request.IsCurrent && _movie.Id <= 0)
+                    {
+                        SetMovie(updated);
+                    }
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when navigating away or opening another movie.
+            }
+            catch
+            {
+                // Keep the cloud placeholder visible if TMDB lookup fails.
+            }
+        }, request.Token);
+    }
+
     private void SetMovie(MovieRecord movie)
     {
         if (_movie.Id != movie.Id)
@@ -301,7 +393,20 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         UpdatePlayButtonVisuals(hasFile && !_isOrganizing, !hasFile);
         OpenFolderButton.IsEnabled = hasFile && !_isOrganizing;
         OrganizeButton.IsEnabled = MoveMovieButton.IsEnabled = hasFile && !_isOrganizing;
-        MatchButton.IsEnabled = !_isOrganizing && !_isMatching;
+        var isLocalCatalogEntry = movie.Id > 0;
+        MatchButton.IsEnabled = isLocalCatalogEntry && !_isOrganizing && !_isMatching;
+        MatchButton.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        RefreshMetadataMenuItem.IsEnabled = isLocalCatalogEntry;
+        ChangeMatchButton.IsEnabled = isLocalCatalogEntry;
+        MoveToSeriesButton.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        RemoveFromLibraryButton.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        AddToListButton.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        FavoriteButton.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        WatchlistButton.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        MarkWatchedButton.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        WatchedDatePicker.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        MarkOnDateButton.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        UpdateExternalLinksVisibility();
         MissingBadge.Visibility = !hasFile ? Visibility.Visible : Visibility.Collapsed;
 
         _history.Clear();
@@ -498,6 +603,9 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         ChangeMatchButton.Text = LocalizationService.Text("DetailsChangeMatch");
         MoveToSeriesButton.Content = LocalizationService.Text("AddOrMoveToSeries");
         RemoveFromLibraryButton.Content = LocalizationService.Text("RemoveFromLibrary");
+        OpenOnTmdbButton.Content = LocalizationService.Text("OpenOnTmdb");
+        OpenOnLetterboxdButton.Content = LocalizationService.Text("OpenOnLetterboxd");
+        UpdateExternalLinksVisibility();
         MoreButton.SetValue(AutomationProperties.NameProperty, LocalizationService.Text("DetailsMoreActions"));
         ToolTipService.SetToolTip(MoreButton, LocalizationService.Text("DetailsMoreActions"));
         FileDetailsTitleText.Text = LocalizationService.Text(_movie.FileCount > 1 ? "DetailsLocalFiles" : "DetailsLocalFile");
@@ -1732,6 +1840,41 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
     /// Manual repair: removes this movie from the catalog only. The file on disk is never deleted. On
     /// success the page leaves, since the movie no longer exists.
     /// </summary>
+    private int? ResolveMovieTmdbId()
+    {
+        if (_movie.Id > 0 && AppServices.IsAvailable && AppServices.GetMovieTmdbId(_movie.Id) is int dbTmdb && dbTmdb > 0)
+        {
+            return dbTmdb;
+        }
+
+        return int.TryParse(_movie.ExternalId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) && parsed > 0
+            ? parsed
+            : null;
+    }
+
+    private void UpdateExternalLinksVisibility()
+    {
+        var visibility = ResolveMovieTmdbId() is > 0 ? Visibility.Visible : Visibility.Collapsed;
+        OpenOnTmdbButton.Visibility = visibility;
+        OpenOnLetterboxdButton.Visibility = visibility;
+    }
+
+    private void OpenOnTmdbButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (ResolveMovieTmdbId() is int tmdbId)
+        {
+            _ = Windows.System.Launcher.LaunchUriAsync(new Uri($"https://www.themoviedb.org/movie/{tmdbId}"));
+        }
+    }
+
+    private void OpenOnLetterboxdButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (ResolveMovieTmdbId() is int tmdbId)
+        {
+            _ = Windows.System.Launcher.LaunchUriAsync(new Uri($"https://letterboxd.com/tmdb/{tmdbId}"));
+        }
+    }
+
     private async void RemoveFromLibraryButton_Click(object sender, RoutedEventArgs e)
     {
         MoreButton.Flyout?.Hide();

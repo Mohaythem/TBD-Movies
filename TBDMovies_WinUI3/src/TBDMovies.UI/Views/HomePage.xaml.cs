@@ -266,7 +266,8 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
                 LocalizationService.Digits(item.WatchedAt.ToLocalTime().ToString("d", LocalizationService.Culture)),
                 item.IsAvailable,
                 item.IsAvailable ? string.Empty : LocalizationService.Text("Unavailable"),
-                HistoryArtwork(item)));
+                HistoryArtwork(item),
+                item.Year));
         }
 
         return cards.ToArray();
@@ -594,14 +595,22 @@ public sealed partial class HomePage : Page, ILocalizableView, IActivatableView,
         if (card.MediaKind == WatchEventMediaKind.Movie && card.MovieId is int movieId)
         {
             var movie = _movies.FirstOrDefault(movie => movie.Id == movieId)
-                ?? new MovieRecord(movieId, card.Title, 0, string.Empty, 0, [], string.Empty);
+                ?? new MovieRecord(movieId, card.Title, card.Year ?? 0, string.Empty, 0, [], string.Empty);
             MovieSelected?.Invoke(this, movie);
         }
         else if (card.MediaKind == WatchEventMediaKind.Episode && card.ShowId is int showId)
         {
             var show = _shows.FirstOrDefault(show => show.Id == showId)
-                ?? new TVShowRecord(showId, card.Title, 0, [], string.Empty, []);
+                ?? new TVShowRecord(showId, card.Title, card.Year ?? 0, [], string.Empty, []);
             ShowSelected?.Invoke(this, show);
+        }
+        else if (card.MediaKind == WatchEventMediaKind.Movie)
+        {
+            MovieSelected?.Invoke(this, new MovieRecord(0, card.Title, card.Year ?? 0, string.Empty, 0, [], string.Empty));
+        }
+        else if (card.MediaKind == WatchEventMediaKind.Episode)
+        {
+            ShowSelected?.Invoke(this, new TVShowRecord(0, card.Title, card.Year ?? 0, [], string.Empty, []));
         }
     }
 

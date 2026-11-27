@@ -283,6 +283,8 @@
                                     <Button.Flyout>
                                         <Flyout Placement="BottomEdgeAlignedRight">
                                             <StackPanel Width="{StaticResource FileDetailsFlyoutWidth}" Spacing="8">
+                                                <Button x:Name="OpenOnTmdbButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="OpenOnTmdbButton_Click" Style="{StaticResource TextActionButtonStyle}" Visibility="Collapsed" />
+                                                <Button x:Name="OpenOnLetterboxdButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="OpenOnLetterboxdButton_Click" Style="{StaticResource TextActionButtonStyle}" Visibility="Collapsed" />
                                                 <Button x:Name="MoveToSeriesButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="MoveToSeriesButton_Click" Style="{StaticResource TextActionButtonStyle}" />
                                                 <Button x:Name="RemoveFromLibraryButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="RemoveFromLibraryButton_Click" Style="{StaticResource TextActionButtonStyle}" />
                                                 <TextBlock x:Name="DateAddedText" Style="{StaticResource DetailsSmallStyle}" TextWrapping="Wrap" />

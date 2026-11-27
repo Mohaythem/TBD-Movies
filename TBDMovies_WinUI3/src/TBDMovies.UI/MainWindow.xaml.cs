@@ -446,9 +446,16 @@ public sealed partial class MainWindow : Window
         _detailsReturnDestination = ReturnDestinationFor(sender);
         var detailsPage = GetMovieDetailsPage();
         detailsPage.SetReturnDestination(_detailsReturnDestination);
-        detailsPage.LoadMovie(movie.Id);
+        if (movie.Id > 0)
+        {
+            detailsPage.LoadMovie(movie.Id);
+        }
+        else
+        {
+            detailsPage.LoadCloudMovie(movie);
+        }
         Navigate("details");
-        if (ReferenceEquals(sender, _libraryPage) && detailsPage.IsLoadedSuccessfully)
+        if (movie.Id > 0 && ReferenceEquals(sender, _libraryPage) && detailsPage.IsLoadedSuccessfully)
             RecordLibraryActivity(() => _libraryPage?.RecordMovieOpened(movie.Id));
     }
 
@@ -457,9 +464,16 @@ public sealed partial class MainWindow : Window
         _detailsReturnDestination = ReturnDestinationFor(sender);
         var detailsPage = GetShowDetailsPage();
         detailsPage.SetReturnDestination(_detailsReturnDestination);
-        detailsPage.LoadShow(show.Id);
+        if (show.Id > 0)
+        {
+            detailsPage.LoadShow(show.Id);
+        }
+        else
+        {
+            detailsPage.LoadCloudShow(show);
+        }
         Navigate("show");
-        if (ReferenceEquals(sender, _libraryPage) && detailsPage.IsLoadedSuccessfully)
+        if (show.Id > 0 && ReferenceEquals(sender, _libraryPage) && detailsPage.IsLoadedSuccessfully)
             RecordLibraryActivity(() => _libraryPage?.RecordShowOpened(show.Id));
     }
 
