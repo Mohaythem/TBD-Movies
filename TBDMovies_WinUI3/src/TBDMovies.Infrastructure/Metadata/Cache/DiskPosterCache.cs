@@ -494,6 +494,11 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
         }
 
         var cleanRef = reference.Trim().TrimStart('/', '\\');
+        if (cleanRef.Contains("..", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
         var invalidChars = Path.GetInvalidFileNameChars();
         var sanitized = new string(cleanRef.Select(c => invalidChars.Contains(c) ? '_' : c).ToArray());
         if (string.IsNullOrWhiteSpace(sanitized))

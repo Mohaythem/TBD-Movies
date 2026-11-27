@@ -538,7 +538,27 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
     {
         if (string.IsNullOrWhiteSpace(path)) return false;
         var trimmed = path.Trim().Trim('"', ' ').TrimEnd('.', ' ');
+        if (string.IsNullOrWhiteSpace(trimmed)) return false;
+        if (trimmed.Contains('"') || trimmed.EndsWith('\\') || trimmed.EndsWith('/')) return false;
+        if (trimmed.StartsWith(@"\\", StringComparison.Ordinal) || trimmed.StartsWith("//", StringComparison.Ordinal)) return false;
+        if (TBDMovies.FileSystem.Safety.PathPolicy.HasAlternateDataStream(trimmed)) return false;
+
         var ext = Path.GetExtension(trimmed);
-        return string.IsNullOrEmpty(ext) || ext.Equals(".exe", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(ext))
+        {
+            if (trimmed.IndexOfAny([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, ':']) >= 0)
+            {
+                return false;
+            }
+
+            return !trimmed.Equals("cmd", StringComparison.OrdinalIgnoreCase)
+                && !trimmed.Equals("powershell", StringComparison.OrdinalIgnoreCase)
+                && !trimmed.Equals("pwsh", StringComparison.OrdinalIgnoreCase)
+                && !trimmed.Equals("wscript", StringComparison.OrdinalIgnoreCase)
+                && !trimmed.Equals("cscript", StringComparison.OrdinalIgnoreCase)
+                && !trimmed.Equals("mshta", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return ext.Equals(".exe", StringComparison.OrdinalIgnoreCase);
     }
 }

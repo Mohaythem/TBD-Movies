@@ -78,6 +78,15 @@ public sealed class PlayerLaunchArgumentTests
     [InlineData(@"C:\Tools\script.scr")]
     [InlineData(@"C:\Tools\script.com")]
     [InlineData(@"C:\Tools\shortcut.lnk")]
+    [InlineData(@"C:\Tools\plugin.dll")]
+    [InlineData("\"\"")]
+    [InlineData("...")]
+    [InlineData(@"C:\Tools\script.bat\")]
+    [InlineData(@"C:\Tools\evil")]
+    [InlineData(@"\\attacker\share\player.exe")]
+    [InlineData(@"C:\Tools\script.bat:foo.exe")]
+    [InlineData("cmd")]
+    [InlineData("powershell")]
     public void IsPermittedCustomPlayerPath_RejectsScriptExtensions(string scriptPath)
     {
         Assert.False(PlayerProcessLauncher.IsPermittedCustomPlayerPath(scriptPath));

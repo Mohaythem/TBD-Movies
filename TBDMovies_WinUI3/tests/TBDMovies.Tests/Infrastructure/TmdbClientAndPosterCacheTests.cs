@@ -465,15 +465,20 @@ public class TmdbClientAndPosterCacheTests : IDisposable
     [InlineData("../../evil.jpg")]
     [InlineData(@"..\..\evil.jpg")]
     [InlineData("/../outside.png")]
-    public void DiskPosterCache_TraversalReference_StaysContainedInsideCacheRoot(string reference)
+    public async Task DiskPosterCache_TraversalReference_IsRejectedAndDoesNotEscapeCacheRoot(string reference)
     {
-        var cache = new DiskPosterCache(_testCacheDir);
-        var path = cache.GetCachedPosterPath("TMDB", reference);
-        if (path is not null)
+        var parentDir = Path.GetDirectoryName(_testCacheDir)!;
+        var decoyPath = Path.Combine(parentDir, Path.GetFileName(reference));
+        await File.WriteAllBytesAsync(decoyPath, CreateValidJpegBytes());
+        try
         {
-            var fullRoot = Path.GetFullPath(_testCacheDir);
-            var rootWithSep = fullRoot.EndsWith(Path.DirectorySeparatorChar) ? fullRoot : fullRoot + Path.DirectorySeparatorChar;
-            Assert.StartsWith(rootWithSep, Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase);
+            var cache = new DiskPosterCache(_testCacheDir);
+            Assert.Null(cache.GetCachedPosterPath("TMDB", reference));
+            Assert.Null(await cache.EnsurePosterCachedAsync("TMDB", reference));
+        }
+        finally
+        {
+            if (File.Exists(decoyPath)) File.Delete(decoyPath);
         }
     }
 
