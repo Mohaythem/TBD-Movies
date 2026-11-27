@@ -32,6 +32,7 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
         Func<double, double?, bool, Task>? onProgressTick = null)
     {
         if (string.IsNullOrWhiteSpace(mediaPath) ||
+            mediaPath.IndexOf('"') >= 0 || // '"' is illegal in NTFS names; reject explicitly so argv quoting can assume it (SEC-L2)
             !File.Exists(mediaPath) ||
             !MediaFormatPolicy.IsSupportedVideoPath(mediaPath) ||
             PathPolicy.HasAlternateDataStream(mediaPath))
@@ -466,35 +467,77 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
         return null;
     }
 
+    /// <summary>
+    /// Canonical Windows argv quoting (CommandLineToArgvW rules): the value is always
+    /// wrapped in a single quoted region; backslash runs are doubled only when they
+    /// precede a quote or terminate the argument, so a trailing backslash can no
+    /// longer turn the closing quote into an escape (SEC-L1/SEC-L2). Embedded quotes
+    /// are escaped instead of terminating the region.
+    /// </summary>
+    public static string QuoteCommandLineArgument(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return "\"\"";
+
+        var sb = new System.Text.StringBuilder(value.Length + 8);
+        sb.Append('"');
+        var backslashes = 0;
+        foreach (var ch in value)
+        {
+            if (ch == '\\')
+            {
+                backslashes++;
+                continue;
+            }
+
+            if (ch == '"')
+            {
+                sb.Append('\\', backslashes * 2 + 1);
+                backslashes = 0;
+            }
+            else if (backslashes > 0)
+            {
+                sb.Append('\\', backslashes);
+                backslashes = 0;
+            }
+
+            sb.Append(ch);
+        }
+
+        sb.Append('\\', backslashes * 2);
+        sb.Append('"');
+        return sb.ToString();
+    }
+
     public static string BuildArguments(string mediaPath, double startPositionSeconds, MediaPlayerType playerType, string? customArgsTemplate = null)
     {
         if (startPositionSeconds < 0) startPositionSeconds = 0;
+        var quotedPath = QuoteCommandLineArgument(mediaPath);
         return playerType switch
         {
             MediaPlayerType.Vlc => startPositionSeconds > 0
-                ? $"--start-time={Math.Floor(startPositionSeconds)} \"{mediaPath}\""
-                : $"\"{mediaPath}\"",
+                ? $"--start-time={Math.Floor(startPositionSeconds)} {quotedPath}"
+                : quotedPath,
             MediaPlayerType.Mpc => startPositionSeconds > 0
-                ? $"/startpos {FormatHms(startPositionSeconds)} \"{mediaPath}\""
-                : $"\"{mediaPath}\"",
+                ? $"/startpos {FormatHms(startPositionSeconds)} {quotedPath}"
+                : quotedPath,
             MediaPlayerType.Mpv => startPositionSeconds > 0
-                ? $"--start={Math.Floor(startPositionSeconds)} \"{mediaPath}\""
-                : $"\"{mediaPath}\"",
+                ? $"--start={Math.Floor(startPositionSeconds)} {quotedPath}"
+                : quotedPath,
             MediaPlayerType.Custom when !string.IsNullOrWhiteSpace(customArgsTemplate) =>
                 BuildCustomArguments(customArgsTemplate, mediaPath, startPositionSeconds),
-            _ => $"\"{mediaPath}\""
+            _ => quotedPath
         };
     }
 
     public static string BuildCustomArguments(string customArgsTemplate, string mediaPath, double startPositionSeconds)
     {
-        var safePath = mediaPath.Replace("\"", "\\\"");
+        var quotedPath = QuoteCommandLineArgument(mediaPath);
         var formattedSeconds = Math.Floor(Math.Max(0, startPositionSeconds)).ToString(CultureInfo.InvariantCulture);
         var formattedHms = FormatHms(startPositionSeconds);
 
         return customArgsTemplate
-            .Replace("\"{path}\"", $"\"{safePath}\"", StringComparison.OrdinalIgnoreCase)
-            .Replace("{path}", $"\"{safePath}\"", StringComparison.OrdinalIgnoreCase)
+            .Replace("\"{path}\"", quotedPath, StringComparison.OrdinalIgnoreCase)
+            .Replace("{path}", quotedPath, StringComparison.OrdinalIgnoreCase)
             .Replace("{seconds}", formattedSeconds, StringComparison.OrdinalIgnoreCase)
             .Replace("{time}", formattedHms, StringComparison.OrdinalIgnoreCase);
     }
@@ -502,13 +545,13 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
     public static string BuildVlcTrackingArguments(string mediaPath, double startPositionSeconds, int port, string password)
     {
         var startArg = startPositionSeconds > 0 ? $"--start-time={Math.Floor(startPositionSeconds)} " : "";
-        return $"--extraintf=http --http-host=127.0.0.1 --http-port={port} --http-password={password} --no-one-instance {startArg}-- \"{mediaPath}\"";
+        return $"--extraintf=http --http-host=127.0.0.1 --http-port={port} --http-password={password} --no-one-instance {startArg}-- {QuoteCommandLineArgument(mediaPath)}";
     }
 
     public static string BuildMpvTrackingArguments(string mediaPath, double startPositionSeconds, string pipeName)
     {
         var startArg = startPositionSeconds > 0 ? $"--start={Math.Floor(startPositionSeconds)} " : "";
-        return $"--input-ipc-server=\\\\.\\pipe\\{pipeName} {startArg}-- \"{mediaPath}\"";
+        return $"--input-ipc-server=\\\\.\\pipe\\{pipeName} {startArg}-- {QuoteCommandLineArgument(mediaPath)}";
     }
 
     public static int GetEphemeralPort()

@@ -129,4 +129,50 @@ public sealed class PlayerLaunchArgumentTests
         Assert.Equal(32, pass2.Length);
         Assert.NotEqual(pass1, pass2);
     }
+
+    [Theory]
+    [InlineData(@"C:\Movies\Film.mkv", @"""C:\Movies\Film.mkv""")]
+    [InlineData(@"C:\Movies\My Film.mkv", @"""C:\Movies\My Film.mkv""")]
+    [InlineData(@"C:\media\dir\", @"""C:\media\dir\\""")] // trailing backslash doubled so it cannot escape the closing quote (SEC-L1)
+    [InlineData(@"C:\a\\b.mkv", @"""C:\a\\b.mkv""")] // backslash run before a normal char stays literal; only quote/end runs double
+    [InlineData("", @"""""")]
+    public void QuoteCommandLineArgument_AppliesCanonicalBackslashAndQuoteRules(string value, string expected)
+    {
+        Assert.Equal(expected, PlayerProcessLauncher.QuoteCommandLineArgument(value));
+    }
+
+    [Fact]
+    public void QuoteCommandLineArgument_EscapesEmbeddedQuoteInsteadOfTerminatingRegion()
+    {
+        var quoted = PlayerProcessLauncher.QuoteCommandLineArgument(@"C:\we\""ird\name.mkv");
+        Assert.Equal(@"""C:\we\\\""ird\name.mkv""", quoted);
+        // The result must still parse as exactly one argument under argv rules.
+        Assert.StartsWith("\"", quoted, StringComparison.Ordinal);
+        Assert.EndsWith("\"", quoted, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildCustomArguments_TrailingBackslashPath_CannotEscapeItsQuotes()
+    {
+        var args = PlayerProcessLauncher.BuildCustomArguments("--play {path}", @"C:\media\dir\", 0);
+
+        Assert.Equal(@"--play ""C:\media\dir\\""", args);
+    }
+
+    [Fact]
+    public void BuildCustomArguments_QuotedPlaceholder_IsQuotedExactlyOnce()
+    {
+        var args = PlayerProcessLauncher.BuildCustomArguments("--play \"{path}\"", @"C:\Movies\Film.mkv", 0);
+
+        Assert.Equal(@"--play ""C:\Movies\Film.mkv""", args);
+    }
+
+    [Fact]
+    public void BuildVlcTrackingArguments_TrailingBackslashPath_KeepsClosingQuoteIntact()
+    {
+        var args = PlayerProcessLauncher.BuildVlcTrackingArguments(@"C:\media\dir\", 0, 8080, "pw");
+
+        Assert.EndsWith(@"-- ""C:\media\dir\\""", args);
+        Assert.Contains("--http-password=pw", args, StringComparison.Ordinal);
+    }
 }
