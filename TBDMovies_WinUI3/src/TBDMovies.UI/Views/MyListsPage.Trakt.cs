@@ -224,6 +224,38 @@ public sealed partial class MyListsPage
         }
     }
 
+    private static ListMediaItem? TryCreateLocalTraktItem(bool isShow, int localId)
+    {
+        if (localId <= 0) return null;
+
+        if (isShow)
+        {
+            try
+            {
+                var show = AppServices.Tv.GetShowDetails(localId);
+                var card = TvProjection.ToDetails(show);
+                var isLocal = card.LocalEpisodeCount > 0;
+                var badge = LocalizationService.Text(isLocal ? "Local" : "Unavailable");
+                return new ListMediaItem(card, showLocalBadge: true, isLocal: isLocal, localBadgeText: badge);
+            }
+            catch { }
+        }
+        else
+        {
+            try
+            {
+                var movie = AppServices.Library.GetMovieItem(localId);
+                var card = LibraryProjection.ToCard(movie);
+                var isLocal = card.HasLocalFile;
+                var badge = LocalizationService.Text(isLocal ? "Local" : "Unavailable");
+                return new ListMediaItem(card, showLocalBadge: true, isLocal: isLocal, localBadgeText: badge);
+            }
+            catch { }
+        }
+
+        return null;
+    }
+
     private static ListMediaItem CreateMediaItemFromTrakt(
         string displayTitle,
         int? year,
@@ -236,32 +268,9 @@ public sealed partial class MyListsPage
     {
         var isShow = string.Equals(type, "show", StringComparison.OrdinalIgnoreCase) || matchedKind == TraktMediaKind.Show;
 
-        if (matchedLocalId is int localId && localId > 0)
+        if (matchedLocalId is int localId && TryCreateLocalTraktItem(isShow, localId) is { } matchedItem)
         {
-            if (isShow)
-            {
-                try
-                {
-                    var show = AppServices.Tv.GetShowDetails(localId);
-                    var card = TvProjection.ToDetails(show);
-                    var isLocal = card.LocalEpisodeCount > 0;
-                    var badge = LocalizationService.Text(isLocal ? "Local" : "Unavailable");
-                    return new ListMediaItem(card, showLocalBadge: true, isLocal: isLocal, localBadgeText: badge);
-                }
-                catch { }
-            }
-            else
-            {
-                try
-                {
-                    var movie = AppServices.Library.GetMovieItem(localId);
-                    var card = LibraryProjection.ToCard(movie);
-                    var isLocal = card.HasLocalFile;
-                    var badge = LocalizationService.Text(isLocal ? "Local" : "Unavailable");
-                    return new ListMediaItem(card, showLocalBadge: true, isLocal: isLocal, localBadgeText: badge);
-                }
-                catch { }
-            }
+            return matchedItem;
         }
 
         string? posterRef = null;
@@ -272,32 +281,20 @@ public sealed partial class MyListsPage
             {
                 var candidate = snapshot.ForKind(isShow ? TraktMediaKind.Show : TraktMediaKind.Movie)
                     .FirstOrDefault(c => c.Identity.TmdbId == tmdbId);
-                if (candidate is not null && candidate.LocalId > 0)
+                if (candidate is not null && TryCreateLocalTraktItem(isShow, candidate.LocalId) is { } snapshotItem)
                 {
-                    if (isShow)
-                    {
-                        try
-                        {
-                            var show = AppServices.Tv.GetShowDetails(candidate.LocalId);
-                            var card = TvProjection.ToDetails(show);
-                            var isLocal = card.LocalEpisodeCount > 0;
-                            var badge = LocalizationService.Text(isLocal ? "Local" : "Unavailable");
-                            return new ListMediaItem(card, showLocalBadge: true, isLocal: isLocal, localBadgeText: badge);
-                        }
-                        catch { }
-                    }
-                    else
-                    {
-                        try
-                        {
-                            var movie = AppServices.Library.GetMovieItem(candidate.LocalId);
-                            var card = LibraryProjection.ToCard(movie);
-                            var isLocal = card.HasLocalFile;
-                            var badge = LocalizationService.Text(isLocal ? "Local" : "Unavailable");
-                            return new ListMediaItem(card, showLocalBadge: true, isLocal: isLocal, localBadgeText: badge);
-                        }
-                        catch { }
-                    }
+                    return snapshotItem;
+                }
+            }
+
+            if (tmdbId <= int.MaxValue)
+            {
+                var liveLocalId = isShow
+                    ? AppServices.FindShowIdByTmdb((int)tmdbId.Value)
+                    : AppServices.FindMovieIdByTmdb((int)tmdbId.Value);
+                if (liveLocalId is int resolvedId && TryCreateLocalTraktItem(isShow, resolvedId) is { } liveItem)
+                {
+                    return liveItem;
                 }
             }
 

@@ -257,7 +257,9 @@ internal static class AppServices
         if (tmdbId <= 0 || _movies is null) return null;
         try
         {
-            var movie = _movies.GetByExternalId("tmdb", tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            var externalId = tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var movie = _movies.GetByExternalId("TMDB", externalId)
+                ?? _movies.GetByExternalId("tmdb", externalId);
             if (movie is not null && movie.Id > 0) return movie.Id;
         }
         catch { }
