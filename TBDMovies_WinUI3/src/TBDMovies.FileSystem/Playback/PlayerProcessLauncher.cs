@@ -556,18 +556,29 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
 
     public static int GetEphemeralPort()
     {
-        try
+        // Ask the OS for a free loopback port, retrying transient bind failures. The old
+        // fixed 8088 fallback collided with VLC's own default HTTP port and silently
+        // disabled tracking (SEC-M2 note).
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            using var listener = new TcpListener(IPAddress.Loopback, 0);
-            listener.Start();
-            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-            listener.Stop();
-            return port;
+            try
+            {
+                using var listener = new TcpListener(IPAddress.Loopback, 0);
+                listener.Start();
+                var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+                listener.Stop();
+                return port;
+            }
+            catch
+            {
+                // Retry with a fresh ephemeral request.
+            }
         }
-        catch
-        {
-            return 8088;
-        }
+
+        // Last resort: a process-derived port in the dynamic range, never VLC's default.
+        var processId = 0;
+        try { processId = Environment.ProcessId; } catch { }
+        return 20000 + (processId % 20000);
     }
 
     public static string GenerateSessionPassword(int byteLength = 16)
