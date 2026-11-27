@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using TBDMovies.Application.External;
+using TBDMovies.Domain.Media;
 using TBDMovies.Domain.Media.Discovery;
 using TBDMovies.Domain.Media.Parser;
 using TBDMovies.FileSystem.Safety;
@@ -13,8 +14,6 @@ public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
     private readonly bool _useFastEnumeration;
     private readonly Func<string, IEnumerable<string>> _enumerateEntries;
     private readonly Func<string, FileAttributes> _getAttributes;
-    private static readonly HashSet<string> MediaExtensions =
-        new(StringComparer.OrdinalIgnoreCase) { ".mkv", ".mp4", ".avi", ".mov", ".m4v", ".wmv" };
 
     public MediaDiscoveryService(NetworkReadGuard? networkReads = null)
     {
@@ -120,7 +119,7 @@ public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
                     {
                         if (recursive && !(snapshot.FatalIssue is not null && NetworkReadGuard.IsNetworkPath(root))) pending.Push(entry);
                     }
-                    else if (MediaExtensions.Contains(Path.GetExtension(entry))) files[entry] = item.Observation;
+                    else if (MediaFormatPolicy.IsSupportedVideoExtension(Path.GetExtension(entry))) files[entry] = item.Observation;
                 }
             }
             catch (UnauthorizedAccessException exception)

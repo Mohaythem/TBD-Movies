@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using TBDMovies.Application.Dto;
 using TBDMovies.Application.Services;
+using TBDMovies.Domain.Media;
 using TBDMovies.Domain.Media.Discovery;
 using TBDMovies.Domain.Media.Matcher;
 using TBDMovies.Domain.Metadata.Contracts;
@@ -946,8 +947,10 @@ public sealed partial class AddMediaPage : Page, ILocalizableView, IActivatableV
         }
     }
 
+    // Array-backed copy of the canonical policy: the FileOpenPicker filter is a WinRT
+    // surface, so the list must materialize as a concrete string[] (CsWinRT1032 rule).
     private static readonly string[] MediaExtensions =
-        [".mkv", ".mp4", ".avi", ".mov", ".m4v", ".wmv"];
+        MediaFormatPolicy.SupportedVideoExtensions.ToArray();
 
     /// <summary>Starts a folder scan, or requests cancellation of the running scan.</summary>
     private async void ScanButton_Click(object sender, RoutedEventArgs e)

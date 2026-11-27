@@ -10,6 +10,7 @@ using TBDMovies.Application.External;
 using TBDMovies.Application.Repositories;
 using TBDMovies.Domain.Library.Movies;
 using TBDMovies.Domain.Library.Shows;
+using TBDMovies.Domain.Media;
 using TBDMovies.Domain.Media.Matcher;
 using TBDMovies.Domain.Metadata.Contracts;
 
@@ -326,7 +327,7 @@ public sealed class MetadataMatchingService
 
         var value = title.Trim();
         var extension = Path.GetExtension(value);
-        if (extension is ".mkv" or ".mp4" or ".avi" or ".mov" or ".m4v" or ".wmv")
+        if (MediaFormatPolicy.IsSupportedVideoExtension(extension))
         {
             value = Path.GetFileNameWithoutExtension(value);
         }

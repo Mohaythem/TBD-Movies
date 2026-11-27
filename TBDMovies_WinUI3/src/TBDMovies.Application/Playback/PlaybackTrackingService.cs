@@ -275,16 +275,13 @@ public sealed class PlaybackTrackingService
             ? discoveredDuration
             : target.TotalDurationSeconds;
 
-        var progressPercent = (effectiveDuration is > 0)
-            ? (finalPosition / effectiveDuration.Value) * 100.0
-            : 0.0;
-
         var scrobbleTarget = (effectiveDuration.HasValue && !target.TotalDurationSeconds.HasValue)
             ? target with { TotalDurationSeconds = effectiveDuration }
             : target;
 
-        // Auto mark as watched locally if progress >= 80% (unified with Trakt 80% threshold)
-        if (finalPosition >= 3.0 && effectiveDuration is > 0 && progressPercent >= 80.0)
+        // Auto mark as watched locally if progress qualifies as watched
+        // (80% parity with Trakt's scrobble stop threshold — single rule below).
+        if (QualifiesAsWatched(finalPosition, effectiveDuration))
         {
             try
             {
@@ -346,10 +343,9 @@ public sealed class PlaybackTrackingService
             Trace.WriteLine($"[PlaybackTrackingService] StopActivePlaybackAsync scrobble error: {ex.Message}");
         }
 
-        var progressPercent = (duration is > 0) ? (pos / duration.Value) * 100.0 : 0.0;
-
-        // Auto mark as watched locally if progress >= 80% (unified with Trakt 80% threshold)
-        if (duration is > 0 && progressPercent >= 80.0)
+        // Auto mark as watched locally if progress qualifies as watched
+        // (80% parity with Trakt's scrobble stop threshold — single rule below).
+        if (QualifiesAsWatched(pos, duration))
         {
             try
             {
@@ -369,6 +365,21 @@ public sealed class PlaybackTrackingService
             }
         }
     }
+
+    /// <summary>
+    /// The single watched-completion rule, kept at parity with Trakt's scrobble threshold:
+    /// at least 80% of a known duration (unified local/Trakt completion invariant) and at
+    /// least a few seconds of real playback so an accidental sub-3-second open of a tiny
+    /// clip is never recorded as watched. Both the tracked-player exit path and the
+    /// shutdown stop path must use this one rule.
+    /// </summary>
+    private const double WatchedPercentThreshold = 80.0;
+    private const double WatchedMinimumPositionSeconds = 3.0;
+
+    private static bool QualifiesAsWatched(double positionSeconds, double? durationSeconds)
+        => positionSeconds >= WatchedMinimumPositionSeconds
+           && durationSeconds is > 0
+           && (positionSeconds / durationSeconds.Value) * 100.0 >= WatchedPercentThreshold;
 
     private async Task TryScrobbleAsync(
         PlaybackMediaTarget target,

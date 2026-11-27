@@ -16,6 +16,9 @@ public sealed class SubtitleDiscoveryService : ISubtitleDiscoveryService
         ".srt", ".ass", ".vtt"
     };
 
+    // Deliberate superset of MediaFormatPolicy.SupportedVideoExtensions: subtitle
+    // matching also covers video containers (.webm, .ts) that the importer does not
+    // register. Keep both lists in mind when touching video formats.
     private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".mkv", ".mp4", ".avi", ".mov", ".m4v", ".wmv", ".webm", ".ts"

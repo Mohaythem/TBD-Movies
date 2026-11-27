@@ -693,6 +693,129 @@ public sealed class PlaybackTrackingTests
     }
 
     [Fact]
+    public async Task PlaybackTrackingService_StopActivePlaybackAsync_MarksWatchedAtOrAboveUnified80Percent()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_shutdown_watched_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+
+            using (var conn = new SqliteConnection(connStr))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (94, 'Shutdown Watched Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (904, 94, 'C:\shutdown.mkv', 'c:\shutdown.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
+                ";
+                cmd.ExecuteNonQuery();
+            }
+
+            var personalRepo = new PersonalLibraryRepository(connStr);
+            var mockLauncher = new FakePlayerLauncher
+            {
+                SimulatedDiscoveredDuration = 1000,
+                SimulatedExitDelayMs = 400,
+                SimulatedExitPosition = 850
+            };
+            mockLauncher.SimulatedTicks.Add((850, 1000, false)); // 85% -> above the unified 80% threshold
+
+            var service = new PlaybackTrackingService(
+                mockLauncher,
+                personalLibraryRepository: personalRepo,
+                traktDataClient: new FakeTraktClient(),
+                traktAuthService: new FakeTraktAuthService(),
+                traktClientId: "dummy_client_id");
+
+            var target = new PlaybackMediaTarget(
+                MediaFileId: 904,
+                FilePath: @"C:\shutdown.mkv",
+                TotalDurationSeconds: 1000,
+                IsMovie: true,
+                MovieId: 94,
+                MovieTitle: "Shutdown Watched Movie");
+
+            var playTask = service.StartPlaybackAsync(target);
+            await Task.Delay(50);
+
+            await service.StopActivePlaybackAsync();
+            await playTask;
+
+            // The shutdown stop path and the player-exit path must share one watched rule.
+            var history = personalRepo.GetWatchEvents(94);
+            Assert.Single(history);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(dbPath)) File.Delete(dbPath); }
+            catch { }
+        }
+    }
+
+    [Fact]
+    public async Task PlaybackTrackingService_StopActivePlaybackAsync_Under3Seconds_DoesNotMarkWatched_EvenAbove80Percent()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_shutdown_tiny_{Guid.NewGuid():N}.db");
+        var connStr = $"Data Source={dbPath}";
+        try
+        {
+            new DatabaseMigrator(connStr).Migrate();
+
+            using (var conn = new SqliteConnection(connStr))
+            {
+                conn.Open();
+                using var cmd = conn.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (95, 'Tiny Clip Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
+                    INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES (905, 95, 'C:\tiny.mkv', 'c:\tiny.mkv', 1024, 'PRESENT', datetime('now'), datetime('now'));
+                ";
+                cmd.ExecuteNonQuery();
+            }
+
+            var personalRepo = new PersonalLibraryRepository(connStr);
+            var mockLauncher = new FakePlayerLauncher
+            {
+                SimulatedDiscoveredDuration = 3,
+                SimulatedExitDelayMs = 400,
+                SimulatedExitPosition = 2.6 // 86.7% -> above 80% but under the 3s floor
+            };
+            mockLauncher.SimulatedTicks.Add((2.6, 3, false));
+
+            var service = new PlaybackTrackingService(
+                mockLauncher,
+                personalLibraryRepository: personalRepo,
+                traktDataClient: new FakeTraktClient(),
+                traktAuthService: new FakeTraktAuthService(),
+                traktClientId: "dummy_client_id");
+
+            var target = new PlaybackMediaTarget(
+                MediaFileId: 905,
+                FilePath: @"C:\tiny.mkv",
+                TotalDurationSeconds: 3,
+                IsMovie: true,
+                MovieId: 95,
+                MovieTitle: "Tiny Clip Movie");
+
+            var playTask = service.StartPlaybackAsync(target);
+            await Task.Delay(50);
+
+            await service.StopActivePlaybackAsync();
+            await playTask;
+
+            // Aligned with the exit path: a sub-3-second open is never a watch event.
+            Assert.Empty(personalRepo.GetWatchEvents(95));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (File.Exists(dbPath)) File.Delete(dbPath); }
+            catch { }
+        }
+    }
+
+    [Fact]
     public async Task PlaybackTrackingService_SequentialPlayback_StopsPreviousSessionFirst()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"tbd_test_sequential_{Guid.NewGuid():N}.db");
