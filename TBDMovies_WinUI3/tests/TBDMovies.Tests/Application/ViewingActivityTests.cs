@@ -1,5 +1,7 @@
 using TBDMovies.Application.Services;
+using TBDMovies.Domain.Library.Movies;
 using TBDMovies.Domain.Library.Personal;
+using TBDMovies.Domain.Library.Shows;
 using TBDMovies.Infrastructure.Persistence.Migrations;
 using TBDMovies.Infrastructure.Persistence.Repositories;
 using Microsoft.Data.Sqlite;

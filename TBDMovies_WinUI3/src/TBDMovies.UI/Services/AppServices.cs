@@ -17,6 +17,7 @@ using TBDMovies.Infrastructure.Metadata.Tmdb;
 using TBDMovies.Infrastructure.Security;
 using TBDMovies.Application.Trakt;
 using TBDMovies.Infrastructure.Trakt;
+using TBDMovies.UI.Models;
 using System.Diagnostics;
 using System.Text.Json;
 using TBDMovies.Application.Playback;
