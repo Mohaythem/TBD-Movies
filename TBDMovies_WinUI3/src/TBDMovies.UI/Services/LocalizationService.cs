@@ -823,6 +823,8 @@ public static class LocalizationService
         ["OpenOnTmdb"] = "Open on TMDB",
         ["OpenOnLetterboxd"] = "Open on Letterboxd",
         ["CloudOnlyDetailsNotice"] = "Online-only preview — this title is not saved in your local library.",
+        ["TraktOfficialAppSummary"] = "Official Trakt App (Active · Zero-Config)",
+        ["TraktOfficialClientIdActive"] = "Official Client ID Active",
     };
 
     private static readonly IReadOnlyDictionary<string, string> Arabic = new Dictionary<string, string>
@@ -1644,6 +1646,8 @@ public static class LocalizationService
         ["OpenOnTmdb"] = "فتح على TMDB",
         ["OpenOnLetterboxd"] = "فتح على Letterboxd",
         ["CloudOnlyDetailsNotice"] = "معاينة سحابية فقط — هذا العنوان غير محفوظ في مكتبتك المحلية.",
+        ["TraktOfficialAppSummary"] = "تطبيق Trakt الرسمي (نشط · بدون إعداد)",
+        ["TraktOfficialClientIdActive"] = "معرّف العميل الرسمي نشط",
     };
 
     public static UiLanguage CurrentLanguage { get; private set; } = UiLanguage.English;

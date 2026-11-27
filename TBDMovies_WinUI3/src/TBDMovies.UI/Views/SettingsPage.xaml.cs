@@ -1030,10 +1030,10 @@ public sealed partial class SettingsPage : Page, ILocalizableView, IActivatableV
             TraktEditConfigButton.Visibility = hasSavedConfig && !_editingTraktConfig ? Visibility.Visible : Visibility.Collapsed;
             TraktCancelConfigButton.Visibility = hasSavedConfig && _editingTraktConfig ? Visibility.Visible : Visibility.Collapsed;
             TraktConfigSummaryText.Text = isOfficial
-                ? "Official Trakt App (Active · Zero-Config)"
+                ? LocalizationService.Text("TraktOfficialAppSummary")
                 : (hasSavedConfig ? LocalizationService.Text("TraktConfigConfigured") : string.Empty);
             TraktClientIdMaskedText.Text = hasSavedConfig
-                ? (isOfficial ? "Official Client ID Active" : string.Format(LocalizationService.Text("TraktClientIdMaskedFormat"), MaskTraktClientId(config.ClientId)))
+                ? (isOfficial ? LocalizationService.Text("TraktOfficialClientIdActive") : string.Format(LocalizationService.Text("TraktClientIdMaskedFormat"), MaskTraktClientId(config.ClientId)))
                 : string.Empty;
             if (hasSavedConfig && !_editingTraktConfig)
             {

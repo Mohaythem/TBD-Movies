@@ -539,24 +539,6 @@ public sealed class PlayerProcessLauncher : IPlayerProcessLauncher
         if (string.IsNullOrWhiteSpace(path)) return false;
         var trimmed = path.Trim().Trim('"', ' ').TrimEnd('.', ' ');
         var ext = Path.GetExtension(trimmed);
-        if (string.IsNullOrEmpty(ext)) return true;
-
-        if (ext.Equals(".bat", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".cmd", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".ps1", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".vbs", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".js", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".jse", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".wsf", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".wsh", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".hta", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".scr", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".pif", StringComparison.OrdinalIgnoreCase) ||
-            ext.Equals(".com", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        return true;
+        return string.IsNullOrEmpty(ext) || ext.Equals(".exe", StringComparison.OrdinalIgnoreCase);
     }
 }

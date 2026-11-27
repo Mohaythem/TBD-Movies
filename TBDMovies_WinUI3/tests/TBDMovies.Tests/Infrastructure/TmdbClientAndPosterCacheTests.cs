@@ -461,6 +461,22 @@ public class TmdbClientAndPosterCacheTests : IDisposable
         Assert.Equal(targetFile, result);
     }
 
+    [Theory]
+    [InlineData("../../evil.jpg")]
+    [InlineData(@"..\..\evil.jpg")]
+    [InlineData("/../outside.png")]
+    public void DiskPosterCache_TraversalReference_StaysContainedInsideCacheRoot(string reference)
+    {
+        var cache = new DiskPosterCache(_testCacheDir);
+        var path = cache.GetCachedPosterPath("TMDB", reference);
+        if (path is not null)
+        {
+            var fullRoot = Path.GetFullPath(_testCacheDir);
+            var rootWithSep = fullRoot.EndsWith(Path.DirectorySeparatorChar) ? fullRoot : fullRoot + Path.DirectorySeparatorChar;
+            Assert.StartsWith(rootWithSep, Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
     [Fact]
     public async Task DiskPosterCache_DownloadsValidJpeg_AndPerformsAtomicMove()
     {

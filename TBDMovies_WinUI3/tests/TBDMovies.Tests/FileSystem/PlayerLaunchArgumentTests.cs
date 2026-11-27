@@ -77,6 +77,7 @@ public sealed class PlayerLaunchArgumentTests
     [InlineData(@"C:\Tools\script.hta")]
     [InlineData(@"C:\Tools\script.scr")]
     [InlineData(@"C:\Tools\script.com")]
+    [InlineData(@"C:\Tools\shortcut.lnk")]
     public void IsPermittedCustomPlayerPath_RejectsScriptExtensions(string scriptPath)
     {
         Assert.False(PlayerProcessLauncher.IsPermittedCustomPlayerPath(scriptPath));

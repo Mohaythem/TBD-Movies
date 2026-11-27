@@ -501,7 +501,17 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
             return null;
         }
 
-        return Path.Combine(_cacheDirectory, $"tmdb_{sanitized}");
+        var fullRoot = Path.GetFullPath(_cacheDirectory);
+        var rootWithSep = fullRoot.EndsWith(Path.DirectorySeparatorChar) || fullRoot.EndsWith(Path.AltDirectorySeparatorChar)
+            ? fullRoot
+            : fullRoot + Path.DirectorySeparatorChar;
+        var fullTarget = Path.GetFullPath(Path.Combine(fullRoot, $"tmdb_{sanitized}"));
+        if (!fullTarget.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return fullTarget;
     }
 
     private static bool IsValidImage(string filePath, out string mimeType)
