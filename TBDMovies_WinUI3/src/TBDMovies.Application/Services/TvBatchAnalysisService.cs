@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using TBDMovies.Application.Dto;
 using TBDMovies.Domain.Media.Discovery;
 using TBDMovies.Application.Text;
+using TBDMovies.Domain.Library.Shows;
 using TBDMovies.Domain.Media.Parser;
 
 namespace TBDMovies.Application.Services;
@@ -228,8 +229,8 @@ public sealed class TvBatchAnalysisService
             }
 
             if (titleSource == TvEvidenceSource.Filename && !string.IsNullOrWhiteSpace(folderShowTitle)
-                && NormalizeKey(effectiveTitle!) != NormalizeKey(folderShowTitle)
-                && NormalizeKey(effectiveTitle!) != NormalizeKey(StripSeasonAndYear(folderShowTitle)))
+                && TvShowCatalogData.NormalizeTitle(effectiveTitle!) != TvShowCatalogData.NormalizeTitle(folderShowTitle)
+                && TvShowCatalogData.NormalizeTitle(effectiveTitle!) != TvShowCatalogData.NormalizeTitle(StripSeasonAndYear(folderShowTitle)))
             {
                 warnings.Add(new TvBatchWarning(TvBatchWarningCode.FolderConflict,
                     "Filename and folder name identify different series. Confirm the series identity."));
@@ -337,7 +338,7 @@ public sealed class TvBatchAnalysisService
 
         // Group files by NormalizedTitle so multi-folder seasons unite under a single series candidate
         var groups = tvFiles
-            .GroupBy(t => NormalizeKey(t.Candidate.Title!))
+            .GroupBy(t => TvShowCatalogData.NormalizeTitle(t.Candidate.Title!))
             .ToList();
 
         var resultSeries = new List<TvSeriesCandidate>();
@@ -654,17 +655,4 @@ public sealed class TvBatchAnalysisService
         return string.IsNullOrWhiteSpace(cleaned) ? title : cleaned;
     }
 
-    private static string NormalizeKey(string value)
-    {
-        var builder = new StringBuilder(value.Length);
-        foreach (var character in value)
-        {
-            if (char.IsLetterOrDigit(character))
-            {
-                builder.Append(char.ToLowerInvariant(character));
-            }
-        }
-
-        return builder.ToString();
-    }
 }

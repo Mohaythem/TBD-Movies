@@ -15,6 +15,11 @@ public static class MetadataScorer
     public const double AmbiguityScoreThreshold = 0.65;
     public const double AmbiguityScoreDelta = 0.15;
 
+    // Title-similarity evidence tiers — deliberately separate knobs from the total-score
+    // thresholds above even though they currently share values.
+    public const double StrongTitleSimilarity = 0.80;
+    public const double WeakTitleSimilarity = 0.50;
+
     /// <summary>
     /// Confidence at or above which a user-initiated bulk import accepts the top candidate without a
     /// separate manual Review Match. It is below <see cref="AutoMatchThreshold" /> on purpose: unattended
@@ -333,7 +338,7 @@ public static class MetadataScorer
         var titleSim = CalculateTitleSimilarity(normalizedQuery, normalizedCandidateTitle);
 
         var isExactTitle = string.Equals(normalizedQuery, normalizedCandidateTitle, StringComparison.Ordinal);
-        var isStrongTitle = titleSim >= 0.80;
+        var isStrongTitle = titleSim >= StrongTitleSimilarity;
 
         if (isExactTitle)
         {
@@ -343,7 +348,7 @@ public static class MetadataScorer
         {
             matchReasons.Add(MatchReason.TitleStrong);
         }
-        else if (titleSim < 0.50)
+        else if (titleSim < WeakTitleSimilarity)
         {
             penaltyReasons.Add(MatchReason.WeakTitleSimilarity);
         }
@@ -357,7 +362,7 @@ public static class MetadataScorer
                 matchReasons.Add(MatchReason.OriginalTitleExact);
                 if (origSim > titleSim) titleSim = origSim;
             }
-            else if (origSim >= 0.80)
+            else if (origSim >= StrongTitleSimilarity)
             {
                 matchReasons.Add(MatchReason.OriginalTitleStrong);
                 if (origSim > titleSim) titleSim = origSim;

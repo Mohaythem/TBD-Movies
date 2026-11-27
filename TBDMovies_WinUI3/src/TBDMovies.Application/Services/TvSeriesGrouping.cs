@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using TBDMovies.Application.Text;
+using TBDMovies.Domain.Library.Shows;
 using TBDMovies.Domain.Media.Discovery;
 using TBDMovies.Domain.Media.Parser;
 
@@ -61,7 +62,7 @@ public static class TvSeriesGrouping
                 continue;
             }
 
-            var key = NormalizeKey(baseTitle);
+            var key = TvShowCatalogData.NormalizeTitle(baseTitle);
             if (key.Length == 0)
             {
                 continue;
@@ -174,20 +175,6 @@ public static class TvSeriesGrouping
             parsed.Codec,
             parsed.Extension);
         return new DiscoveredMedia(item.Path, item.FileSize, movieParsed, DiscoveryClassification.MovieCandidate, null, item.Observation);
-    }
-
-    private static string NormalizeKey(string value)
-    {
-        var builder = new StringBuilder(value.Length);
-        foreach (var character in value)
-        {
-            if (char.IsLetterOrDigit(character))
-            {
-                builder.Append(char.ToLowerInvariant(character));
-            }
-        }
-
-        return builder.ToString();
     }
 
 }
