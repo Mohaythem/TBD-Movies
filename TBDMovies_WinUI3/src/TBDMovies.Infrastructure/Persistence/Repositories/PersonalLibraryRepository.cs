@@ -1470,25 +1470,35 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         if (command.ExecuteScalar() is null) throw new KeyNotFoundException($"Custom list {listId} was not found.");
     }
 
+    /// <summary>
+    /// The watch_events row snapshots every display fact of the episode at watch time. The
+    /// WHERE hole selects one episode ("e.id = $episode") or every episode of a show
+    /// ("s.id = $showId"); ids and timestamps are always parameters.
+    /// </summary>
+    private const string EpisodeWatchEventInsertSql = """
+        INSERT INTO watch_events(
+            media_kind, episode_id, watched_at, created_at, title_snapshot, show_title_snapshot,
+            season_number_snapshot, episode_number_snapshot, year_snapshot,
+            artwork_reference, backdrop_reference, poster_reference)
+        SELECT 'EPISODE', e.id, $watched, $created, COALESCE(NULLIF(TRIM(e.title), ''), CAST(e.episode_number AS TEXT)),
+               s.title, se.season_number, e.episode_number, s.year,
+               e.still_path, s.backdrop_path, s.poster_path
+          FROM tv_episodes e
+          JOIN tv_seasons se ON se.id = e.season_id
+          JOIN tv_shows s ON s.id = se.show_id
+         WHERE {0};
+        """;
+
     public WatchHistoryEntry AddEpisodeWatchEvent(int episodeId, DateTimeOffset watchedAt, DateTimeOffset createdAt)
     {
         ValidateId(episodeId, nameof(episodeId));
         using var gate = DatabaseWriteGate.Enter(_connectionString);
         using var connection = SqliteConnections.Open(_connectionString);
         using var transaction = connection.BeginTransaction(deferred: false);
-        using var command = Command(connection, transaction, """
-            INSERT INTO watch_events(
-                media_kind, episode_id, watched_at, created_at, title_snapshot, show_title_snapshot,
-                season_number_snapshot, episode_number_snapshot, year_snapshot,
-                artwork_reference, backdrop_reference, poster_reference)
-            SELECT 'EPISODE', e.id, $watched, $created, COALESCE(NULLIF(TRIM(e.title), ''), CAST(e.episode_number AS TEXT)),
-                   s.title, se.season_number, e.episode_number, s.year,
-                   e.still_path, s.backdrop_path, s.poster_path
-              FROM tv_episodes e
-              JOIN tv_seasons se ON se.id = e.season_id
-              JOIN tv_shows s ON s.id = se.show_id
-             WHERE e.id = $episode;
-            """);
+        using var command = Command(connection, transaction, string.Format(
+            CultureInfo.InvariantCulture,
+            EpisodeWatchEventInsertSql,
+            "e.id = $episode"));
         command.Parameters.AddWithValue("$episode", episodeId);
         command.Parameters.AddWithValue("$watched", watchedAt.ToString("O"));
         command.Parameters.AddWithValue("$created", createdAt.ToString("O"));
@@ -1513,19 +1523,10 @@ public sealed class PersonalLibraryRepository : IPersonalLibraryRepository, IWat
         using var gate = DatabaseWriteGate.Enter(_connectionString);
         using var connection = SqliteConnections.Open(_connectionString);
         using var transaction = connection.BeginTransaction(deferred: false);
-        using var command = Command(connection, transaction, """
-            INSERT INTO watch_events(
-                media_kind, episode_id, watched_at, created_at, title_snapshot, show_title_snapshot,
-                season_number_snapshot, episode_number_snapshot, year_snapshot,
-                artwork_reference, backdrop_reference, poster_reference)
-            SELECT 'EPISODE', e.id, $watched, $created, COALESCE(NULLIF(TRIM(e.title), ''), CAST(e.episode_number AS TEXT)),
-                   s.title, se.season_number, e.episode_number, s.year,
-                   e.still_path, s.backdrop_path, s.poster_path
-              FROM tv_episodes e
-              JOIN tv_seasons se ON se.id = e.season_id
-              JOIN tv_shows s ON s.id = se.show_id
-             WHERE s.id = $showId;
-            """);
+        using var command = Command(connection, transaction, string.Format(
+            CultureInfo.InvariantCulture,
+            EpisodeWatchEventInsertSql,
+            "s.id = $showId"));
         command.Parameters.AddWithValue("$showId", showId);
         command.Parameters.AddWithValue("$watched", watchedAt.ToString("O"));
         command.Parameters.AddWithValue("$created", createdAt.ToString("O"));
