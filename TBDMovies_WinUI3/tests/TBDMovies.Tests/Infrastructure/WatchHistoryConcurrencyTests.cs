@@ -134,8 +134,7 @@ public sealed class WatchHistoryConcurrencyTests : IDisposable
 
     private int CreateEpisode()
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
+        using var connection = TestDb.OpenForeignKeysOn(_connectionString);
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO tv_shows(id, title, sort_title, year, date_added, created_at, updated_at, genres, metadata_status)

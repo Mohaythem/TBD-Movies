@@ -37,8 +37,7 @@ public sealed class TraktCacheRepositoryTests : IDisposable
 
     private SqliteConnection Open()
     {
-        var connection = new SqliteConnection(_cs);
-        connection.Open();
+        var connection = TestDb.OpenForeignKeysOn(_cs);
         return connection;
     }
 
@@ -380,9 +379,8 @@ public sealed class TraktCacheRepositoryTests : IDisposable
         var backup = Assert.Single(Directory.GetFiles(DatabaseSafetyBackup.BackupDirectoryFor(_cs), "library.*.db"));
         Assert.True(DatabaseSafetyBackup.VerifyBackup(backup, out var backupVersion));
         Assert.Equal(17, backupVersion);
-        using (var saved = new SqliteConnection($"Data Source={backup};Mode=ReadOnly;Pooling=False"))
+        using (var saved = TestDb.OpenForeignKeysOn($"Data Source={backup};Mode=ReadOnly;Pooling=False"))
         {
-            saved.Open();
             Assert.Equal("Fight Club", Scalar(saved, "SELECT title FROM movies WHERE id=1"));
             Assert.Equal(1L, Scalar(saved, "SELECT COUNT(*) FROM custom_list_members"));
         }

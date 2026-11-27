@@ -282,8 +282,7 @@ public sealed class MovieRemovalOperationSafetyTests : IDisposable
 
     private void SeedWatchEvent(int movieId)
     {
-        using var conn = new SqliteConnection(_connectionString);
-        conn.Open();
+        using var conn = TestDb.OpenForeignKeysOn(_connectionString);
         using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             INSERT INTO watch_events (media_kind, movie_id, watched_at, created_at, title_snapshot)
@@ -297,8 +296,7 @@ public sealed class MovieRemovalOperationSafetyTests : IDisposable
 
     private bool HasWatchEventForMovie(int movieId)
     {
-        using var conn = new SqliteConnection(_connectionString);
-        conn.Open();
+        using var conn = TestDb.OpenForeignKeysOn(_connectionString);
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT COUNT(*) FROM watch_events WHERE movie_id = $movie_id;";
         cmd.Parameters.AddWithValue("$movie_id", movieId);

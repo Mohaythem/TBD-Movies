@@ -248,8 +248,7 @@ public sealed class WriteCoordinationTests : IDisposable
     [Fact]
     public async Task InjectedConnectionConstructor_SerializesConcurrentReadsAndWrites()
     {
-        using var injectedConnection = new SqliteConnection(_connectionString);
-        injectedConnection.Open();
+        using var injectedConnection = TestDb.OpenForeignKeysOn(_connectionString);
         using var store = new FileOperationStore(injectedConnection);
 
         const int operationCount = 50;
@@ -339,8 +338,7 @@ public sealed class WriteCoordinationTests : IDisposable
 
     private void SeedMovieWithMediaFile(int id, string path)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
+        using var connection = TestDb.OpenForeignKeysOn(_connectionString);
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO movies(id, provider, external_id, title, date_added, created_at, updated_at, genres, metadata_status)
@@ -356,8 +354,7 @@ public sealed class WriteCoordinationTests : IDisposable
 
     private string MediaFilePath(int id)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
+        using var connection = TestDb.OpenForeignKeysOn(_connectionString);
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT current_path FROM media_files WHERE id = $id;";
         command.Parameters.AddWithValue("$id", id);

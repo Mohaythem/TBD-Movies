@@ -75,9 +75,8 @@ public sealed class PlaybackTrackingTests
         {
             new DatabaseMigrator(connStr).Migrate();
 
-            using (var conn = new SqliteConnection(connStr))
+            using (var conn = TestDb.OpenForeignKeysOn(connStr))
             {
-                conn.Open();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (20, 'Tracking Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
@@ -138,9 +137,8 @@ public sealed class PlaybackTrackingTests
         try
         {
             new DatabaseMigrator(connStr).Migrate();
-            using (var conn = new SqliteConnection(connStr))
+            using (var conn = TestDb.OpenForeignKeysOn(connStr))
             {
-                conn.Open();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (30, 'Test Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
@@ -341,9 +339,8 @@ public sealed class PlaybackTrackingTests
         {
             new DatabaseMigrator(connStr).Migrate();
 
-            using (var conn = new SqliteConnection(connStr))
+            using (var conn = TestDb.OpenForeignKeysOn(connStr))
             {
-                conn.Open();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (50, 'Discovered Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
@@ -400,9 +397,8 @@ public sealed class PlaybackTrackingTests
         {
             new DatabaseMigrator(connStr).Migrate();
 
-            using (var conn = new SqliteConnection(connStr))
+            using (var conn = TestDb.OpenForeignKeysOn(connStr))
             {
-                conn.Open();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (60, 'No Duration Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
@@ -458,9 +454,8 @@ public sealed class PlaybackTrackingTests
         {
             new DatabaseMigrator(connStr).Migrate();
 
-            using (var conn = new SqliteConnection(connStr))
+            using (var conn = TestDb.OpenForeignKeysOn(connStr))
             {
-                conn.Open();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (70, 'Scrobble Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
@@ -511,9 +506,8 @@ public sealed class PlaybackTrackingTests
         {
             new DatabaseMigrator(connStr).Migrate();
 
-            using (var conn = new SqliteConnection(connStr))
+            using (var conn = TestDb.OpenForeignKeysOn(connStr))
             {
-                conn.Open();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (80, 'Quick Exit Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
@@ -570,9 +564,8 @@ public sealed class PlaybackTrackingTests
         {
             new DatabaseMigrator(connStr).Migrate();
 
-            using (var conn = new SqliteConnection(connStr))
+            using (var conn = TestDb.OpenForeignKeysOn(connStr))
             {
-                conn.Open();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (90, 'Lifecycle Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
@@ -638,9 +631,8 @@ public sealed class PlaybackTrackingTests
         {
             new DatabaseMigrator(connStr).Migrate();
 
-            using (var conn = new SqliteConnection(connStr))
+            using (var conn = TestDb.OpenForeignKeysOn(connStr))
             {
-                conn.Open();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (91, 'App Exit Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
@@ -701,9 +693,8 @@ public sealed class PlaybackTrackingTests
         {
             new DatabaseMigrator(connStr).Migrate();
 
-            using (var conn = new SqliteConnection(connStr))
+            using (var conn = TestDb.OpenForeignKeysOn(connStr))
             {
-                conn.Open();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (94, 'Shutdown Watched Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
@@ -763,9 +754,8 @@ public sealed class PlaybackTrackingTests
         {
             new DatabaseMigrator(connStr).Migrate();
 
-            using (var conn = new SqliteConnection(connStr))
+            using (var conn = TestDb.OpenForeignKeysOn(connStr))
             {
-                conn.Open();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (95, 'Tiny Clip Movie', 2025, datetime('now'), datetime('now'), datetime('now'));
@@ -824,9 +814,8 @@ public sealed class PlaybackTrackingTests
         {
             new DatabaseMigrator(connStr).Migrate();
 
-            using (var conn = new SqliteConnection(connStr))
+            using (var conn = TestDb.OpenForeignKeysOn(connStr))
             {
-                conn.Open();
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     INSERT INTO movies (id, title, year, created_at, updated_at, date_added) VALUES (92, 'Movie 1', 2025, datetime('now'), datetime('now'), datetime('now'));

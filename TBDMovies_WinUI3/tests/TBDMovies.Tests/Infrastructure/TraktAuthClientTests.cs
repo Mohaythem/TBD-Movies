@@ -162,9 +162,8 @@ public sealed class TraktAuthClientTests : IDisposable
         var connectionString = $"Data Source={Path.Combine(directory, "settings.db")};Pooling=False";
         try
         {
-            using (var connection = new SqliteConnection(connectionString))
+            using (var connection = TestDb.OpenForeignKeysOn(connectionString))
             {
-                connection.Open();
                 using var command = connection.CreateCommand();
                 command.CommandText = "CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL);";
                 command.ExecuteNonQuery();

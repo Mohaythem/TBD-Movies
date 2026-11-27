@@ -40,8 +40,7 @@ public sealed class LibraryRevisionTrackerTests : IDisposable
 
     private void SeedMovie(int id, string title)
     {
-        using var conn = new SqliteConnection(_cs);
-        conn.Open();
+        using var conn = TestDb.OpenForeignKeysOn(_cs);
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "INSERT INTO movies (id, provider, external_id, title, date_added, created_at, updated_at, genres, metadata_status) VALUES ($id, 'tmdb', $ext, $title, '2026-01-01', '2026-01-01', '2026-01-01', '[]', 'READY');";
         cmd.Parameters.AddWithValue("$id", id);
@@ -52,8 +51,7 @@ public sealed class LibraryRevisionTrackerTests : IDisposable
 
     private void SeedMediaFile(int id, int movieId, string path)
     {
-        using var conn = new SqliteConnection(_cs);
-        conn.Open();
+        using var conn = TestDb.OpenForeignKeysOn(_cs);
         using var cmd = conn.CreateCommand();
         cmd.CommandText = "INSERT INTO media_files (id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at) VALUES ($id, $movieId, $path, $key, 100, 'PRESENT', '2026-01-01', '2026-01-01');";
         cmd.Parameters.AddWithValue("$id", id);

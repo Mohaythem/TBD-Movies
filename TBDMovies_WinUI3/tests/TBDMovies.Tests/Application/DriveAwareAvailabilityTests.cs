@@ -154,9 +154,8 @@ public sealed class DriveAwareAvailabilityTests : IDisposable
         var offline = FreeDriveRoot();
         SeedMedia(1, offline + @"movies\a.mkv");
 
-        using (var connection = new SqliteConnection(_connectionString))
+        using (var connection = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            connection.Open();
             using var command = connection.CreateCommand();
             command.CommandText = """
                 INSERT INTO media_files(id, movie_id, current_path, path_key, file_size, status, discovered_at, last_seen_at)
@@ -180,8 +179,7 @@ public sealed class DriveAwareAvailabilityTests : IDisposable
 
     private void SeedMedia(int id, string path)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
+        using var connection = TestDb.OpenForeignKeysOn(_connectionString);
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO movies(id, provider, external_id, title, date_added, created_at, updated_at, genres, metadata_status)

@@ -38,13 +38,13 @@ public sealed class SmartTvImportSafetyTests : IDisposable
         matching: new MetadataMatchingService(_factory, provider ?? new Offline()), fileValidator: new ImportFileValidator());
     private long Count(string table)
     {
-        using var c = new SqliteConnection(_connection); c.Open();
+        using var c = TestDb.OpenForeignKeysOn(_connection);
         using var command = c.CreateCommand(); command.CommandText = "SELECT COUNT(*) FROM " + table;
         return (long)command.ExecuteScalar()!;
     }
     private void Sql(string sql)
     {
-        using var c = new SqliteConnection(_connection); c.Open();
+        using var c = TestDb.OpenForeignKeysOn(_connection);
         using var command = c.CreateCommand(); command.CommandText = sql; command.ExecuteNonQuery();
     }
 

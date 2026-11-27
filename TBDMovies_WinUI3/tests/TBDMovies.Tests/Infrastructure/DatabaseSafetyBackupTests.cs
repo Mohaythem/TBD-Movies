@@ -38,8 +38,7 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
     private string BackupDir => Path.Combine(_directory, "backups");
     private int UserVersion()
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
+        using var connection = TestDb.OpenForeignKeysOn(_connectionString);
         using var command = connection.CreateCommand();
         command.CommandText = "PRAGMA user_version;";
         return Convert.ToInt32(command.ExecuteScalar());
@@ -47,8 +46,7 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
 
     private void SeedMovie(int id)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
+        using var connection = TestDb.OpenForeignKeysOn(_connectionString);
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO movies(id, provider, external_id, title, date_added, created_at, updated_at, genres, metadata_status)
@@ -114,8 +112,7 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
     public void Retention_KeepsBoundedNumberOfKnownGoodBackups()
     {
         new DatabaseMigrator(_connectionString).Migrate();
-        using var source = new SqliteConnection(_connectionString);
-        source.Open();
+        using var source = TestDb.OpenForeignKeysOn(_connectionString);
         var version = DatabaseMigrator.LatestVersion;
 
         string last = string.Empty;
@@ -138,9 +135,8 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
         var backup = CreateBackupDirectly(out _);
 
         // Mutate the live database after the backup.
-        using (var connection = new SqliteConnection(_connectionString))
+        using (var connection = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            connection.Open();
             using var delete = connection.CreateCommand();
             delete.CommandText = "DELETE FROM movies;";
             delete.ExecuteNonQuery();
@@ -195,9 +191,8 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
         const string traktDpapiSecret = "TRAKT_DPAPI_SECRET_MARKER_9876543210";
         const string subDlSecret = "SUBDL_PLAIN_SECRET_MARKER_9876543210";
 
-        using (var conn = new SqliteConnection(_connectionString))
+        using (var conn = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
                 INSERT INTO settings(key, value, updated_at) VALUES
@@ -234,9 +229,8 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
         Assert.DoesNotContain(traktDpapiSecret, rawAfter, StringComparison.Ordinal);
         Assert.DoesNotContain(subDlSecret, rawAfter, StringComparison.Ordinal);
 
-        using (var checkConn = new SqliteConnection($"Data Source={backup};Mode=ReadOnly;Pooling=False"))
+        using (var checkConn = TestDb.OpenForeignKeysOn($"Data Source={backup};Mode=ReadOnly;Pooling=False"))
         {
-            checkConn.Open();
             using var langCmd = checkConn.CreateCommand();
             langCmd.CommandText = "SELECT value FROM settings WHERE key = 'ui_language';";
             Assert.Equal("ar", langCmd.ExecuteScalar() as string);
@@ -281,9 +275,8 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
 
         // Hold an active WAL read snapshot (deferred: true => BEGIN DEFERRED + SELECT) so a subsequent write
         // advances the WAL end mark and PRAGMA wal_checkpoint(TRUNCATE) returns (busy=1) without truncating!
-        using (var readerConn = new SqliteConnection($"Data Source={_dbPath};Pooling=False"))
+        using (var readerConn = TestDb.OpenForeignKeysOn($"Data Source={_dbPath};Pooling=False"))
         {
-            readerConn.Open();
             using var readerTx = readerConn.BeginTransaction(deferred: true);
             using (var readCmd = readerConn.CreateCommand())
             {
@@ -321,9 +314,8 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
         var semiConnString = new SqliteConnectionStringBuilder { DataSource = semiDb }.ToString();
 
         new DatabaseMigrator(semiConnString).Migrate(9);
-        using (var conn = new SqliteConnection(semiConnString))
+        using (var conn = TestDb.OpenForeignKeysOn(semiConnString))
         {
-            conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
                 INSERT INTO movies(id, provider, external_id, title, date_added, created_at, updated_at, genres, metadata_status)
@@ -359,9 +351,8 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
         // Create a backup where a secret was inserted WITHOUT secure_delete and then deleted BEFORE backup creation
         // so secretCount == 0 in settings, but raw page bytes still contain the secret until forceVacuumReclaim: true!
         const string residualSecret = "RESIDUAL_FREELIST_SECRET_BYTES_777888999";
-        using (var rawConn = new SqliteConnection($"Data Source={_dbPath};Pooling=False"))
+        using (var rawConn = TestDb.OpenForeignKeysOn($"Data Source={_dbPath};Pooling=False"))
         {
-            rawConn.Open();
             using var cmd = rawConn.CreateCommand();
             cmd.CommandText = """
                 PRAGMA secure_delete = OFF;
@@ -450,9 +441,8 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
         }.ToString();
 
         new DatabaseMigrator(stageConnStr).Migrate();
-        using (var seedConn = new SqliteConnection(stageConnStr))
+        using (var seedConn = TestDb.OpenForeignKeysOn(stageConnStr))
         {
-            seedConn.Open();
             using var seedCmd = seedConn.CreateCommand();
             seedCmd.CommandText = """
                 INSERT INTO movies(id, provider, external_id, title, date_added, created_at, updated_at, genres, metadata_status)
@@ -464,9 +454,8 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
 
         const string walSecret = "UNCHECKPOINTED_WAL_SECRET_999888777";
         var backup = Path.Combine(BackupDir, $"library.20260102T000000000Z.v{DatabaseMigrator.LatestVersion}.waltest.abcdef12.db");
-        using (var uncheckpointedConn = new SqliteConnection(stageConnStr))
+        using (var uncheckpointedConn = TestDb.OpenForeignKeysOn(stageConnStr))
         {
-            uncheckpointedConn.Open();
             using var cmd = uncheckpointedConn.CreateCommand();
             cmd.CommandText = """
                 PRAGMA journal_mode = WAL;
@@ -598,8 +587,7 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
         }
 
         // 3. FileOperationStore(SqliteConnection) sets secure_delete == 1 on injected connection
-        using var memConn = new SqliteConnection("Data Source=:memory:");
-        memConn.Open();
+        using var memConn = TestDb.OpenForeignKeysOn("Data Source=:memory:");
         using var store = new FileOperationStore(memConn);
         using (var cmd = memConn.CreateCommand())
         {
@@ -610,8 +598,7 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
 
     private string CreateBackupDirectly(out int version)
     {
-        using var source = new SqliteConnection(_connectionString);
-        source.Open();
+        using var source = TestDb.OpenForeignKeysOn(_connectionString);
         version = DatabaseMigrator.LatestVersion;
         return DatabaseSafetyBackup.CreateVerifiedBackup(source, _connectionString, version, "direct");
     }
@@ -677,9 +664,8 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
         new DatabaseMigrator(_connectionString).Migrate();
         SeedMovie(1);
 
-        using (var conn = new SqliteConnection(_connectionString))
+        using (var conn = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = """
                 INSERT INTO custom_lists(id, display_name, created_at)
@@ -697,9 +683,8 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
         var maintenance = new LibraryMaintenanceRepository(_connectionString);
         var counts = maintenance.ClearCatalog();
 
-        using (var conn = new SqliteConnection(_connectionString))
+        using (var conn = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "SELECT COUNT(*) FROM custom_lists;";
             Assert.Equal(0L, Convert.ToInt64(cmd.ExecuteScalar()));
@@ -720,8 +705,7 @@ public sealed class DatabaseSafetyBackupTests : IDisposable
             Mode = SqliteOpenMode.ReadOnly,
             Pooling = false
         }.ToString();
-        using var connection = new SqliteConnection(connString);
-        connection.Open();
+        using var connection = TestDb.OpenForeignKeysOn(connString);
         using var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM movies;";
         return Convert.ToInt32(command.ExecuteScalar());

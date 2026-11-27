@@ -60,8 +60,7 @@ public sealed class TvHierarchyTests : IDisposable
     [Fact]
     public void The_migration_creates_the_hierarchy_with_its_keys_and_indexes()
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
+        using var connection = TestDb.OpenForeignKeysOn(_connectionString);
 
         foreach (var table in new[] { "tv_shows", "tv_seasons", "tv_episodes", "episode_media_files" })
         {
@@ -91,9 +90,8 @@ public sealed class TvHierarchyTests : IDisposable
             // Stop at the schema that shipped before this phase, seed it, then migrate the rest of the way.
             new DatabaseMigrator(connectionString).Migrate(5);
 
-            using (var seeded = new SqliteConnection(connectionString))
+            using (var seeded = TestDb.OpenForeignKeysOn(connectionString))
             {
-                seeded.Open();
                 using var command = seeded.CreateCommand();
                 command.CommandText = """
                     INSERT INTO movies(id, title, date_added, created_at, updated_at)
@@ -106,8 +104,7 @@ public sealed class TvHierarchyTests : IDisposable
 
             new DatabaseMigrator(connectionString).Migrate();
 
-            using var upgraded = new SqliteConnection(connectionString);
-            upgraded.Open();
+            using var upgraded = TestDb.OpenForeignKeysOn(connectionString);
             Assert.Equal(1L, Scalar(upgraded, "SELECT COUNT(*) FROM movies WHERE id = 4;"));
             Assert.Equal(1L, Scalar(upgraded, "SELECT COUNT(*) FROM media_files WHERE id = 6;"));
             Assert.Equal(0L, Scalar(upgraded, "SELECT COUNT(*) FROM tv_shows;"));

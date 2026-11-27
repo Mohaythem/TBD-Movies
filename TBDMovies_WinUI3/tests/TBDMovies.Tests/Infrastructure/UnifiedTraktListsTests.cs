@@ -174,9 +174,8 @@ public sealed class UnifiedTraktListsTests : IDisposable
         Assert.Equal(0, initialItems[0].Id);
 
         // 2. Movie is imported into local database
-        using (var conn = new SqliteConnection(_connectionString))
+        using (var conn = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "INSERT INTO movies (id, title, year, provider, external_id, date_added, metadata_status, created_at, updated_at) VALUES (101, 'The Matrix', 1999, 'tmdb', '603', '2026-01-01', 'READY', '2026-01-01', '2026-01-01');";
             cmd.ExecuteNonQuery();
@@ -266,9 +265,8 @@ public sealed class UnifiedTraktListsTests : IDisposable
     public void GetCustomListIdsForMovie_ExcludesDeletedCustomLists()
     {
         var repo = Repo();
-        using (var conn = new SqliteConnection(_connectionString))
+        using (var conn = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "INSERT INTO movies (id, title, year, provider, external_id, date_added, metadata_status, created_at, updated_at) VALUES (501, 'Movie 501', 2020, 'tmdb', '501', '2026-01-01', 'READY', '2026-01-01', '2026-01-01');";
             cmd.ExecuteNonQuery();
@@ -291,9 +289,8 @@ public sealed class UnifiedTraktListsTests : IDisposable
     public void GetCustomListIdsForShow_ExcludesDeletedCustomLists()
     {
         var repo = Repo();
-        using (var conn = new SqliteConnection(_connectionString))
+        using (var conn = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "INSERT INTO tv_shows (id, provider, external_id, title, sort_title, date_added, created_at, updated_at, genres, metadata_status) VALUES (601, 'tmdb', 's601', 'Show 601', 'show 601', '2026-01-01', '2026-01-01', '2026-01-01', '[]', 'READY');";
             cmd.ExecuteNonQuery();
@@ -316,9 +313,8 @@ public sealed class UnifiedTraktListsTests : IDisposable
     public void RequireCustomList_WhenListIsDeleted_ThrowsKeyNotFoundException()
     {
         var repo = Repo();
-        using (var conn = new SqliteConnection(_connectionString))
+        using (var conn = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "INSERT INTO movies (id, title, year, provider, external_id, date_added, metadata_status, created_at, updated_at) VALUES (701, 'Movie 701', 2021, 'tmdb', '701', '2026-01-01', 'READY', '2026-01-01', '2026-01-01');";
             cmd.ExecuteNonQuery();
@@ -527,9 +523,8 @@ public sealed class UnifiedTraktListsTests : IDisposable
         Assert.True(items[0].IsCloudOnly);
 
         // 2. Insert movie into movies table
-        using (var conn = new SqliteConnection(_connectionString))
+        using (var conn = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "INSERT INTO movies (id, title, year, provider, external_id, date_added, metadata_status, created_at, updated_at) VALUES (101, 'Fight Club', 1999, 'tmdb', '550', '2026-01-01', 'READY', '2026-01-01', '2026-01-01');";
             cmd.ExecuteNonQuery();
@@ -545,9 +540,8 @@ public sealed class UnifiedTraktListsTests : IDisposable
         Assert.Equal(550, upgradedItems[0].TmdbId);
 
         // 4. Alert 1 verification: simulate a duplicate cloud row existing alongside a legacy unlinked local row (tmdb_id IS NULL)
-        using (var conn = new SqliteConnection(_connectionString))
+        using (var conn = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            conn.Open();
             using var cmd = conn.CreateCommand();
             // Reset local row tmdb_id to NULL to simulate legacy unlinked row before fix
             cmd.CommandText = "UPDATE custom_list_members SET tmdb_id = NULL WHERE list_id = @list AND movie_id = 101;";
@@ -576,9 +570,8 @@ public sealed class UnifiedTraktListsTests : IDisposable
         var listId = repo.CreateCustomList("Cleanup Test", Now);
 
         // Seed movie
-        using (var conn = new SqliteConnection(_connectionString))
+        using (var conn = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "INSERT INTO movies (id, title, year, provider, external_id, date_added, metadata_status, created_at, updated_at) VALUES (202, 'The Matrix', 1999, 'tmdb', '603', '2026-01-01', 'READY', '2026-01-01', '2026-01-01');";
             cmd.ExecuteNonQuery();
@@ -588,9 +581,8 @@ public sealed class UnifiedTraktListsTests : IDisposable
         repo.AddMovieToCustomList(listId, 202, Now);
 
         // Simulate ghost cloud row inserted before fix (reset local tmdb_id to NULL to simulate legacy unlinked state)
-        using (var conn = new SqliteConnection(_connectionString))
+        using (var conn = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "UPDATE custom_list_members SET tmdb_id = NULL WHERE list_id = @list AND movie_id = 202;";
             cmd.Parameters.AddWithValue("@list", listId);
@@ -614,18 +606,16 @@ public sealed class UnifiedTraktListsTests : IDisposable
         var repo = Repo();
         var listId = repo.CreateCustomList("Dedup Test", Now);
 
-        using (var conn = new SqliteConnection(_connectionString))
+        using (var conn = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "INSERT INTO movies (id, title, year, provider, external_id, date_added, metadata_status, created_at, updated_at) VALUES (303, 'Inception', 2010, 'tmdb', '27205', '2026-01-01', 'READY', '2026-01-01', '2026-01-01');";
             cmd.ExecuteNonQuery();
         }
 
         // Insert legacy local row (tmdb_id NULL) and cloud row (tmdb_id 27205)
-        using (var conn = new SqliteConnection(_connectionString))
+        using (var conn = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = @"
                 INSERT INTO custom_list_members (list_id, media_kind, movie_id, tmdb_id, added_at) VALUES (@list, 'MOVIE', 303, NULL, '2026-01-01');
@@ -701,9 +691,8 @@ public sealed class UnifiedTraktListsTests : IDisposable
         var repo = Repo();
         var listId = repo.CreateCustomList("Action Clear Test", Now);
 
-        using (var conn = new SqliteConnection(_connectionString))
+        using (var conn = TestDb.OpenForeignKeysOn(_connectionString))
         {
-            conn.Open();
             using var cmd = conn.CreateCommand();
             cmd.CommandText = "INSERT INTO custom_list_pending_actions (list_id, media_kind, tmdb_id, action_type, created_at) VALUES (@list, 'MOVIE', 550, 'ADD', '2026-01-01');";
             cmd.Parameters.AddWithValue("@list", listId);

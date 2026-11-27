@@ -94,8 +94,7 @@ public sealed class NetworkCatalogSafetyTests : IDisposable
 
     private void SeedCatalog()
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
+        using var connection = TestDb.OpenForeignKeysOn(_connectionString);
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO movies(id, provider, external_id, title, date_added, created_at, updated_at, genres, metadata_status, review_match) VALUES (1, 'tmdb', '1', 'Seed Movie', '2026-01-01', '2026-01-01', '2026-01-01', '["Drama"]', 'READY', 0);
@@ -121,7 +120,7 @@ public sealed class NetworkCatalogSafetyTests : IDisposable
     private string SnapshotMedia(int id) => SnapshotTable("media_files", $"WHERE id = {id}");
     private string SnapshotTable(string table, string suffix = "", string columns = "*")
     {
-        using var connection = new SqliteConnection(_connectionString); connection.Open();
+        using var connection = TestDb.OpenForeignKeysOn(_connectionString);
         using var command = connection.CreateCommand(); command.CommandText = $"SELECT {columns} FROM {table} {suffix} ORDER BY 1";
         using var reader = command.ExecuteReader(); var rows = new List<string>();
         while (reader.Read()) { var values = new object[reader.FieldCount]; reader.GetValues(values); rows.Add(string.Join("|", values.Select(value => value is DBNull ? "<NULL>" : value.ToString()))); }
@@ -129,12 +128,12 @@ public sealed class NetworkCatalogSafetyTests : IDisposable
     }
     private long Scalar(string sql)
     {
-        using var connection = new SqliteConnection(_connectionString); connection.Open(); using var command = connection.CreateCommand(); command.CommandText = sql; return Convert.ToInt64(command.ExecuteScalar());
+        using var connection = TestDb.OpenForeignKeysOn(_connectionString); using var command = connection.CreateCommand(); command.CommandText = sql; return Convert.ToInt64(command.ExecuteScalar());
     }
 
     private void Execute(string sql)
     {
-        using var connection = new SqliteConnection(_connectionString); connection.Open();
+        using var connection = TestDb.OpenForeignKeysOn(_connectionString);
         using var command = connection.CreateCommand(); command.CommandText = sql; command.ExecuteNonQuery();
     }
 
