@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using TBDMovies.Application.Dto;
 using TBDMovies.Domain.Media.Discovery;
+using TBDMovies.Application.Text;
 using TBDMovies.Domain.Media.Parser;
 
 namespace TBDMovies.Application.Services;
@@ -143,7 +144,7 @@ public sealed class TvBatchAnalysisService
                 continue;
             }
 
-            var hasExplicitSeason = ExplicitSeasonMarkerPattern.IsMatch(FoldArabicDigits(stem));
+            var hasExplicitSeason = ExplicitSeasonMarkerPattern.IsMatch(AsciiDigits.FoldToAscii(stem));
 
             var warnings = new List<TvBatchWarning>();
 
@@ -553,7 +554,7 @@ public sealed class TvBatchAnalysisService
             return false;
         }
 
-        var folded = FoldArabicDigits(folderName.Trim());
+        var folded = AsciiDigits.FoldToAscii(folderName.Trim());
 
         // Check Specials folder
         if (folded.Equals("specials", StringComparison.OrdinalIgnoreCase) || folded.Equals("special", StringComparison.OrdinalIgnoreCase))
@@ -587,7 +588,7 @@ public sealed class TvBatchAnalysisService
             return false;
         }
 
-        var folded = FoldArabicDigits(stem.Trim());
+        var folded = AsciiDigits.FoldToAscii(stem.Trim());
         var match = BareNumericEpisodePattern.Match(folded);
         if (!match.Success)
         {
@@ -632,30 +633,6 @@ public sealed class TvBatchAnalysisService
         }
 
         return false;
-    }
-
-    public static string FoldArabicDigits(string value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return value;
-        }
-
-        var chars = value.ToCharArray();
-        for (var i = 0; i < chars.Length; i++)
-        {
-            var c = chars[i];
-            if (c is >= '٠' and <= '٩')
-            {
-                chars[i] = (char)('0' + (c - '٠'));
-            }
-            else if (c is >= '۰' and <= '۹')
-            {
-                chars[i] = (char)('0' + (c - '۰'));
-            }
-        }
-
-        return new string(chars);
     }
 
     private static string GetRelativePathSafe(string rootPath, string filePath)

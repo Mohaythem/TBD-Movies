@@ -10,27 +10,45 @@ namespace TBDMovies.Application.Text;
 /// </summary>
 public static class AsciiDigits
 {
-    /// <summary>Returns only the ASCII digits of <paramref name="value" />, folding Arabic/Persian digits.</summary>
-    public static string OnlyAsciiDigits(string? value)
+    /// <summary>
+    /// The single Arabic/Persian digit folder: Arabic-Indic (٠-٩) and extended/Persian (۰-۹)
+    /// digits become their ASCII 0-9 equivalents; every other character passes through
+    /// unchanged. String copies of this rule elsewhere were consolidated here.
+    /// </summary>
+    public static string FoldToAscii(string? value)
     {
         if (string.IsNullOrEmpty(value))
         {
-            return string.Empty;
+            return value ?? string.Empty;
         }
 
-        var builder = new StringBuilder(value.Length);
-        foreach (var character in value)
+        var chars = value.ToCharArray();
+        for (var i = 0; i < chars.Length; i++)
         {
-            var folded = character switch
+            var c = chars[i];
+            if (c is >= '٠' and <= '٩')
             {
-                >= '٠' and <= '٩' => (char)('0' + (character - '٠')),
-                >= '۰' and <= '۹' => (char)('0' + (character - '۰')),
-                _ => character,
-            };
+                chars[i] = (char)('0' + (c - '٠'));
+            }
+            else if (c is >= '۰' and <= '۹')
+            {
+                chars[i] = (char)('0' + (c - '۰'));
+            }
+        }
 
-            if (folded is >= '0' and <= '9')
+        return new string(chars);
+    }
+
+    /// <summary>Returns only the ASCII digits of <paramref name="value" />, folding Arabic/Persian digits.</summary>
+    public static string OnlyAsciiDigits(string? value)
+    {
+        var folded = FoldToAscii(value);
+        var builder = new StringBuilder(folded.Length);
+        foreach (var character in folded)
+        {
+            if (character is >= '0' and <= '9')
             {
-                builder.Append(folded);
+                builder.Append(character);
             }
         }
 

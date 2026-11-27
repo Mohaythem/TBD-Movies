@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using TBDMovies.Application.Text;
 using TBDMovies.Domain.Media.Discovery;
 using TBDMovies.Domain.Media.Parser;
 
@@ -107,7 +108,7 @@ public static class TvSeriesGrouping
             return false;
         }
 
-        var match = TrailingEpisode.Match(FoldDigits(title.Trim()));
+        var match = TrailingEpisode.Match(AsciiDigits.FoldToAscii(title.Trim()));
         if (!match.Success)
         {
             return false;
@@ -189,23 +190,5 @@ public static class TvSeriesGrouping
         return builder.ToString();
     }
 
-    private static string FoldDigits(string value)
-    {
-        var chars = value.ToCharArray();
-        for (var i = 0; i < chars.Length; i++)
-        {
-            var c = chars[i];
-            if (c is >= '٠' and <= '٩')
-            {
-                chars[i] = (char)('0' + (c - '٠'));
-            }
-            else if (c is >= '۰' and <= '۹')
-            {
-                chars[i] = (char)('0' + (c - '۰'));
-            }
-        }
-
-        return new string(chars);
-    }
 }
 

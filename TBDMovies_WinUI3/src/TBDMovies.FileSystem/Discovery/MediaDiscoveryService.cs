@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using TBDMovies.Application.External;
+using TBDMovies.Application.Text;
 using TBDMovies.Domain.Media;
 using TBDMovies.Domain.Media.Discovery;
 using TBDMovies.Domain.Media.Parser;
@@ -531,7 +532,7 @@ public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
     {
         var culture = System.Globalization.CultureInfo.InvariantCulture;
         var styles = System.Globalization.NumberStyles.None;
-        var episodeText = FoldDigits(marker.Groups["episode"].Value);
+        var episodeText = AsciiDigits.FoldToAscii(marker.Groups["episode"].Value);
 
         if (!int.TryParse(episodeText, styles, culture, out var episode) || episode is < 0 or > 999)
         {
@@ -539,31 +540,6 @@ public sealed partial class MediaDiscoveryService : IMediaDiscoveryService
         }
 
         return (1, episode);
-    }
-
-    /// <summary>Folds Arabic-Indic (٠-٩) and extended Arabic-Indic (۰-۹) digits to their ASCII value.</summary>
-    private static string FoldDigits(string value)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return value;
-        }
-
-        var chars = value.ToCharArray();
-        for (var i = 0; i < chars.Length; i++)
-        {
-            var c = chars[i];
-            if (c is >= '٠' and <= '٩')
-            {
-                chars[i] = (char)('0' + (c - '٠'));
-            }
-            else if (c is >= '۰' and <= '۹')
-            {
-                chars[i] = (char)('0' + (c - '۰'));
-            }
-        }
-
-        return new string(chars);
     }
 
     private static string? FirstMatch(Regex pattern, string value)

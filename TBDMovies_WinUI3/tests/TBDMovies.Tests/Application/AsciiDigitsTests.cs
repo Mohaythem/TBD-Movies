@@ -23,4 +23,21 @@ public sealed class AsciiDigitsTests
     {
         Assert.Equal(expected, AsciiDigits.OnlyAsciiDigits(input));
     }
+
+    [Theory]
+    [InlineData("S02E05", "S02E05")]              // letters and separators pass through unchanged
+    [InlineData("S٠٢E۰٥", "S02E05")]              // both digit ranges fold in place
+    [InlineData("الموسم ٢", "الموسم 2")]          // Arabic text preserved around folded digits
+    [InlineData("season 2 (2024)", "season 2 (2024)")]
+    [InlineData("", "")]
+    public void FoldToAscii_folds_in_place_and_preserves_everything_else(string input, string expected)
+    {
+        Assert.Equal(expected, AsciiDigits.FoldToAscii(input));
+    }
+
+    [Fact]
+    public void FoldToAscii_handles_null()
+    {
+        Assert.Equal(string.Empty, AsciiDigits.FoldToAscii(null));
+    }
 }
