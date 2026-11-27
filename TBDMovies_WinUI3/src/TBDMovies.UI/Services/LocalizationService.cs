@@ -822,6 +822,7 @@ public static class LocalizationService
         ["SettingsTabData"] = "Data & Backups",
         ["OpenOnTmdb"] = "Open on TMDB",
         ["OpenOnLetterboxd"] = "Open on Letterboxd",
+        ["CloudOnlyDetailsNotice"] = "Online-only preview — this title is not saved in your local library.",
     };
 
     private static readonly IReadOnlyDictionary<string, string> Arabic = new Dictionary<string, string>
@@ -1642,6 +1643,7 @@ public static class LocalizationService
         ["SettingsTabData"] = "البيانات والنسخ الاحتياطي",
         ["OpenOnTmdb"] = "فتح على TMDB",
         ["OpenOnLetterboxd"] = "فتح على Letterboxd",
+        ["CloudOnlyDetailsNotice"] = "معاينة سحابية فقط — هذا العنوان غير محفوظ في مكتبتك المحلية.",
     };
 
     public static UiLanguage CurrentLanguage { get; private set; } = UiLanguage.English;

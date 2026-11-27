@@ -357,8 +357,7 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         MovieMetaText.Text = LocalizationService.Digits(string.Join(" · ", new[]
         {
             movie.Year > 0 ? movie.Year.ToString(CultureInfo.InvariantCulture) : null,
-            string.IsNullOrWhiteSpace(movie.Runtime) ? null : movie.Runtime,
-            movie.Genres.Count == 0 ? null : string.Join(" · ", movie.Genres)
+            string.IsNullOrWhiteSpace(movie.Runtime) ? null : movie.Runtime
         }.Where(part => !string.IsNullOrWhiteSpace(part))));
         RatingText.Text = movie.Rating > 0
             ? LocalizationService.Digits(movie.Rating.ToString("0.0", CultureInfo.InvariantCulture) + " / 10") : string.Empty;
@@ -368,8 +367,8 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         OverviewText.Text = movie.Overview;
         _overviewExpanded = false;
         UpdateOverview();
-        GenresText.Text = string.Join(" · ", movie.Genres);
-        GenresText.Visibility = Visibility.Collapsed;
+        GenresControl.ItemsSource = movie.Genres.ToArray();
+        GenresControl.Visibility = movie.Genres.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
         // A movie registered from a file name has no overview yet. A heading with nothing under it
         // reads as a rendering fault, so the whole block goes away until there is text for it.
@@ -409,6 +408,9 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         MarkWatchedButton.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
         WatchedDatePicker.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
         MarkOnDateButton.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        WatchCard.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        FilesCard.Visibility = isLocalCatalogEntry ? Visibility.Visible : Visibility.Collapsed;
+        CloudOnlyBanner.Visibility = isLocalCatalogEntry ? Visibility.Collapsed : Visibility.Visible;
         UpdateExternalLinksVisibility();
         MissingBadge.Visibility = !hasFile ? Visibility.Visible : Visibility.Collapsed;
 
@@ -606,11 +608,10 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         ChangeMatchButton.Text = LocalizationService.Text("DetailsChangeMatch");
         MoveToSeriesButton.Content = LocalizationService.Text("AddOrMoveToSeries");
         RemoveFromLibraryButton.Content = LocalizationService.Text("RemoveFromLibrary");
-        OpenOnTmdbButton.Content = LocalizationService.Text("OpenOnTmdb");
-        OpenOnLetterboxdButton.Content = LocalizationService.Text("OpenOnLetterboxd");
+        OpenOnTmdbText.Text = LocalizationService.Text("OpenOnTmdb");
+        OpenOnLetterboxdText.Text = LocalizationService.Text("OpenOnLetterboxd");
+        CloudOnlyNoticeText.Text = LocalizationService.Text("CloudOnlyDetailsNotice");
         UpdateExternalLinksVisibility();
-        MoreButton.SetValue(AutomationProperties.NameProperty, LocalizationService.Text("DetailsMoreActions"));
-        ToolTipService.SetToolTip(MoreButton, LocalizationService.Text("DetailsMoreActions"));
         FileDetailsTitleText.Text = LocalizationService.Text(_movie.FileCount > 1 ? "DetailsLocalFiles" : "DetailsLocalFile");
         MetadataStatusText.Text = LocalizationService.Text(_movie.HasPendingMetadata ? "DetailsUnmatched" : _movie.ReviewMatch ? "ReviewMatch" : "Matched");
         DateAddedText.Text = _movie.DateAdded == default ? string.Empty : LocalizationService.Format("DetailsDateAdded",
@@ -968,7 +969,6 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         RefreshMetadataMenuItem.IsEnabled = !isOrganizing && !_isMatching;
         ChangeMatchButton.IsEnabled = !isOrganizing && !_isMatching;
         MoveToSeriesButton.IsEnabled = !isOrganizing;
-        MoreButton.IsEnabled = !isOrganizing;
     }
 
     /// <summary>Reviews the exact validated operation. Back retains the editor values.</summary>
@@ -1791,7 +1791,6 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
     private async void MoveToSeriesButton_Click(object sender, RoutedEventArgs e)
     {
         if (_isOrganizing) return;
-        MoreButton.Flyout?.Hide();
         if (_movie.Id <= 0)
         {
             return;
@@ -1880,7 +1879,6 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
 
     private async void RemoveFromLibraryButton_Click(object sender, RoutedEventArgs e)
     {
-        MoreButton.Flyout?.Hide();
         if (_movie.Id <= 0)
         {
             return;

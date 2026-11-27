@@ -76,25 +76,19 @@
                         <Setter Target="HeroCopyPanel.(Grid.Row)" Value="0" />
                         <Setter Target="HeroCopyPanel.(Grid.Column)" Value="1" />
                         <Setter Target="HeroCopyPanel.(Grid.ColumnSpan)" Value="1" />
-                        <Setter Target="PreferenceActionsPanel.Orientation" Value="Horizontal" />
                         <Setter Target="FileActionsPanel.Orientation" Value="Horizontal" />
                         <Setter Target="HeroPosterColumn.Width" Value="340" />
                         <Setter Target="PosterSurface.Width" Value="340" />
                         <Setter Target="PosterSurface.Height" Value="510" />
                         <Setter Target="PrimaryCommandsPanel.Orientation" Value="Horizontal" />
                         <Setter Target="SecondaryCommandsPanel.Orientation" Value="Horizontal" />
-                        <Setter Target="WatchPane.(Grid.Row)" Value="0" />
-                        <Setter Target="WatchPane.(Grid.Column)" Value="0" />
-                        <Setter Target="WatchPane.(Grid.ColumnSpan)" Value="1" />
-                        <Setter Target="FilesPane.(Grid.Row)" Value="0" />
-                        <Setter Target="FilesPane.(Grid.Column)" Value="1" />
-                        <Setter Target="FilesPane.(Grid.ColumnSpan)" Value="1" />
-                        <Setter Target="WatchedDateGroup.(Grid.Row)" Value="0" />
-                        <Setter Target="WatchedDateGroup.(Grid.Column)" Value="2" />
-                        <Setter Target="WatchedDateGroup.(Grid.ColumnSpan)" Value="1" />
-                        <Setter Target="WatchedDateGroup.HorizontalAlignment" Value="Right" />
+                        <Setter Target="WatchCard.(Grid.Row)" Value="0" />
+                        <Setter Target="WatchCard.(Grid.Column)" Value="0" />
+                        <Setter Target="WatchCard.(Grid.ColumnSpan)" Value="1" />
+                        <Setter Target="FilesCard.(Grid.Row)" Value="0" />
+                        <Setter Target="FilesCard.(Grid.Column)" Value="1" />
+                        <Setter Target="FilesCard.(Grid.ColumnSpan)" Value="1" />
                         <Setter Target="WatchedDateControlsPanel.Orientation" Value="Horizontal" />
-                        <Setter Target="PreferenceGroup.Orientation" Value="Horizontal" />
                     </VisualState.Setters>
                 </VisualState>
                 <VisualState x:Name="DetailsMediumState">
@@ -105,20 +99,18 @@
                         <Setter Target="HeroCopyPanel.(Grid.Row)" Value="0" />
                         <Setter Target="HeroCopyPanel.(Grid.Column)" Value="1" />
                         <Setter Target="HeroCopyPanel.(Grid.ColumnSpan)" Value="1" />
-                        <Setter Target="PreferenceActionsPanel.Orientation" Value="Horizontal" />
                         <Setter Target="FileActionsPanel.Orientation" Value="Vertical" />
                         <Setter Target="HeroPosterColumn.Width" Value="300" />
                         <Setter Target="PosterSurface.Width" Value="300" />
                         <Setter Target="PosterSurface.Height" Value="450" />
                         <Setter Target="PrimaryCommandsPanel.Orientation" Value="Horizontal" />
                         <Setter Target="SecondaryCommandsPanel.Orientation" Value="Horizontal" />
-                        <Setter Target="PreferenceGroup.Orientation" Value="Horizontal" />
-                        <Setter Target="WatchPane.(Grid.Row)" Value="0" />
-                        <Setter Target="WatchPane.(Grid.Column)" Value="0" />
-                        <Setter Target="WatchPane.(Grid.ColumnSpan)" Value="1" />
-                        <Setter Target="FilesPane.(Grid.Row)" Value="0" />
-                        <Setter Target="FilesPane.(Grid.Column)" Value="1" />
-                        <Setter Target="FilesPane.(Grid.ColumnSpan)" Value="1" />
+                        <Setter Target="WatchCard.(Grid.Row)" Value="0" />
+                        <Setter Target="WatchCard.(Grid.Column)" Value="0" />
+                        <Setter Target="WatchCard.(Grid.ColumnSpan)" Value="1" />
+                        <Setter Target="FilesCard.(Grid.Row)" Value="0" />
+                        <Setter Target="FilesCard.(Grid.Column)" Value="1" />
+                        <Setter Target="FilesCard.(Grid.ColumnSpan)" Value="1" />
                         <Setter Target="WatchedDateControlsPanel.Orientation" Value="Horizontal" />
                     </VisualState.Setters>
                 </VisualState>
@@ -137,20 +129,19 @@
                         <Setter Target="PosterSurface.Height" Value="330" />
                         <Setter Target="PrimaryCommandsPanel.Orientation" Value="Vertical" />
                         <Setter Target="SecondaryCommandsPanel.Orientation" Value="Horizontal" />
-                        <Setter Target="PreferenceActionsPanel.Orientation" Value="Vertical" />
                         <Setter Target="WatchedDateControlsPanel.Orientation" Value="Vertical" />
-                        <Setter Target="WatchPane.(Grid.Row)" Value="0" />
-                        <Setter Target="WatchPane.(Grid.Column)" Value="0" />
-                        <Setter Target="WatchPane.(Grid.ColumnSpan)" Value="2" />
-                        <Setter Target="FilesPane.(Grid.Row)" Value="1" />
-                        <Setter Target="FilesPane.(Grid.Column)" Value="0" />
-                        <Setter Target="FilesPane.(Grid.ColumnSpan)" Value="2" />
+                        <Setter Target="WatchCard.(Grid.Row)" Value="0" />
+                        <Setter Target="WatchCard.(Grid.Column)" Value="0" />
+                        <Setter Target="WatchCard.(Grid.ColumnSpan)" Value="2" />
+                        <Setter Target="FilesCard.(Grid.Row)" Value="1" />
+                        <Setter Target="FilesCard.(Grid.Column)" Value="0" />
+                        <Setter Target="FilesCard.(Grid.ColumnSpan)" Value="2" />
                         <Setter Target="Root.Padding" Value="24,32,24,48" />
                     </VisualState.Setters>
                 </VisualState>
             </VisualStateGroup>
         </VisualStateManager.VisualStateGroups>
-        <StackPanel Spacing="8" x:Name="PageContent">
+        <StackPanel Spacing="16" x:Name="PageContent">
             <Grid ColumnSpacing="32" RowSpacing="16" x:Name="HeroGrid">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="340" x:Name="HeroPosterColumn" />
@@ -168,7 +159,7 @@
                         </Grid>
                     </Border>
                 </Border>
-                <StackPanel Spacing="24" x:Name="HeroCopyPanel" Grid.Column="1" Grid.Row="0">
+                <StackPanel Spacing="16" x:Name="HeroCopyPanel" Grid.Column="1" Grid.Row="0">
                     <TextBlock x:Name="KindText" Style="{StaticResource DetailsCaptionStyle}" />
                         <Grid x:Name="MovieTitleContainer" VerticalAlignment="Center">
                             <controls:WrapPanel x:Name="MovieTitleViewPanel" Orientation="Horizontal" RowSpacing="6" ColumnSpacing="10" VerticalAlignment="Center">
@@ -229,7 +220,24 @@
                                 </StackPanel>
                             </Border>
                         </controls:WrapPanel>
-                        <TextBlock x:Name="GenresText" Style="{StaticResource DetailsBodyStyle}" TextWrapping="Wrap" Visibility="Collapsed" />
+                        <ItemsControl x:Name="GenresControl" Visibility="Collapsed">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <controls:WrapPanel Orientation="Horizontal" RowSpacing="6" ColumnSpacing="6" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="x:String">
+                                    <Border Background="{ThemeResource ControlFillColorSecondaryBrush}"
+                                            BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="12"
+                                            Padding="10,3">
+                                        <TextBlock Text="{x:Bind}" FontSize="12" Foreground="{ThemeResource FigmaTextSecondaryBrush}" />
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                         <TextBlock x:Name="OriginalTitleText" Style="{StaticResource DetailsSmallStyle}" TextWrapping="Wrap" Visibility="Collapsed" />
                         <Border x:Name="OverviewSection" BorderBrush="{ThemeResource ControlStrokeColorSecondaryBrush}" BorderThickness="0" Padding="0">
                             <StackPanel Spacing="8">
@@ -256,7 +264,7 @@
                                     </DropDownButton.Flyout>
                                 </DropDownButton>
                             </StackPanel>
-                            <StackPanel x:Name="SecondaryCommandsPanel" Orientation="Horizontal" Spacing="8">
+                            <controls:WrapPanel x:Name="SecondaryCommandsPanel" Orientation="Horizontal" RowSpacing="8" ColumnSpacing="8">
                                 <DropDownButton x:Name="MatchButton" Style="{StaticResource DetailsButtonStyle}" MinHeight="40">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <FontIcon x:Name="MatchGlyph" VerticalAlignment="Center" FontSize="14" Glyph="&#xE72C;" />
@@ -278,42 +286,47 @@
                                         </MenuFlyout>
                                     </DropDownButton.Flyout>
                                 </DropDownButton>
-                                <Button x:Name="MoreButton" VerticalAlignment="Top" Style="{StaticResource DetailsButtonStyle}" MinHeight="40">
-                                    <FontIcon Glyph="&#xE712;" FontSize="18" />
-                                    <Button.Flyout>
-                                        <Flyout Placement="BottomEdgeAlignedRight">
-                                            <StackPanel Width="{StaticResource FileDetailsFlyoutWidth}" Spacing="8">
-                                                <Button x:Name="OpenOnTmdbButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="OpenOnTmdbButton_Click" Style="{StaticResource TextActionButtonStyle}" Visibility="Collapsed" />
-                                                <Button x:Name="OpenOnLetterboxdButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="OpenOnLetterboxdButton_Click" Style="{StaticResource TextActionButtonStyle}" Visibility="Collapsed" />
-                                                <Button x:Name="MoveToSeriesButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="MoveToSeriesButton_Click" Style="{StaticResource TextActionButtonStyle}" />
-                                                <Button x:Name="RemoveFromLibraryButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Click="RemoveFromLibraryButton_Click" Style="{StaticResource TextActionButtonStyle}" />
-                                                <TextBlock x:Name="DateAddedText" Style="{StaticResource DetailsSmallStyle}" TextWrapping="Wrap" />
-                                            </StackPanel>
-                                        </Flyout>
-                                    </Button.Flyout>
-                                </Button>
-                            </StackPanel>
-                        </controls:WrapPanel>
-                        <StackPanel x:Name="PreferenceGroup" Spacing="12">
-                            <StackPanel x:Name="PreferenceActionsPanel" Orientation="Horizontal" Spacing="8">
-                                <Button x:Name="FavoriteButton" Click="FavoriteButton_Click" Style="{StaticResource DetailsButtonStyle}">
+                                <Button x:Name="FavoriteButton" Click="FavoriteButton_Click" Style="{StaticResource DetailsButtonStyle}" MinHeight="40">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <FontIcon x:Name="FavoriteGlyph" VerticalAlignment="Center" FontSize="14" Glyph="&#xEB51;" />
                                         <TextBlock x:Name="FavoriteText" VerticalAlignment="Center" />
                                     </StackPanel>
                                 </Button>
-                                <Button x:Name="WatchlistButton" Click="WatchlistButton_Click" Style="{StaticResource DetailsButtonStyle}">
+                                <Button x:Name="WatchlistButton" Click="WatchlistButton_Click" Style="{StaticResource DetailsButtonStyle}" MinHeight="40">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <FontIcon x:Name="WatchlistGlyph" VerticalAlignment="Center" FontSize="14" Glyph="&#xE8FD;" />
                                         <TextBlock x:Name="WatchlistText" VerticalAlignment="Center" />
                                     </StackPanel>
                                 </Button>
-                            </StackPanel>
-                        </StackPanel>
+                                <Button x:Name="OpenOnTmdbButton" Click="OpenOnTmdbButton_Click" Style="{StaticResource DetailsButtonStyle}" MinHeight="40" Visibility="Collapsed">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon VerticalAlignment="Center" FontSize="14" Glyph="&#xE8A7;" />
+                                        <TextBlock x:Name="OpenOnTmdbText" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="OpenOnLetterboxdButton" Click="OpenOnLetterboxdButton_Click" Style="{StaticResource DetailsButtonStyle}" MinHeight="40" Visibility="Collapsed">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon VerticalAlignment="Center" FontSize="14" Glyph="&#xE8A7;" />
+                                        <TextBlock x:Name="OpenOnLetterboxdText" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Button>
+                            </controls:WrapPanel>
+                        </controls:WrapPanel>
                     </StackPanel>
                 </Grid>
-                <Border BorderBrush="{ThemeResource FigmaBorderDefaultBrush}" BorderThickness="0,1,0,0" Padding="0" Margin="0" />
-                <Grid ColumnSpacing="40" RowSpacing="32" x:Name="RecordsGrid">
+                <Border x:Name="CloudOnlyBanner"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="16,12"
+                        Visibility="Collapsed">
+                    <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                        <FontIcon Glyph="&#xE753;" FontSize="16" Foreground="{ThemeResource FigmaTextSecondaryBrush}" VerticalAlignment="Center" />
+                        <TextBlock x:Name="CloudOnlyNoticeText" Style="{StaticResource DetailsSmallStyle}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+                <Grid ColumnSpacing="24" RowSpacing="24" x:Name="RecordsGrid">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="3*" x:Name="WatchColumn" />
                         <ColumnDefinition Width="2*" x:Name="FilesColumn" />
@@ -322,7 +335,16 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-                    <StackPanel Spacing="16" x:Name="WatchPane" Grid.Row="0" Grid.Column="0">
+                    <Border x:Name="WatchCard"
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Padding="20"
+                            VerticalAlignment="Top">
+                    <StackPanel Spacing="16" x:Name="WatchPane">
                             <Grid ColumnSpacing="8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
@@ -332,16 +354,7 @@
                                 <TextBlock x:Name="WatchingTitleText" Style="{StaticResource DetailsStatusStyle}" Visibility="Visible" Grid.Column="1" VerticalAlignment="Center" />
                             </Grid>
                             <TextBlock x:Name="ActivityHelpText" Style="{StaticResource DetailsSmallStyle}" TextWrapping="Wrap" Visibility="Collapsed" />
-                            <Grid ColumnSpacing="12" RowSpacing="12" x:Name="WatchControlsGrid">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
+                            <controls:WrapPanel Orientation="Horizontal" RowSpacing="8" ColumnSpacing="8" x:Name="WatchControlsGrid">
                                 <StackPanel x:Name="WatchingGroup" Spacing="0">
                                     <Button x:Name="MarkWatchedButton" Click="MarkWatchedButton_Click" Style="{StaticResource DetailsButtonStyle}" MinHeight="40">
                                         <StackPanel Orientation="Horizontal" Spacing="8">
@@ -350,14 +363,14 @@
                                         </StackPanel>
                                     </Button>
                                 </StackPanel>
-                                <StackPanel x:Name="WatchedDateGroup" Spacing="8" Grid.Row="1" Grid.ColumnSpan="3" HorizontalAlignment="Left">
+                                <StackPanel x:Name="WatchedDateGroup" Spacing="0" VerticalAlignment="Center">
                                     <TextBlock x:Name="WatchedDateLabel" Style="{StaticResource BodyStrongTextBlockStyle}" Visibility="Collapsed" />
-                                    <StackPanel x:Name="WatchedDateControlsPanel" Orientation="Vertical" Spacing="8">
+                                    <StackPanel x:Name="WatchedDateControlsPanel" Orientation="Horizontal" Spacing="8">
                                         <CalendarDatePicker x:Name="WatchedDatePicker" Height="40" MinWidth="0" DateChanged="WatchedDatePicker_DateChanged" Width="150" />
                                         <Button x:Name="MarkOnDateButton" VerticalAlignment="Center" Click="MarkOnDateButton_Click" IsEnabled="False" Style="{StaticResource DetailsButtonStyle}" MinHeight="40" />
                                     </StackPanel>
                                 </StackPanel>
-                            </Grid>
+                            </controls:WrapPanel>
                             <Border BorderBrush="{ThemeResource FigmaBorderDefaultBrush}" BorderThickness="0,1,0,0" Padding="0,16,0,0">
                                 <StackPanel Spacing="8">
                                     <TextBlock x:Name="HistoryTitleText" Style="{StaticResource BodyStrongTextBlockStyle}" Foreground="{ThemeResource FigmaTextSecondaryBrush}" />
@@ -387,7 +400,17 @@
                                 </StackPanel>
                             </Border>
                         </StackPanel>
-                        <StackPanel Spacing="16" x:Name="FilesPane" Grid.Row="0" Grid.Column="1">
+                        </Border>
+                        <Border x:Name="FilesCard"
+                                Grid.Row="0"
+                                Grid.Column="1"
+                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="20"
+                                VerticalAlignment="Top">
+                        <StackPanel Spacing="16" x:Name="FilesPane">
                             <Grid ColumnSpacing="8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
@@ -603,7 +626,7 @@
                                 <TextBlock x:Name="NoFileText" Style="{StaticResource BodyStrongTextBlockStyle}" TextWrapping="Wrap" />
                                 <TextBlock x:Name="NoFileHelpText" Style="{StaticResource SecondaryCaptionTextStyle}" TextWrapping="Wrap" />
                             </StackPanel>
-                            <StackPanel Spacing="8" x:Name="FileActionsPanel" Orientation="Vertical">
+                            <controls:WrapPanel x:Name="FileActionsPanel" Orientation="Horizontal" RowSpacing="8" ColumnSpacing="8">
                                 <Button x:Name="OpenFolderButton" Click="OpenFolderButton_Click" Style="{StaticResource DetailsButtonStyle}">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <FontIcon VerticalAlignment="Center" FontSize="16" Glyph="&#xE8B7;" />
@@ -624,14 +647,18 @@
                                         <TextBlock x:Name="MoveMovieText" VerticalAlignment="Center" />
                                     </StackPanel>
                                 </Button>
-                            </StackPanel>
+                                <Button x:Name="MoveToSeriesButton" Click="MoveToSeriesButton_Click" Style="{StaticResource DetailsButtonStyle}" />
+                                <Button x:Name="RemoveFromLibraryButton" Click="RemoveFromLibraryButton_Click" Style="{StaticResource DetailsButtonStyle}" />
+                            </controls:WrapPanel>
                         </StackPanel>
+                        </Border>
                     </Grid>
                     <Border BorderBrush="{ThemeResource FigmaBorderDefaultBrush}" BorderThickness="0,1,0,0" Padding="0,16,0,0" x:Name="MetadataFooter">
-                        <StackPanel Orientation="Horizontal" Spacing="12">
+                        <controls:WrapPanel Orientation="Horizontal" RowSpacing="6" ColumnSpacing="12">
                             <TextBlock x:Name="MetadataStatusText" Style="{StaticResource DetailsStatusStyle}" TextWrapping="Wrap" />
                             <TextBlock x:Name="MatchedIdentityText" Style="{StaticResource DetailsSmallStyle}" TextWrapping="Wrap" />
-                        </StackPanel>
+                            <TextBlock x:Name="DateAddedText" Style="{StaticResource DetailsSmallStyle}" TextWrapping="Wrap" />
+                        </controls:WrapPanel>
                     </Border>
                 </StackPanel>
             </ScrollViewer>
