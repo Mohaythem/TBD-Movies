@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.UI.Xaml;
+using UiLanguage = TBDMovies.Domain.Configuration.UiLanguage;
 
 namespace TBDMovies.UI.Services;
 

@@ -6,6 +6,7 @@ using TBDMovies.UI.Models;
 using TBDMovies.Application.External;
 using TBDMovies.Application.Trakt;
 using TBDMovies.UI.Services;
+using UiLanguage = TBDMovies.Domain.Configuration.UiLanguage;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Windows.System;

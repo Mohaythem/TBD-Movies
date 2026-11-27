@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using TBDMovies.Application.Diagnostics;
+using UiLanguage = TBDMovies.Domain.Configuration.UiLanguage;
 
 namespace TBDMovies.UI.Services;
 
@@ -12,12 +13,6 @@ public enum AppTheme
     Dark,
     Light,
     Slate = Dark, // backwards compatibility alias so any legacy references or stored values cleanly resolve
-}
-
-public enum UiLanguage
-{
-    English,
-    Arabic,
 }
 
 /// <summary>

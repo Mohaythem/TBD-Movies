@@ -25,6 +25,7 @@ using TBDMovies.FileSystem.Playback;
 using TBDMovies.Application.Subtitles;
 using TBDMovies.FileSystem.Subtitles;
 using TBDMovies.Infrastructure.Subtitles;
+using UiLanguage = TBDMovies.Domain.Configuration.UiLanguage;
 
 namespace TBDMovies.UI.Services;
 
@@ -519,8 +520,8 @@ internal static class AppServices
             if (IsAvailable)
             {
                 Settings.SetUiLanguage(language == UiLanguage.Arabic
-                    ? TBDMovies.Domain.Configuration.UiLanguage.Arabic
-                    : TBDMovies.Domain.Configuration.UiLanguage.English);
+                    ? UiLanguage.Arabic
+                    : UiLanguage.English);
             }
         }
         catch (Exception ex)

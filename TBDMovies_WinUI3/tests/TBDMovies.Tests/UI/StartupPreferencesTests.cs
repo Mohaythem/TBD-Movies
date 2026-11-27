@@ -7,6 +7,7 @@ using TBDMovies.Infrastructure.Persistence.Repositories;
 using TBDMovies.UI.Services;
 using Xunit;
 using DomainUiLanguage = TBDMovies.Domain.Configuration.UiLanguage;
+using UiLanguage = TBDMovies.Domain.Configuration.UiLanguage;
 using DomainUiTheme = TBDMovies.Domain.Configuration.UiTheme;
 
 namespace TBDMovies.Tests.UI;
