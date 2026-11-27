@@ -18,27 +18,6 @@ public enum MetadataStatus
     NeedsMatch
 }
 
-public record MediaFileStatusUpdate
-{
-    public int MediaFileId { get; }
-    public string ExpectedPath { get; }
-    public MediaFileStatus Status { get; }
-    public DateTimeOffset ObservedAt { get; }
-
-    public MediaFileStatusUpdate(int mediaFileId, string expectedPath, MediaFileStatus status, DateTimeOffset observedAt)
-    {
-        if (mediaFileId <= 0) throw new ArgumentOutOfRangeException(nameof(mediaFileId), "mediaFileId must be a positive integer");
-        if (string.IsNullOrWhiteSpace(expectedPath)) throw new ArgumentException("expectedPath must be a non-empty string", nameof(expectedPath));
-        if (System.IO.Path.IsPathRooted(expectedPath) == false) throw new ArgumentException("expectedPath must be an absolute path", nameof(expectedPath));
-        if (!Enum.IsDefined(typeof(MediaFileStatus), status)) throw new ArgumentException("Invalid status", nameof(status));
-
-        MediaFileId = mediaFileId;
-        ExpectedPath = expectedPath;
-        Status = status;
-        ObservedAt = observedAt;
-    }
-}
-
 public record MovieCatalogData
 {
     public string? Provider { get; }

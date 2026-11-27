@@ -44,8 +44,6 @@ public enum DiscoveryErrorCode
     StorageUnavailable
 }
 
-public record DiscoveryProgress(int TotalFiles, int ProcessedFiles, int Errors, string? CurrentPath);
-
 public record DiscoveryIssue
 {
     public DiscoveryErrorCode Code { get; }

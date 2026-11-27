@@ -149,12 +149,6 @@ public enum WatchEventMediaKind
     Episode
 }
 
-public record ReadyToWatchMovie(
-    int MovieId,
-    Movie Movie,
-    int PresentMediaFileCount,
-    DateTimeOffset WatchlistAddedAt);
-
 public record PersonalMovieSummary(
     Movie Movie,
     int MediaFileCount,

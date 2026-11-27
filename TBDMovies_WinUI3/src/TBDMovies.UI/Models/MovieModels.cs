@@ -384,40 +384,6 @@ public sealed record ListMediaItem : INotifyPropertyChanged, IDisposable
 /// </summary>
 public sealed record MediaListDefinition(string Key, string LabelKey, bool IsSystem);
 
-public sealed record DetectedMovieRecord(
-    string Title,
-    int Year,
-    string Quality,
-    string Path,
-    bool Matched);
-
-public sealed record DetectedMovieDisplayRecord(
-    string Title,
-    int Year,
-    string Quality,
-    string FileName,
-    string ActionLabel,
-    bool IsReady)
-{
-    public bool ShowReadyGlyph => IsReady;
-
-    public string YearText => LocalizationService.Number(Year);
-}
-
-public sealed record DetectedEpisodeRecord(string Code, string Title, string FileName, bool IsReady);
-
-public sealed record DetectedEpisodeDisplayRecord(
-    string Code,
-    string Title,
-    string FileName,
-    string StatusLabel,
-    bool IsReady)
-{
-    public bool NeedsReview => !IsReady;
-}
-
-public sealed record LibraryIssueRecord(string Item, string Issue);
-
 /// <summary>
 /// One row in the Check Library issue list. <paramref name="MediaFileId" /> is the registered file the
 /// row is about, so the row action resolves the exact record instead of matching on a file name that

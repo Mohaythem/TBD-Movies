@@ -174,7 +174,6 @@ internal static class AppServices
     public static ISubtitleDownloadClient SubtitleClient => Require(_subDlClient);
     public static ISubtitleDownloadService SubtitleDownloader => Require(_subtitleDownloader);
 
-
     public static IMetadataProvider Metadata => Require(_metadataProvider);
 
     public static IPosterService Poster => Require(_posterCache);
@@ -384,7 +383,6 @@ internal static class AppServices
             return null;
         }
     }
-
 
     public static ITraktLocalSnapshotBuilder? TraktLocalSnapshot => _traktLocalSnapshot;
     private static ITraktLocalSnapshotBuilder? _traktLocalSnapshot;
@@ -1252,36 +1250,3 @@ internal static class AppServices
     }
 }
 
-/// <summary>
-/// The metadata provider used until a TMDB read token is configured. It answers honestly - no
-/// candidates, no metadata - instead of inventing results, so "Find Match" and the TMDB search
-/// report an empty result rather than fabricating one. Registration and organization never need it.
-/// </summary>
-internal sealed class UnconfiguredMetadataProvider : IMetadataProvider
-{
-    public string ProviderName => "unconfigured";
-
-    public bool IsConfigured => false;
-
-    public Task<ConnectionTestResult> TestConnectionAsync(CancellationToken cancellationToken = default) =>
-        Task.FromResult(new ConnectionTestResult(false, "TMDB read token is not configured.", 401));
-
-    public IReadOnlyList<MovieCandidate> Search(MovieSearchQuery query) => Array.Empty<MovieCandidate>();
-
-    public Task<IReadOnlyList<MovieCandidate>> SearchMoviesAsync(MovieSearchQuery query, CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<MovieCandidate>>(Array.Empty<MovieCandidate>());
-
-    public MovieMetadata? GetMovie(string externalId) => null;
-
-    public Task<MovieMetadata?> GetMovieAsync(string externalId, CancellationToken cancellationToken = default) =>
-        Task.FromResult<MovieMetadata?>(null);
-
-    public Task<IReadOnlyList<TvCandidate>> SearchTvAsync(TvSearchQuery query, CancellationToken cancellationToken = default) =>
-        Task.FromResult<IReadOnlyList<TvCandidate>>(Array.Empty<TvCandidate>());
-
-    public Task<TvShowMetadata?> GetTvShowAsync(string externalId, CancellationToken cancellationToken = default) =>
-        Task.FromResult<TvShowMetadata?>(null);
-
-    public Task<TvSeasonMetadata?> GetTvSeasonAsync(string showExternalId, int seasonNumber, CancellationToken cancellationToken = default) =>
-        Task.FromResult<TvSeasonMetadata?>(null);
-}

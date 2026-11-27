@@ -76,14 +76,6 @@ public class TraktSyncException : Exception
 }
 
 /// <summary>
-/// Exception thrown when the remote Trakt account UUID does not match the local verified account.
-/// </summary>
-public sealed class TraktAccountMismatchException : TraktSyncException
-{
-    public TraktAccountMismatchException(string message) : base(message) { }
-}
-
-/// <summary>
 /// Provider identifiers used for remote Trakt sync operations.
 /// </summary>
 public sealed record TraktSyncIds(
@@ -163,5 +155,4 @@ public sealed record TraktSyncProgress(
     int CurrentStep,
     int TotalSteps,
     string StatusText);
-
 

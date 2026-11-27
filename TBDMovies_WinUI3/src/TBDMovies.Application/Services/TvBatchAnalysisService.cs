@@ -11,18 +11,11 @@ using TBDMovies.Domain.Media.Parser;
 
 namespace TBDMovies.Application.Services;
 
-/// <summary>Contract for TV batch analysis service.</summary>
-public interface ITvBatchAnalysisService
-{
-    TvBatchAnalysisResult Analyze(string rootPath, IReadOnlyList<DiscoveredMedia> items);
-    TvBatchFileCandidate ApplyCorrection(TvBatchFileCandidate candidate, string? title = null, int? season = null, int? episode = null);
-}
-
 /// <summary>
 /// Analyzes discovered media items for TV series batch ingestion without I/O or network operations.
 /// Identifies series, season, episode hierarchy, tracks evidence provenance, and detects conflicts.
 /// </summary>
-public sealed class TvBatchAnalysisService : ITvBatchAnalysisService
+public sealed class TvBatchAnalysisService
 {
     private static readonly Regex SeasonFolderPattern = new(
         @"^(?:season|series|s|(?:ال)?موسم)[\s._\-:]*(?<num>\d{1,3})$",
