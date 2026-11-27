@@ -494,7 +494,7 @@ public sealed class DiskPosterCache : IPosterService, IPosterCacheMaintenance, I
         }
 
         var cleanRef = reference.Trim().TrimStart('/', '\\');
-        if (cleanRef.Contains("..", StringComparison.Ordinal))
+        if (cleanRef.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries).Any(seg => seg is ".." or "."))
         {
             return null;
         }

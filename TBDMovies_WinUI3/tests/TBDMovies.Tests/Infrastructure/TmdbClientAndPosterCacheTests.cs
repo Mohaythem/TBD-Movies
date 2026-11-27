@@ -467,19 +467,16 @@ public class TmdbClientAndPosterCacheTests : IDisposable
     [InlineData("/../outside.png")]
     public async Task DiskPosterCache_TraversalReference_IsRejectedAndDoesNotEscapeCacheRoot(string reference)
     {
-        var parentDir = Path.GetDirectoryName(_testCacheDir)!;
-        var decoyPath = Path.Combine(parentDir, Path.GetFileName(reference));
-        await File.WriteAllBytesAsync(decoyPath, CreateValidJpegBytes());
-        try
-        {
-            var cache = new DiskPosterCache(_testCacheDir);
-            Assert.Null(cache.GetCachedPosterPath("TMDB", reference));
-            Assert.Null(await cache.EnsurePosterCachedAsync("TMDB", reference));
-        }
-        finally
-        {
-            if (File.Exists(decoyPath)) File.Delete(decoyPath);
-        }
+        var isolatedParent = Path.Combine(_testCacheDir, "isolated");
+        var nestedCache = Path.Combine(isolatedParent, "cache");
+        Directory.CreateDirectory(nestedCache);
+        var leafName = reference.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries).Last();
+        await File.WriteAllBytesAsync(Path.Combine(isolatedParent, leafName), CreateValidJpegBytes());
+        await File.WriteAllBytesAsync(Path.Combine(isolatedParent, $"tmdb_{leafName}"), CreateValidJpegBytes());
+
+        var cache = new DiskPosterCache(nestedCache);
+        Assert.Null(cache.GetCachedPosterPath("TMDB", reference));
+        Assert.Null(await cache.EnsurePosterCachedAsync("TMDB", reference));
     }
 
     [Fact]
