@@ -11,6 +11,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using TBDMovies.Application.Subtitles;
+using TBDMovies.Application.Subtitles;
 
 namespace TBDMovies.Infrastructure.Subtitles;
 
@@ -19,8 +20,7 @@ namespace TBDMovies.Infrastructure.Subtitles;
 /// </summary>
 public sealed partial class SubDlClient : ISubtitleDownloadClient, IDisposable
 {
-    public const int MaxArchiveBytes = 25 * 1024 * 1024;
-    public const int MaxSearchJsonBytes = 5 * 1024 * 1024;
+        public const int MaxSearchJsonBytes = 5 * 1024 * 1024;
     private const int MaxDownloadRedirects = 3;
 
     private static readonly HashSet<string> ReservedDosNames = new(StringComparer.OrdinalIgnoreCase)
@@ -249,7 +249,7 @@ public sealed partial class SubDlClient : ISubtitleDownloadClient, IDisposable
                     (int)response.StatusCode);
             }
 
-            return await ReadBoundedResponseAsync(response, MaxArchiveBytes, ct).ConfigureAwait(false);
+            return await ReadBoundedResponseAsync(response, SubtitleTransferLimits.MaxArchiveBytes, ct).ConfigureAwait(false);
         }
 
         throw new SubtitleServiceException(SubtitleFailureKind.InvalidResponse, "Subtitle download redirect loop.");

@@ -231,7 +231,7 @@ public sealed class SubDlClientTests
             {
                 Content = new ByteArrayContent([1, 2, 3])
             };
-            resp.Content.Headers.ContentLength = SubDlClient.MaxArchiveBytes + 1L;
+            resp.Content.Headers.ContentLength = SubtitleTransferLimits.MaxArchiveBytes + 1L;
             return resp;
         }));
         using var client2 = new SubDlClient(() => "test-key", oversizedClient);

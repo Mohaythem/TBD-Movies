@@ -3,6 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 using System.Threading.Tasks;
+using TBDMovies.Application.Subtitles;
 using TBDMovies.FileSystem.Subtitles;
 using Xunit;
 
@@ -289,7 +290,7 @@ public sealed class SubtitleDownloadServiceTests : IDisposable
         }
 
         var zipBytes = ms.ToArray();
-        Assert.True(zipBytes.Length < SubtitleDownloadService.MaxArchiveBytes);
+        Assert.True(zipBytes.Length < SubtitleTransferLimits.MaxArchiveBytes);
         Assert.Throws<InvalidDataException>(() => SubtitleDownloadService.ExtractSubtitleEntry(zipBytes));
     }
 

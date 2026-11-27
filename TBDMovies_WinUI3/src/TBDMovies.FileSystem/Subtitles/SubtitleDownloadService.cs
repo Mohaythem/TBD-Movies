@@ -19,8 +19,7 @@ namespace TBDMovies.FileSystem.Subtitles;
 /// </summary>
 public sealed partial class SubtitleDownloadService : ISubtitleDownloadService
 {
-    public const int MaxArchiveBytes = 25 * 1024 * 1024;
-    public const int MaxSubtitleBytes = 10 * 1024 * 1024;
+        public const int MaxSubtitleBytes = 10 * 1024 * 1024;
     public const int MaxArchiveEntries = 200;
 
     private static readonly string[] PreferredSubtitleExtensions = [".srt", ".ass", ".ssa", ".vtt", ".sub"];
@@ -126,9 +125,9 @@ public sealed partial class SubtitleDownloadService : ISubtitleDownloadService
     {
         ArgumentNullException.ThrowIfNull(archiveBytes);
 
-        if (archiveBytes.Length > MaxArchiveBytes)
+        if (archiveBytes.Length > SubtitleTransferLimits.MaxArchiveBytes)
         {
-            throw new InvalidDataException($"Subtitle archive exceeds maximum allowed size of {MaxArchiveBytes} bytes.");
+            throw new InvalidDataException($"Subtitle archive exceeds maximum allowed size of {SubtitleTransferLimits.MaxArchiveBytes} bytes.");
         }
 
         if (IsZipArchive(archiveBytes))
