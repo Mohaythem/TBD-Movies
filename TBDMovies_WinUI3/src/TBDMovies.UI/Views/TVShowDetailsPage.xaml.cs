@@ -229,17 +229,79 @@ public sealed partial class TVShowDetailsPage : Page, ILocalizableView, IActivat
     public void LoadShow(int showId)
     {
         IsLoadedSuccessfully = false;
+        _metadataRequests.Cancel();
         try
         {
-            SetShow(TvProjection.ToDetails(AppServices.Tv.GetShowDetails(showId)));
+            var details = TvProjection.ToDetails(AppServices.Tv.GetShowDetails(showId));
+            SetShow(details);
             BeginSeasonEnrichment(showId);
             IsLoadedSuccessfully = true;
+            if (details.MetadataStatus == MetadataStatus.Pending
+                && !details.Seasons.Any(s => s.Episodes.Any(e => e.HasLocalFile))
+                && !string.IsNullOrWhiteSpace(details.ExternalId))
+            {
+                HydrateCloudShowMetadata(showId);
+            }
         }
         catch (Exception error)
         {
             SetShow(new TVShowRecord(0, string.Empty, 0, [], string.Empty, []));
             _ = ShowMessageAsync(LocalizationService.Text("Failed"), MetadataErrorText.For(error));
         }
+    }
+
+    private void HydrateCloudShowMetadata(int showId)
+    {
+        if (showId <= 0 || !AppServices.IsAvailable || AppServices.Metadata is not { IsConfigured: true })
+        {
+            return;
+        }
+
+        var request = _metadataRequests.Begin();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var refreshed = await AppServices.Matching.RefreshTvShowMetadataAsync(showId, fetchEpisodes: true, request.Token).ConfigureAwait(false);
+                if (refreshed is null || request.Token.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(refreshed.PosterReference))
+                {
+                    try
+                    {
+                        await AppServices.Poster.EnsurePosterCachedAsync(refreshed.Provider ?? "TMDB", refreshed.PosterReference, request.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        return;
+                    }
+                    catch
+                    {
+                        // Keep the fetched metadata even if poster caching fails.
+                    }
+                }
+
+                if (request.Token.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                DispatcherQueue?.TryEnqueue(() =>
+                {
+                    if (request.IsCurrent && _show.Id == showId)
+                    {
+                        LoadShow(showId);
+                    }
+                });
+            }
+            catch
+            {
+                // Cloud metadata hydration is best-effort; keep the local shell if offline or canceled.
+            }
+        });
     }
 
     public void LoadCloudShow(TVShowRecord cloudShow)
