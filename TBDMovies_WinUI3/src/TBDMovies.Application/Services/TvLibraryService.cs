@@ -98,7 +98,8 @@ public sealed class TvLibraryService(
                 show.BackdropReference,
                 show.CustomDisplayTitle,
                 show.Title,
-                WatchedEpisodeCount: watchedCounts.GetValueOrDefault(show.Id, 0)));
+                WatchedEpisodeCount: watchedCounts.GetValueOrDefault(show.Id, 0),
+                ExternalId: show.Data.ExternalId));
         }
 
         return result;
