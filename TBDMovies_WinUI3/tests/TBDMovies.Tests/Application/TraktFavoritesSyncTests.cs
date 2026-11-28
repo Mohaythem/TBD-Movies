@@ -29,7 +29,8 @@ public sealed class TraktFavoritesSyncTests
         FakePersonalLibraryRepository personalRepo,
         FakeShowPersonalRepository showRepo,
         FakeSnapshotBuilder? snapshotBuilder = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        Func<TraktMediaKind, int, string, int?, int?>? ensureCloudMedia = null)
     {
         dataClient.AccountUuid = auth.GetAuthState().AccountId ?? "acct-1";
         return new TraktSyncService(
@@ -42,7 +43,8 @@ public sealed class TraktFavoritesSyncTests
             snapshotBuilder ?? new FakeSnapshotBuilder(new TraktLocalSnapshot([], FixedNow)),
             personalRepo,
             watchHistoryRepository: null,
-            showPersonalRepository: showRepo);
+            showPersonalRepository: showRepo,
+            ensureCloudMedia: ensureCloudMedia);
     }
 
     [Fact]
@@ -164,6 +166,52 @@ public sealed class TraktFavoritesSyncTests
         Assert.Equal(PersonalPreference.NoOpinion, personalRepo.GetState(2).Preference);
         Assert.True(showRepo.GetState(10).IsFavorite);
         Assert.False(showRepo.GetState(11).IsFavorite);
+    }
+
+    [Fact]
+    public async Task SyncAsync_MaterializesRemoteCloudWatchlistAndFavorites_WhenNotInLocalLibrary()
+    {
+        var auth = new FakeAuthService("acct-cloud");
+        var dataClient = new FakeTraktDataClient
+        {
+            RemoteWatchlistJson = """
+                [
+                  {"type":"movie","movie":{"title":"Dune","year":2021,"ids":{"tmdb":438631}}},
+                  {"type":"show","show":{"title":"Severance","year":2022,"ids":{"tmdb":95396}}}
+                ]
+                """,
+            RemoteFavoriteMoviesJson = """[{"type":"movie","movie":{"title":"Arrival","year":2016,"ids":{"tmdb":329865}}}]""",
+            RemoteFavoriteShowsJson = """[{"type":"show","show":{"title":"Dark","year":2017,"ids":{"tmdb":70523}}}]"""
+        };
+        var settings = new FakeSettingsRepository();
+        var personalRepo = new FakePersonalLibraryRepository();
+        var showRepo = new FakeShowPersonalRepository();
+        var materialized = new Dictionary<(TraktMediaKind Kind, int TmdbId), int>();
+        var nextId = 500;
+
+        using var service = CreateService(
+            auth,
+            dataClient,
+            settings,
+            personalRepo,
+            showRepo,
+            ensureCloudMedia: (kind, tmdbId, title, year) =>
+            {
+                if (!materialized.TryGetValue((kind, tmdbId), out var id))
+                {
+                    id = ++nextId;
+                    materialized[(kind, tmdbId)] = id;
+                }
+                return id;
+            });
+
+        var res = await service.SyncAsync();
+        Assert.True(res.Success);
+
+        Assert.True(personalRepo.GetState(materialized[(TraktMediaKind.Movie, 438631)]).IsWatchlisted);
+        Assert.True(showRepo.GetState(materialized[(TraktMediaKind.Show, 95396)]).WatchLater);
+        Assert.Equal(PersonalPreference.Liked, personalRepo.GetState(materialized[(TraktMediaKind.Movie, 329865)]).Preference);
+        Assert.True(showRepo.GetState(materialized[(TraktMediaKind.Show, 70523)]).IsFavorite);
     }
 
     [Fact]
@@ -349,6 +397,7 @@ public sealed class TraktFavoritesSyncTests
         public Func<long, TraktMediaKind, bool, TraktSyncWriteResult>? FavoriteHandler { get; set; }
         public Func<long, TraktMediaKind, bool, CancellationToken, Task<TraktSyncWriteResult>>? AsyncFavoriteHandler { get; set; }
         public Action? OnGetResource { get; set; }
+        public string RemoteWatchlistJson { get; set; } = "[]";
         public List<(long TmdbId, TraktMediaKind Kind, bool IsAdd)> FavoriteCalls { get; } = new();
         public List<(IReadOnlyList<long>? Movies, IReadOnlyList<long>? Shows, bool IsAdd)> BatchFavoriteCalls { get; } = new();
 
@@ -362,6 +411,7 @@ public sealed class TraktFavoritesSyncTests
             {
                 TraktResourceType.FavoriteMovies => RemoteFavoriteMoviesJson,
                 TraktResourceType.FavoriteShows => RemoteFavoriteShowsJson,
+                TraktResourceType.Watchlist => RemoteWatchlistJson,
                 _ => "[]"
             };
             return Task.FromResult(JsonDocument.Parse(json).RootElement);
@@ -435,11 +485,13 @@ public sealed class TraktFavoritesSyncTests
     private sealed class FakePersonalLibraryRepository : IPersonalLibraryRepository
     {
         private readonly Dictionary<int, PersonalPreference> _prefs = new();
+        private readonly HashSet<int> _watchlist = new();
 
         public PersonalMovieState GetState(int movieId)
         {
             var pref = _prefs.TryGetValue(movieId, out var p) ? p : PersonalPreference.NoOpinion;
-            return new PersonalMovieState(movieId, pref, null, 0, null, null, null);
+            var watchlisted = _watchlist.Contains(movieId) ? FixedNow : (DateTimeOffset?)null;
+            return new PersonalMovieState(movieId, pref, watchlisted, 0, null, null, null);
         }
 
         public PersonalMovieState SetPreference(int movieId, PersonalPreference preference, DateTimeOffset now)
@@ -465,8 +517,16 @@ public sealed class TraktFavoritesSyncTests
                 .ToArray();
         }
 
-        public PersonalMovieState AddToWatchlist(int movieId, DateTimeOffset now) => GetState(movieId);
-        public PersonalMovieState RemoveFromWatchlist(int movieId, DateTimeOffset now) => GetState(movieId);
+        public PersonalMovieState AddToWatchlist(int movieId, DateTimeOffset now)
+        {
+            _watchlist.Add(movieId);
+            return GetState(movieId);
+        }
+        public PersonalMovieState RemoveFromWatchlist(int movieId, DateTimeOffset now)
+        {
+            _watchlist.Remove(movieId);
+            return GetState(movieId);
+        }
         public WatchEvent AddWatchEvent(int movieId, DateTimeOffset watchedAt, DateTimeOffset createdAt) => throw new NotImplementedException();
         public WatchEvent DeleteWatchEvent(int eventId) => throw new NotImplementedException();
         public IReadOnlyList<WatchEvent> GetWatchEvents(int movieId) => Array.Empty<WatchEvent>();
@@ -490,8 +550,9 @@ public sealed class TraktFavoritesSyncTests
     private sealed class FakeShowPersonalRepository : IShowPersonalRepository
     {
         private readonly HashSet<int> _favorites = new();
+        private readonly HashSet<int> _watchLater = new();
 
-        public ShowPersonalSnapshot GetState(int showId) => new(showId, _favorites.Contains(showId), false);
+        public ShowPersonalSnapshot GetState(int showId) => new(showId, _favorites.Contains(showId), _watchLater.Contains(showId));
 
         public ShowPersonalSnapshot SetFavorite(int showId, bool value, DateTimeOffset now)
         {
@@ -500,8 +561,15 @@ public sealed class TraktFavoritesSyncTests
             return GetState(showId);
         }
 
-        public ShowPersonalSnapshot SetWatchLater(int showId, bool value, DateTimeOffset now) => GetState(showId);
+        public ShowPersonalSnapshot SetWatchLater(int showId, bool value, DateTimeOffset now)
+        {
+            if (value) _watchLater.Add(showId);
+            else _watchLater.Remove(showId);
+            return GetState(showId);
+        }
         public IReadOnlySet<int> ListShowIds(PersonalLibrarySection section)
-            => section == PersonalLibrarySection.Liked ? _favorites.ToHashSet() : new HashSet<int>();
+            => section == PersonalLibrarySection.Liked ? _favorites.ToHashSet()
+             : section == PersonalLibrarySection.Watchlist ? _watchLater.ToHashSet()
+             : new HashSet<int>();
     }
 }

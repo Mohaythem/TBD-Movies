@@ -34,6 +34,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
     private readonly IPersonalLibraryRepository? _personalLibraryRepository;
     private readonly IWatchHistoryRepository? _watchHistoryRepository;
     private readonly IShowPersonalRepository? _showPersonalRepository;
+    private readonly Func<TraktMediaKind, int, string, int?, int?>? _ensureCloudMedia;
 
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly object _ctsLock = new();
@@ -79,7 +80,8 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         ITraktLocalSnapshotBuilder? snapshotBuilder = null,
         IPersonalLibraryRepository? personalLibraryRepository = null,
         IWatchHistoryRepository? watchHistoryRepository = null,
-        IShowPersonalRepository? showPersonalRepository = null)
+        IShowPersonalRepository? showPersonalRepository = null,
+        Func<TraktMediaKind, int, string, int?, int?>? ensureCloudMedia = null)
     {
         _authService = authService ?? throw new ArgumentNullException(nameof(authService));
         _dataClient = dataClient ?? throw new ArgumentNullException(nameof(dataClient));
@@ -91,6 +93,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         _personalLibraryRepository = personalLibraryRepository;
         _watchHistoryRepository = watchHistoryRepository;
         _showPersonalRepository = showPersonalRepository;
+        _ensureCloudMedia = ensureCloudMedia;
 
         var authState = _authService.GetAuthState();
         _currentAccountId = authState.IsConnected ? authState.AccountId : null;
@@ -2774,8 +2777,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                 if (_personalLibraryRepository != null)
                 {
                     // Downstream: mark remote favorites as Liked in local DB (unless a local REMOVE failed to drain)
+                    var snapshotMovieTmdb = new HashSet<int>();
                     foreach (var cand in snapshot.ForKind(TraktMediaKind.Movie))
                     {
+                        if (cand.Identity.TmdbId.HasValue) snapshotMovieTmdb.Add(cand.Identity.TmdbId.Value);
                         if (cand.Identity.TmdbId.HasValue && remoteFavMovieTmdb.Contains(cand.Identity.TmdbId.Value))
                         {
                             if (survivingRemoveSet.Contains(("MOVIE", cand.Identity.TmdbId.Value))) continue;
@@ -2794,10 +2799,43 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                         }
                     }
 
+                    if (_ensureCloudMedia != null)
+                    {
+                        foreach (var remoteFav in remoteFavMovies)
+                        {
+                            if (remoteFav.TmdbId is not (> 0 and <= int.MaxValue)) continue;
+                            var tmdbInt = (int)remoteFav.TmdbId.Value;
+                            if (snapshotMovieTmdb.Contains(tmdbInt) || survivingRemoveSet.Contains(("MOVIE", tmdbInt))) continue;
+                            if (string.IsNullOrWhiteSpace(remoteFav.Title)) continue;
+                            try
+                            {
+                                var cloudId = _ensureCloudMedia(TraktMediaKind.Movie, tmdbInt, remoteFav.Title, remoteFav.Year);
+                                if (cloudId is > 0 && _personalLibraryRepository.GetState(cloudId.Value).Preference != PersonalPreference.Liked)
+                                {
+                                    _personalLibraryRepository.SetPreference(cloudId.Value, PersonalPreference.Liked, now);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                AppDiagnosticsLog.Record("TraktFavorites", $"Failed to materialize cloud favorite movie {tmdbInt}: {ex.Message}");
+                            }
+                        }
+                    }
+
                     var localLiked = _personalLibraryRepository.ListMovies(PersonalLibrarySection.Liked, 10000, 0);
                     var candidateMap = snapshot.ForKind(TraktMediaKind.Movie)
                         .Where(c => c.Identity.TmdbId.HasValue)
                         .ToDictionary(c => c.LocalId, c => c.Identity.TmdbId!.Value);
+                    foreach (var item in localLiked)
+                    {
+                        if (!candidateMap.ContainsKey(item.Movie.Id) &&
+                            string.Equals(item.Movie.Data.Provider, "TMDB", StringComparison.OrdinalIgnoreCase) &&
+                            int.TryParse(item.Movie.Data.ExternalId, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var extTmdb) &&
+                            extTmdb > 0)
+                        {
+                            candidateMap[item.Movie.Id] = extTmdb;
+                        }
+                    }
 
                     // Authoritative Prune on Subsequent Syncs
                     if (!isInitialSync)
@@ -2866,8 +2904,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                 if (_showPersonalRepository != null)
                 {
                     // Downstream: mark remote favorites as IsFavorite in local DB (unless a local REMOVE failed to drain)
+                    var snapshotShowTmdb = new HashSet<int>();
                     foreach (var cand in snapshot.ForKind(TraktMediaKind.Show))
                     {
+                        if (cand.Identity.TmdbId.HasValue) snapshotShowTmdb.Add(cand.Identity.TmdbId.Value);
                         if (cand.Identity.TmdbId.HasValue && remoteFavShowTmdb.Contains(cand.Identity.TmdbId.Value))
                         {
                             if (survivingRemoveSet.Contains(("SHOW", cand.Identity.TmdbId.Value))) continue;
@@ -2882,6 +2922,29 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                             catch (Exception ex)
                             {
                                 AppDiagnosticsLog.Record("TraktFavorites", $"Failed to set favorite for show {cand.LocalId}: {ex.Message}");
+                            }
+                        }
+                    }
+
+                    if (_ensureCloudMedia != null)
+                    {
+                        foreach (var remoteFav in remoteFavShows)
+                        {
+                            if (remoteFav.TmdbId is not (> 0 and <= int.MaxValue)) continue;
+                            var tmdbInt = (int)remoteFav.TmdbId.Value;
+                            if (snapshotShowTmdb.Contains(tmdbInt) || survivingRemoveSet.Contains(("SHOW", tmdbInt))) continue;
+                            if (string.IsNullOrWhiteSpace(remoteFav.Title)) continue;
+                            try
+                            {
+                                var cloudId = _ensureCloudMedia(TraktMediaKind.Show, tmdbInt, remoteFav.Title, remoteFav.Year);
+                                if (cloudId is > 0 && !_showPersonalRepository.GetState(cloudId.Value).IsFavorite)
+                                {
+                                    _showPersonalRepository.SetFavorite(cloudId.Value, true, now);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                AppDiagnosticsLog.Record("TraktFavorites", $"Failed to materialize cloud favorite show {tmdbInt}: {ex.Message}");
                             }
                         }
                     }
@@ -3047,8 +3110,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                 if (_personalLibraryRepository != null)
                 {
                     // Downstream: mark remote watchlist in local DB for available library movies
+                    var snapshotWatchlistMovieTmdb = new HashSet<int>();
                     foreach (var cand in snapshot.ForKind(TraktMediaKind.Movie))
                     {
+                        if (cand.Identity.TmdbId.HasValue) snapshotWatchlistMovieTmdb.Add(cand.Identity.TmdbId.Value);
                         if (cand.Identity.TmdbId.HasValue && remoteWatchlistMovieTmdb.Contains(cand.Identity.TmdbId.Value))
                         {
                             try
@@ -3066,10 +3131,45 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                         }
                     }
 
+                    if (_ensureCloudMedia != null)
+                    {
+                        foreach (var item in remoteWatchlist)
+                        {
+                            if (string.Equals(item.Type, "show", StringComparison.OrdinalIgnoreCase)) continue;
+                            var tmdb = item.GetTmdbId();
+                            if (tmdb is not (> 0 and <= int.MaxValue)) continue;
+                            var tmdbInt = (int)tmdb.Value;
+                            if (snapshotWatchlistMovieTmdb.Contains(tmdbInt)) continue;
+                            if (string.IsNullOrWhiteSpace(item.Title)) continue;
+                            try
+                            {
+                                var cloudId = _ensureCloudMedia(TraktMediaKind.Movie, tmdbInt, item.Title, item.Year);
+                                if (cloudId is > 0 && !_personalLibraryRepository.GetState(cloudId.Value).IsWatchlisted)
+                                {
+                                    _personalLibraryRepository.AddToWatchlist(cloudId.Value, now);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to materialize cloud watchlist movie {tmdbInt}: {ex.Message}");
+                            }
+                        }
+                    }
+
                     var localWatchlisted = _personalLibraryRepository.ListMovies(PersonalLibrarySection.Watchlist, 10000, 0);
                     var candidateMap = snapshot.ForKind(TraktMediaKind.Movie)
                         .Where(c => c.Identity.TmdbId.HasValue)
                         .ToDictionary(c => c.LocalId, c => c.Identity.TmdbId!.Value);
+                    foreach (var item in localWatchlisted)
+                    {
+                        if (!candidateMap.ContainsKey(item.Movie.Id) &&
+                            string.Equals(item.Movie.Data.Provider, "TMDB", StringComparison.OrdinalIgnoreCase) &&
+                            int.TryParse(item.Movie.Data.ExternalId, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var extTmdb) &&
+                            extTmdb > 0)
+                        {
+                            candidateMap[item.Movie.Id] = extTmdb;
+                        }
+                    }
 
                     // Authoritative Prune on Subsequent Syncs
                     if (!isInitialSync)
@@ -3127,8 +3227,10 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                 if (_showPersonalRepository != null)
                 {
                     // Downstream: mark remote watchlist in local DB for available library shows
+                    var snapshotWatchlistShowTmdb = new HashSet<int>();
                     foreach (var cand in snapshot.ForKind(TraktMediaKind.Show))
                     {
+                        if (cand.Identity.TmdbId.HasValue) snapshotWatchlistShowTmdb.Add(cand.Identity.TmdbId.Value);
                         if (cand.Identity.TmdbId.HasValue && remoteWatchlistShowTmdb.Contains(cand.Identity.TmdbId.Value))
                         {
                             try
@@ -3142,6 +3244,31 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                             catch (Exception ex)
                             {
                                 System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to set show {cand.LocalId} to watch later: {ex.Message}");
+                            }
+                        }
+                    }
+
+                    if (_ensureCloudMedia != null)
+                    {
+                        foreach (var item in remoteWatchlist)
+                        {
+                            if (!string.Equals(item.Type, "show", StringComparison.OrdinalIgnoreCase)) continue;
+                            var tmdb = item.GetTmdbId();
+                            if (tmdb is not (> 0 and <= int.MaxValue)) continue;
+                            var tmdbInt = (int)tmdb.Value;
+                            if (snapshotWatchlistShowTmdb.Contains(tmdbInt)) continue;
+                            if (string.IsNullOrWhiteSpace(item.Title)) continue;
+                            try
+                            {
+                                var cloudId = _ensureCloudMedia(TraktMediaKind.Show, tmdbInt, item.Title, item.Year);
+                                if (cloudId is > 0 && !_showPersonalRepository.GetState(cloudId.Value).WatchLater)
+                                {
+                                    _showPersonalRepository.SetWatchLater(cloudId.Value, true, now);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to materialize cloud watchlist show {tmdbInt}: {ex.Message}");
                             }
                         }
                     }

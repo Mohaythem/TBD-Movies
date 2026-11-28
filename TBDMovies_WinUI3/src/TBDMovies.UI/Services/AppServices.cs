@@ -386,6 +386,15 @@ internal static class AppServices
         }
     }
 
+    private static int? EnsureCloudMediaFromTrakt(TraktMediaKind kind, int tmdbId, string title, int? year)
+    {
+        if (tmdbId <= 0 || string.IsNullOrWhiteSpace(title)) return null;
+        var extId = tmdbId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return kind == TraktMediaKind.Show
+            ? EnsureCloudShow(new TVShowRecord(0, title, year ?? 0, [], string.Empty, [], ExternalId: extId))
+            : EnsureCloudMovie(new MovieRecord(0, title, year ?? 0, string.Empty, 0, [], string.Empty, HasLocalFile: false, ExternalId: extId));
+    }
+
     public static ITraktLocalSnapshotBuilder? TraktLocalSnapshot => _traktLocalSnapshot;
     private static ITraktLocalSnapshotBuilder? _traktLocalSnapshot;
 
@@ -982,7 +991,7 @@ internal static class AppServices
             candidateData = new TraktDataClient();
             var snapshot = new TraktLocalSnapshotBuilder(Require(_movies), Require(_mediaFiles),
                 Require(_tvShows), Require(_tvSeasons), Require(_tvEpisodes), Require(_availabilityInspector));
-            candidateSync = new TraktSyncService(auth, candidateData, cache, candidateConfig, Require(_settingsRepository), timeProvider: null, snapshot, _personalRepo, _watchHistoryRepo, _showPersonalRepo);
+            candidateSync = new TraktSyncService(auth, candidateData, cache, candidateConfig, Require(_settingsRepository), timeProvider: null, snapshot, _personalRepo, _watchHistoryRepo, _showPersonalRepo, EnsureCloudMediaFromTrakt);
             candidateSync.SyncCompleted += (_, _) => TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
             var projection = new TraktProjectionService();
             var json = JsonSerializer.Serialize(new TraktConfigDto(candidateConfig.ClientId, candidateConfig.RedirectUri));
@@ -1108,7 +1117,8 @@ internal static class AppServices
                 snapshotBuilder,
                 personalRepo,
                 watchHistoryRepo,
-                _showPersonalRepo);
+                _showPersonalRepo,
+                EnsureCloudMediaFromTrakt);
             syncService.SyncCompleted += (_, _) => TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
 
             _traktAuthClient = authClient;

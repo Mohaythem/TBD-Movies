@@ -669,14 +669,16 @@ public sealed partial class MyListsPage : Page, ILocalizableView, IActivatableVi
                         movie,
                         true,
                         movie.HasLocalFile,
-                        LocalizationService.Text(movie.HasLocalFile ? "Local" : "Unavailable")));
+                        LocalizationService.Text(movie.HasLocalFile ? "Local" : "Unavailable"),
+                        int.TryParse(movie.ExternalId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mTmdb) && mTmdb > 0 ? mTmdb : null));
                 var shows = AppServices.ShowPersonal.ListShows(section.Value)
                     .Select(TvProjection.ToCard)
                     .Select(show => new ListMediaItem(
                         show,
                         true,
                         show.LocalEpisodeCount > 0,
-                        LocalizationService.Text(show.LocalEpisodeCount > 0 ? "Local" : "Unavailable")));
+                        LocalizationService.Text(show.LocalEpisodeCount > 0 ? "Local" : "Unavailable"),
+                        int.TryParse(show.ExternalId, NumberStyles.Integer, CultureInfo.InvariantCulture, out var sTmdb) && sTmdb > 0 ? sTmdb : null));
                 return movies.Concat(shows).ToArray();
             }
 
