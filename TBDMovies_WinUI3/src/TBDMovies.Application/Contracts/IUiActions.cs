@@ -166,6 +166,8 @@ public interface ITvLibraryUiActions
 {
     IReadOnlyList<TvShowListItem> ListShows();
 
+    IReadOnlyList<TvShowListItem> ListShowsIncludingCloud() => ListShows();
+
     DateTimeOffset RecordShowOpened(int showId);
 
     TvShowDetails GetShowDetails(int showId);

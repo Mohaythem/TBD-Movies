@@ -40,16 +40,24 @@ public sealed class TvLibraryService(
         shows.RecordOpened(showId, openedAt);
         return openedAt;
     }
-    public IReadOnlyList<TvShowListItem> ListShows()
+    public IReadOnlyList<TvShowListItem> ListShows() => ListShowsCore(includeCloudOnly: false);
+
+    public IReadOnlyList<TvShowListItem> ListShowsIncludingCloud() => ListShowsCore(includeCloudOnly: true);
+
+    private IReadOnlyList<TvShowListItem> ListShowsCore(bool includeCloudOnly)
     {
         var watchedCounts = history?.GetWatchedEpisodeCountsByShow() ?? (IReadOnlyDictionary<int, int>)ImmutableDictionary<int, int>.Empty;
         if (shows is ITvShowSummaryReader summaries)
-            return summaries.ListSummaries().Select(summary => new TvShowListItem(
+        {
+            var rows = includeCloudOnly ? summaries.ListAllSummaries() : summaries.ListSummaries();
+            return rows.Select(summary => new TvShowListItem(
                 summary.Show.Id, summary.Show.DisplayTitle, summary.Show.Year, summary.Show.PosterReference,
                 summary.Seasons, summary.Episodes, summary.LocalEpisodes, summary.MissingEpisodes,
                 summary.Show.DateAdded, summary.Show.LastOpenedAt, summary.Show.MetadataStatus,
                 summary.Show.BackdropReference, summary.Show.CustomDisplayTitle, summary.Show.Title,
-                WatchedEpisodeCount: watchedCounts.GetValueOrDefault(summary.Show.Id, 0))).ToArray();
+                WatchedEpisodeCount: watchedCounts.GetValueOrDefault(summary.Show.Id, 0),
+                ExternalId: summary.Show.Data.ExternalId)).ToArray();
+        }
 
         var result = new List<TvShowListItem>();
 

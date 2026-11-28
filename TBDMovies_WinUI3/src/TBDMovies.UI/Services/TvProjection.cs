@@ -41,7 +41,8 @@ internal static class TvProjection
         DateAdded: item.DateAdded,
         LastOpenedAt: item.LastOpenedAt,
         CustomDisplayTitle: item.CustomDisplayTitle,
-        CanonicalTitle: item.CanonicalTitle);
+        CanonicalTitle: item.CanonicalTitle,
+        ExternalId: item.ExternalId);
 
     /// <summary>The full hierarchy of one show: seasons in order, each with its episodes in order.</summary>
     public static TVShowRecord ToDetails(TvShowDetails details) => new(

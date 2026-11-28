@@ -222,12 +222,17 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         try
         {
             var item = AppServices.Library.GetMovieItem(movieId);
-            SetMovie(LibraryProjection.ToDetails(
+            var details = LibraryProjection.ToDetails(
                 AppServices.Library.GetMovieDetails(movieId),
                 AppServices.Personal.GetPersonalSnapshot(movieId),
                 AppServices.Personal.ListWatchEvents(movieId)) with
-            { DateAdded = item.DateAdded, HasPendingMetadata = item.HasPendingMetadata });
+            { DateAdded = item.DateAdded, HasPendingMetadata = item.HasPendingMetadata };
+            SetMovie(details);
             IsLoadedSuccessfully = true;
+            if (details.HasPendingMetadata && !details.HasLocalFile && !string.IsNullOrWhiteSpace(details.ExternalId))
+            {
+                HydrateCloudMovieMetadata(details, details.Id);
+            }
         }
         catch (Exception error)
         {
@@ -242,7 +247,11 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
         _metadataRequests.Cancel();
         SetMovie(cloudMovie);
         IsLoadedSuccessfully = true;
+        HydrateCloudMovieMetadata(cloudMovie, existingMovieId: 0);
+    }
 
+    private void HydrateCloudMovieMetadata(MovieRecord cloudMovie, int existingMovieId)
+    {
         if (!AppServices.IsAvailable || AppServices.Metadata is not { IsConfigured: true })
         {
             return;
@@ -312,21 +321,31 @@ public sealed partial class MovieDetailsPage : Page, ILocalizableView, IActivata
                     updated.UpdatePosterReference(metadata.PosterReference);
                 }
 
-                var materializedId = AppServices.EnsureCloudMovie(updated);
+                var materializedId = existingMovieId > 0 ? existingMovieId : AppServices.EnsureCloudMovie(updated);
                 DispatcherQueue?.TryEnqueue(() =>
                 {
-                    if (!request.IsCurrent || _movie.Id > 0)
+                    if (!request.IsCurrent)
                     {
                         return;
                     }
 
-                    if (materializedId is > 0)
+                    if (existingMovieId > 0)
                     {
-                        LoadMovie(materializedId.Value);
+                        if (_movie.Id == existingMovieId)
+                        {
+                            SetMovie(updated with { Id = existingMovieId, HasPendingMetadata = false });
+                        }
                     }
-                    else
+                    else if (_movie.Id <= 0)
                     {
-                        SetMovie(updated);
+                        if (materializedId is > 0)
+                        {
+                            LoadMovie(materializedId.Value);
+                        }
+                        else
+                        {
+                            SetMovie(updated);
+                        }
                     }
                 });
             }

@@ -178,6 +178,9 @@ public sealed class UnitOfWorkTvShowRepository(ICatalogUnitOfWorkFactory factory
     public IReadOnlyList<TvShowSummary> ListSummaries() =>
         Read(shows => ((ITvShowSummaryReader)shows).ListSummaries());
 
+    public IReadOnlyList<TvShowSummary> ListAllSummaries() =>
+        Read(shows => ((ITvShowSummaryReader)shows).ListAllSummaries());
+
     public int CountAll() => Read(shows => shows.CountAll());
 
     public TvShow Create(TvShowCatalogData data, DateTimeOffset now) => Write(shows => shows.Create(data, now));

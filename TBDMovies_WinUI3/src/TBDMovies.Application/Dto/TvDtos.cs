@@ -21,7 +21,8 @@ public record TvShowListItem(
     string? BackdropReference = null,
     string? CustomDisplayTitle = null,
     string? CanonicalTitle = null,
-    int WatchedEpisodeCount = 0);
+    int WatchedEpisodeCount = 0,
+    string? ExternalId = null);
 
 /// <summary>The whole hierarchy of one show, read in one call.</summary>
 public record TvShowDetails(

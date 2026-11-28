@@ -30,7 +30,8 @@ public sealed class TraktFavoritesSyncTests
         FakeShowPersonalRepository showRepo,
         FakeSnapshotBuilder? snapshotBuilder = null,
         TimeProvider? timeProvider = null,
-        Func<TraktMediaKind, int, string, int?, int?>? ensureCloudMedia = null)
+        Func<TraktMediaKind, int, string, int?, int?>? ensureCloudMedia = null,
+        Func<int, int?>? resolveShowTmdbId = null)
     {
         dataClient.AccountUuid = auth.GetAuthState().AccountId ?? "acct-1";
         return new TraktSyncService(
@@ -44,7 +45,8 @@ public sealed class TraktFavoritesSyncTests
             personalRepo,
             watchHistoryRepository: null,
             showPersonalRepository: showRepo,
-            ensureCloudMedia: ensureCloudMedia);
+            ensureCloudMedia: ensureCloudMedia,
+            resolveShowTmdbId: resolveShowTmdbId);
     }
 
     [Fact]
@@ -169,7 +171,7 @@ public sealed class TraktFavoritesSyncTests
     }
 
     [Fact]
-    public async Task SyncAsync_MaterializesRemoteCloudWatchlistAndFavorites_WhenNotInLocalLibrary()
+    public async Task SyncAsync_MaterializesRemoteCloudWatchlistAndFavorites_AndPrunesSelectivelyOnSubsequentSync()
     {
         var auth = new FakeAuthService("acct-cloud");
         var dataClient = new FakeTraktDataClient
@@ -177,16 +179,36 @@ public sealed class TraktFavoritesSyncTests
             RemoteWatchlistJson = """
                 [
                   {"type":"movie","movie":{"title":"Dune","year":2021,"ids":{"tmdb":438631}}},
-                  {"type":"show","show":{"title":"Severance","year":2022,"ids":{"tmdb":95396}}}
+                  {"type":"movie","movie":{"title":"Blade Runner 2049","year":2017,"ids":{"tmdb":335984}}},
+                  {"type":"movie","movie":{"title":"","year":2020,"ids":{"tmdb":999999}}},
+                  {"type":"show","show":{"title":"Severance","year":2022,"ids":{"tmdb":95396}}},
+                  {"type":"show","show":{"title":"Andor","year":2022,"ids":{"tmdb":83867}}}
                 ]
                 """,
-            RemoteFavoriteMoviesJson = """[{"type":"movie","movie":{"title":"Arrival","year":2016,"ids":{"tmdb":329865}}}]""",
-            RemoteFavoriteShowsJson = """[{"type":"show","show":{"title":"Dark","year":2017,"ids":{"tmdb":70523}}}]"""
+            RemoteFavoriteMoviesJson = """
+                [
+                  {"type":"movie","movie":{"title":"Arrival","year":2016,"ids":{"tmdb":329865}}},
+                  {"type":"movie","movie":{"title":"Local Snapshot Movie","year":2020,"ids":{"tmdb":101}}}
+                ]
+                """,
+            RemoteFavoriteShowsJson = """
+                [
+                  {"type":"show","show":{"title":"Dark","year":2017,"ids":{"tmdb":70523}}},
+                  {"type":"show","show":{"title":"Breaking Bad","year":2008,"ids":{"tmdb":1396}}}
+                ]
+                """
         };
         var settings = new FakeSettingsRepository();
         var personalRepo = new FakePersonalLibraryRepository();
         var showRepo = new FakeShowPersonalRepository();
+        var snapshot = new TraktLocalSnapshot(
+            new[]
+            {
+                new TraktLocalCandidate(1, TraktMediaKind.Movie, new TraktIdentity(TraktMediaKind.Movie, TmdbId: 101))
+            },
+            FixedNow);
         var materialized = new Dictionary<(TraktMediaKind Kind, int TmdbId), int>();
+        var showIdToTmdb = new Dictionary<int, int>();
         var nextId = 500;
 
         using var service = CreateService(
@@ -195,23 +217,67 @@ public sealed class TraktFavoritesSyncTests
             settings,
             personalRepo,
             showRepo,
+            new FakeSnapshotBuilder(snapshot),
             ensureCloudMedia: (kind, tmdbId, title, year) =>
             {
                 if (!materialized.TryGetValue((kind, tmdbId), out var id))
                 {
                     id = ++nextId;
                     materialized[(kind, tmdbId)] = id;
+                    if (kind == TraktMediaKind.Movie) personalRepo.TmdbByMovieId[id] = tmdbId;
+                    else showIdToTmdb[id] = tmdbId;
                 }
                 return id;
-            });
+            },
+            resolveShowTmdbId: showId => showIdToTmdb.TryGetValue(showId, out var tmdb) ? tmdb : null);
 
         var res = await service.SyncAsync();
         Assert.True(res.Success);
 
+        // Snapshot-present movie (101) must NOT be passed to ensureCloudMedia; blank-title (999999) must be skipped
+        Assert.False(materialized.ContainsKey((TraktMediaKind.Movie, 101)));
+        Assert.False(materialized.ContainsKey((TraktMediaKind.Movie, 999999)));
+        Assert.Equal(PersonalPreference.Liked, personalRepo.GetState(1).Preference);
+
+        // Cloud items materialized into Watch Later & Favorites
         Assert.True(personalRepo.GetState(materialized[(TraktMediaKind.Movie, 438631)]).IsWatchlisted);
+        Assert.True(personalRepo.GetState(materialized[(TraktMediaKind.Movie, 335984)]).IsWatchlisted);
         Assert.True(showRepo.GetState(materialized[(TraktMediaKind.Show, 95396)]).WatchLater);
+        Assert.True(showRepo.GetState(materialized[(TraktMediaKind.Show, 83867)]).WatchLater);
         Assert.Equal(PersonalPreference.Liked, personalRepo.GetState(materialized[(TraktMediaKind.Movie, 329865)]).Preference);
         Assert.True(showRepo.GetState(materialized[(TraktMediaKind.Show, 70523)]).IsFavorite);
+        Assert.True(showRepo.GetState(materialized[(TraktMediaKind.Show, 1396)]).IsFavorite);
+
+        // 2. Subsequent sync: remove Dune (438631) and Severance (95396) from Watchlist, and Dark (70523) from Favorites,
+        // while keeping Blade Runner 2049, Andor, Arrival, and Breaking Bad.
+        // Also simulate a pending REMOVE on 438631 that fails to drain: it must not be re-added even if remote still had it.
+        dataClient.RemoteWatchlistJson = """
+            [
+              {"type":"movie","movie":{"title":"Blade Runner 2049","year":2017,"ids":{"tmdb":335984}}},
+              {"type":"show","show":{"title":"Andor","year":2022,"ids":{"tmdb":83867}}}
+            ]
+            """;
+        dataClient.RemoteFavoriteMoviesJson = """
+            [
+              {"type":"movie","movie":{"title":"Arrival","year":2016,"ids":{"tmdb":329865}}},
+              {"type":"movie","movie":{"title":"Local Snapshot Movie","year":2020,"ids":{"tmdb":101}}}
+            ]
+            """;
+        dataClient.RemoteFavoriteShowsJson = """
+            [
+              {"type":"show","show":{"title":"Breaking Bad","year":2008,"ids":{"tmdb":1396}}}
+            ]
+            """;
+
+        var nextRes = await service.SyncAsync();
+        Assert.True(nextRes.Success);
+
+        Assert.False(personalRepo.GetState(materialized[(TraktMediaKind.Movie, 438631)]).IsWatchlisted);
+        Assert.True(personalRepo.GetState(materialized[(TraktMediaKind.Movie, 335984)]).IsWatchlisted);
+        Assert.False(showRepo.GetState(materialized[(TraktMediaKind.Show, 95396)]).WatchLater);
+        Assert.True(showRepo.GetState(materialized[(TraktMediaKind.Show, 83867)]).WatchLater);
+        Assert.False(showRepo.GetState(materialized[(TraktMediaKind.Show, 70523)]).IsFavorite);
+        Assert.True(showRepo.GetState(materialized[(TraktMediaKind.Show, 1396)]).IsFavorite);
     }
 
     [Fact]
@@ -486,6 +552,7 @@ public sealed class TraktFavoritesSyncTests
     {
         private readonly Dictionary<int, PersonalPreference> _prefs = new();
         private readonly HashSet<int> _watchlist = new();
+        public Dictionary<int, int> TmdbByMovieId { get; } = new();
 
         public PersonalMovieState GetState(int movieId)
         {
@@ -508,13 +575,23 @@ public sealed class TraktFavoritesSyncTests
 
         public IReadOnlyList<PersonalMovieSummary> ListMovies(PersonalLibrarySection section, int limit = 100, int offset = 0)
         {
-            if (section != PersonalLibrarySection.Liked) return Array.Empty<PersonalMovieSummary>();
-            return _prefs
-                .Where(kv => kv.Value == PersonalPreference.Liked)
-                .Select(kv => new PersonalMovieSummary(
-                    new Movie(kv.Key, new MovieCatalogData(null, null, $"Movie {kv.Key}", null, 2020, null, [], null, null, null, MetadataStatus.Pending), FixedNow, FixedNow, FixedNow),
-                    1, 0, PersonalPreference.Liked, false, 0, null))
-                .ToArray();
+            IEnumerable<int> ids = section switch
+            {
+                PersonalLibrarySection.Liked => _prefs.Where(kv => kv.Value == PersonalPreference.Liked).Select(kv => kv.Key),
+                PersonalLibrarySection.Watchlist => _watchlist,
+                _ => Array.Empty<int>()
+            };
+
+            return ids.Select(id =>
+            {
+                var provider = TmdbByMovieId.TryGetValue(id, out var tmdb) ? "TMDB" : null;
+                var extId = provider != null ? tmdb.ToString() : null;
+                var pref = _prefs.TryGetValue(id, out var p) ? p : PersonalPreference.NoOpinion;
+                var watchlisted = _watchlist.Contains(id);
+                return new PersonalMovieSummary(
+                    new Movie(id, new MovieCatalogData(provider, extId, $"Movie {id}", null, 2020, null, [], null, null, null, MetadataStatus.Pending), FixedNow, FixedNow, FixedNow),
+                    1, 0, pref, watchlisted, 0, null);
+            }).ToArray();
         }
 
         public PersonalMovieState AddToWatchlist(int movieId, DateTimeOffset now)

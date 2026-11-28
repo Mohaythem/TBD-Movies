@@ -35,6 +35,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
     private readonly IWatchHistoryRepository? _watchHistoryRepository;
     private readonly IShowPersonalRepository? _showPersonalRepository;
     private readonly Func<TraktMediaKind, int, string, int?, int?>? _ensureCloudMedia;
+    private readonly Func<int, int?>? _resolveShowTmdbId;
 
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private readonly object _ctsLock = new();
@@ -81,7 +82,8 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         IPersonalLibraryRepository? personalLibraryRepository = null,
         IWatchHistoryRepository? watchHistoryRepository = null,
         IShowPersonalRepository? showPersonalRepository = null,
-        Func<TraktMediaKind, int, string, int?, int?>? ensureCloudMedia = null)
+        Func<TraktMediaKind, int, string, int?, int?>? ensureCloudMedia = null,
+        Func<int, int?>? resolveShowTmdbId = null)
     {
         _authService = authService ?? throw new ArgumentNullException(nameof(authService));
         _dataClient = dataClient ?? throw new ArgumentNullException(nameof(dataClient));
@@ -94,6 +96,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
         _watchHistoryRepository = watchHistoryRepository;
         _showPersonalRepository = showPersonalRepository;
         _ensureCloudMedia = ensureCloudMedia;
+        _resolveShowTmdbId = resolveShowTmdbId;
 
         var authState = _authService.GetAuthState();
         _currentAccountId = authState.IsConnected ? authState.AccountId : null;
@@ -2953,6 +2956,16 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                     var showCandidateMap = snapshot.ForKind(TraktMediaKind.Show)
                         .Where(c => c.Identity.TmdbId.HasValue)
                         .ToDictionary(c => c.LocalId, c => c.Identity.TmdbId!.Value);
+                    if (_resolveShowTmdbId != null)
+                    {
+                        foreach (var showId in localFavShowIds)
+                        {
+                            if (!showCandidateMap.ContainsKey(showId) && _resolveShowTmdbId(showId) is int extTmdb && extTmdb > 0)
+                            {
+                                showCandidateMap[showId] = extTmdb;
+                            }
+                        }
+                    }
 
                     // Authoritative Prune on Subsequent Syncs
                     if (!isInitialSync)
@@ -3100,6 +3113,19 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
             }
 
             var isInitialSync = _settingsRepository?.Get($"trakt_initial_sync_{accountId}_watchlist") != "true";
+            var initialUploadSucceeded = true;
+
+            var survivingWatchlistRemove = new HashSet<(string Kind, int TmdbId)>();
+            if (_personalLibraryRepository != null)
+            {
+                foreach (var p in _personalLibraryRepository.ListTraktPendingWatchlist())
+                {
+                    if (string.Equals(p.Action, "REMOVE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        survivingWatchlistRemove.Add((p.MediaKind.Trim().ToUpperInvariant(), p.TmdbId));
+                    }
+                }
+            }
 
             // 3. Downstream & Upstream Reconciliation
             if (_snapshotBuilder != null)
@@ -3116,6 +3142,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                         if (cand.Identity.TmdbId.HasValue) snapshotWatchlistMovieTmdb.Add(cand.Identity.TmdbId.Value);
                         if (cand.Identity.TmdbId.HasValue && remoteWatchlistMovieTmdb.Contains(cand.Identity.TmdbId.Value))
                         {
+                            if (survivingWatchlistRemove.Contains(("MOVIE", cand.Identity.TmdbId.Value))) continue;
                             try
                             {
                                 var current = _personalLibraryRepository.GetState(cand.LocalId);
@@ -3139,7 +3166,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                             var tmdb = item.GetTmdbId();
                             if (tmdb is not (> 0 and <= int.MaxValue)) continue;
                             var tmdbInt = (int)tmdb.Value;
-                            if (snapshotWatchlistMovieTmdb.Contains(tmdbInt)) continue;
+                            if (snapshotWatchlistMovieTmdb.Contains(tmdbInt) || survivingWatchlistRemove.Contains(("MOVIE", tmdbInt))) continue;
                             if (string.IsNullOrWhiteSpace(item.Title)) continue;
                             try
                             {
@@ -3213,10 +3240,12 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                         {
                             try
                             {
-                                await MutateWithAuthRetryAsync(token => _dataClient.AddWatchlistBatchAsync(moviesToUpload, null, token, _config.ClientId, cancellationToken), cancellationToken).ConfigureAwait(false);
+                                var uploadRes = await MutateWithAuthRetryAsync(token => _dataClient.AddWatchlistBatchAsync(moviesToUpload, null, token, _config.ClientId, cancellationToken), cancellationToken).ConfigureAwait(false);
+                                if (!uploadRes.Success) initialUploadSucceeded = false;
                             }
                             catch (Exception ex)
                             {
+                                initialUploadSucceeded = false;
                                 System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to push local movie watchlist batch: {ex.Message}");
                             }
                         }
@@ -3233,6 +3262,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                         if (cand.Identity.TmdbId.HasValue) snapshotWatchlistShowTmdb.Add(cand.Identity.TmdbId.Value);
                         if (cand.Identity.TmdbId.HasValue && remoteWatchlistShowTmdb.Contains(cand.Identity.TmdbId.Value))
                         {
+                            if (survivingWatchlistRemove.Contains(("SHOW", cand.Identity.TmdbId.Value))) continue;
                             try
                             {
                                 var current = _showPersonalRepository.GetState(cand.LocalId);
@@ -3256,7 +3286,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                             var tmdb = item.GetTmdbId();
                             if (tmdb is not (> 0 and <= int.MaxValue)) continue;
                             var tmdbInt = (int)tmdb.Value;
-                            if (snapshotWatchlistShowTmdb.Contains(tmdbInt)) continue;
+                            if (snapshotWatchlistShowTmdb.Contains(tmdbInt) || survivingWatchlistRemove.Contains(("SHOW", tmdbInt))) continue;
                             if (string.IsNullOrWhiteSpace(item.Title)) continue;
                             try
                             {
@@ -3277,6 +3307,16 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                     var showCandidateMap = snapshot.ForKind(TraktMediaKind.Show)
                         .Where(c => c.Identity.TmdbId.HasValue)
                         .ToDictionary(c => c.LocalId, c => c.Identity.TmdbId!.Value);
+                    if (_resolveShowTmdbId != null)
+                    {
+                        foreach (var showId in localWatchlistShowIds)
+                        {
+                            if (!showCandidateMap.ContainsKey(showId) && _resolveShowTmdbId(showId) is int extTmdb && extTmdb > 0)
+                            {
+                                showCandidateMap[showId] = extTmdb;
+                            }
+                        }
+                    }
 
                     // Authoritative Prune on Subsequent Syncs
                     if (!isInitialSync)
@@ -3320,10 +3360,12 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                         {
                             try
                             {
-                                await MutateWithAuthRetryAsync(token => _dataClient.AddWatchlistBatchAsync(null, showsToUpload, token, _config.ClientId, cancellationToken), cancellationToken).ConfigureAwait(false);
+                                var uploadRes = await MutateWithAuthRetryAsync(token => _dataClient.AddWatchlistBatchAsync(null, showsToUpload, token, _config.ClientId, cancellationToken), cancellationToken).ConfigureAwait(false);
+                                if (!uploadRes.Success) initialUploadSucceeded = false;
                             }
                             catch (Exception ex)
                             {
+                                initialUploadSucceeded = false;
                                 System.Diagnostics.Debug.WriteLine($"[TraktSyncService] Failed to push local show watchlist batch: {ex.Message}");
                             }
                         }
@@ -3331,7 +3373,7 @@ public sealed partial class TraktSyncService : ITraktUiActions, ITraktListAction
                 }
             }
 
-            if (isInitialSync)
+            if (isInitialSync && initialUploadSucceeded)
             {
                 _settingsRepository?.Set($"trakt_initial_sync_{accountId}_watchlist", "true", now);
             }

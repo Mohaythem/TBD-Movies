@@ -117,11 +117,16 @@ public sealed class TvShowRepository(SqliteConnection connection, SqliteTransact
         return Convert.ToInt32(command.ExecuteScalar());
     }
 
-    public IReadOnlyList<TvShowSummary> ListSummaries()
+    public IReadOnlyList<TvShowSummary> ListSummaries() => ListSummariesCore(includeCloudOnly: false);
+
+    public IReadOnlyList<TvShowSummary> ListAllSummaries() => ListSummariesCore(includeCloudOnly: true);
+
+    private IReadOnlyList<TvShowSummary> ListSummariesCore(bool includeCloudOnly)
     {
         // Aggregate files per episode first: several copies of an episode count once, and one
         // present copy takes precedence over missing copies. Empty seasons/shows remain visible.
         var showColumns = string.Join(", ", Columns.Split(", ").Select(column => "sh." + column));
+        var filterClause = includeCloudOnly ? string.Empty : "WHERE sh.is_cloud_only = 0";
         using var command = Command($"""
             WITH episode_availability AS (
                 SELECT e.id, e.season_id, COUNT(f.id) AS files,
@@ -137,7 +142,7 @@ public sealed class TvShowRepository(SqliteConnection connection, SqliteTransact
               FROM tv_shows sh
               LEFT JOIN tv_seasons s ON s.show_id = sh.id
               LEFT JOIN episode_availability e ON e.season_id = s.id
-             WHERE sh.is_cloud_only = 0
+             {filterClause}
              GROUP BY sh.id
              ORDER BY sh.date_added DESC, sh.id DESC;
             """);

@@ -286,7 +286,7 @@ internal static class AppServices
 
     public static int? EnsureCloudMovie(MovieRecord cloudMovie)
     {
-        if (_catalogFactory is null || string.IsNullOrWhiteSpace(cloudMovie.ExternalId) || string.IsNullOrWhiteSpace(cloudMovie.Title))
+        if (_closed || _catalogFactory is null || string.IsNullOrWhiteSpace(cloudMovie.ExternalId) || string.IsNullOrWhiteSpace(cloudMovie.Title))
         {
             return null;
         }
@@ -294,6 +294,12 @@ internal static class AppServices
         var externalId = cloudMovie.ExternalId.Trim();
         try
         {
+            var readHit = _movies?.GetByExternalId("TMDB", externalId) ?? _movies?.GetByExternalId("tmdb", externalId);
+            if (readHit is not null)
+            {
+                return readHit.Id;
+            }
+
             using var uow = _catalogFactory.Begin();
             var existing = uow.Movies.GetByExternalId("TMDB", externalId)
                 ?? uow.Movies.GetByExternalId("tmdb", externalId);
@@ -312,18 +318,23 @@ internal static class AppServices
                 }
             }
 
+            var overview = string.IsNullOrWhiteSpace(cloudMovie.Overview) ? null : cloudMovie.Overview.Trim();
+            var status = overview is null
+                ? TBDMovies.Domain.Library.Movies.MetadataStatus.Pending
+                : TBDMovies.Domain.Library.Movies.MetadataStatus.Ready;
+
             var data = new TBDMovies.Domain.Library.Movies.MovieCatalogData(
                 provider: "TMDB",
                 externalId: externalId,
                 title: cloudMovie.Title.Trim(),
                 originalTitle: string.IsNullOrWhiteSpace(cloudMovie.OriginalTitle) ? null : cloudMovie.OriginalTitle.Trim(),
                 year: cloudMovie.Year is >= 1888 and <= 2100 ? cloudMovie.Year : null,
-                overview: string.IsNullOrWhiteSpace(cloudMovie.Overview) ? null : cloudMovie.Overview.Trim(),
+                overview: overview,
                 genres: cloudMovie.Genres is { Count: > 0 } ? System.Collections.Immutable.ImmutableArray.CreateRange(cloudMovie.Genres) : System.Collections.Immutable.ImmutableArray<string>.Empty,
                 runtimeMinutes: runtimeMinutes,
                 rating: cloudMovie.Rating is >= 0 and <= 10 ? cloudMovie.Rating : null,
                 posterReference: string.IsNullOrWhiteSpace(cloudMovie.PosterReference) ? null : cloudMovie.PosterReference.Trim(),
-                metadataStatus: TBDMovies.Domain.Library.Movies.MetadataStatus.Ready,
+                metadataStatus: status,
                 backdropReference: string.IsNullOrWhiteSpace(cloudMovie.BackdropReference) ? null : cloudMovie.BackdropReference.Trim());
 
             var created = uow.Movies.Create(data, DateTimeOffset.UtcNow);
@@ -339,7 +350,7 @@ internal static class AppServices
 
     public static int? EnsureCloudShow(TVShowRecord cloudShow)
     {
-        if (_catalogFactory is null || string.IsNullOrWhiteSpace(cloudShow.ExternalId) || string.IsNullOrWhiteSpace(cloudShow.Title))
+        if (_closed || _catalogFactory is null || string.IsNullOrWhiteSpace(cloudShow.ExternalId) || string.IsNullOrWhiteSpace(cloudShow.Title))
         {
             return null;
         }
@@ -347,6 +358,12 @@ internal static class AppServices
         var externalId = cloudShow.ExternalId.Trim();
         try
         {
+            var readHit = _tvShows?.GetByExternalId("TMDB", externalId) ?? _tvShows?.GetByExternalId("tmdb", externalId);
+            if (readHit is not null)
+            {
+                return readHit.Id;
+            }
+
             using var uow = _catalogFactory.Begin();
             var existing = uow.TvShows.GetByExternalId("TMDB", externalId)
                 ?? uow.TvShows.GetByExternalId("tmdb", externalId);
@@ -355,21 +372,27 @@ internal static class AppServices
                 return existing.Id;
             }
 
+            var overview = string.IsNullOrWhiteSpace(cloudShow.Overview) ? null : cloudShow.Overview.Trim();
+            var status = overview is null
+                ? TBDMovies.Domain.Library.Movies.MetadataStatus.Pending
+                : TBDMovies.Domain.Library.Movies.MetadataStatus.Ready;
+
             var data = new TBDMovies.Domain.Library.Shows.TvShowCatalogData(
                 provider: "TMDB",
                 externalId: externalId,
                 title: cloudShow.Title.Trim(),
                 originalTitle: null,
                 year: cloudShow.Year is >= 1888 and <= 2100 ? cloudShow.Year : null,
-                overview: string.IsNullOrWhiteSpace(cloudShow.Overview) ? null : cloudShow.Overview.Trim(),
+                overview: overview,
                 genres: cloudShow.Genres is { Count: > 0 } ? System.Collections.Immutable.ImmutableArray.CreateRange(cloudShow.Genres) : System.Collections.Immutable.ImmutableArray<string>.Empty,
                 posterReference: string.IsNullOrWhiteSpace(cloudShow.PosterReference) ? null : cloudShow.PosterReference.Trim(),
-                metadataStatus: TBDMovies.Domain.Library.Movies.MetadataStatus.Ready,
+                metadataStatus: status,
                 rating: cloudShow.Rating is >= 0 and <= 10 ? cloudShow.Rating : null,
                 backdropReference: string.IsNullOrWhiteSpace(cloudShow.BackdropReference) ? null : cloudShow.BackdropReference.Trim());
 
             var bySort = uow.TvShows.GetBySortTitle(data.SortTitle);
-            if (bySort is not null)
+            if (bySort is not null &&
+                (string.IsNullOrWhiteSpace(bySort.Data.ExternalId) || string.Equals(bySort.Data.ExternalId, externalId, StringComparison.Ordinal)))
             {
                 return bySort.Id;
             }
@@ -991,7 +1014,7 @@ internal static class AppServices
             candidateData = new TraktDataClient();
             var snapshot = new TraktLocalSnapshotBuilder(Require(_movies), Require(_mediaFiles),
                 Require(_tvShows), Require(_tvSeasons), Require(_tvEpisodes), Require(_availabilityInspector));
-            candidateSync = new TraktSyncService(auth, candidateData, cache, candidateConfig, Require(_settingsRepository), timeProvider: null, snapshot, _personalRepo, _watchHistoryRepo, _showPersonalRepo, EnsureCloudMediaFromTrakt);
+            candidateSync = new TraktSyncService(auth, candidateData, cache, candidateConfig, Require(_settingsRepository), timeProvider: null, snapshot, _personalRepo, _watchHistoryRepo, _showPersonalRepo, EnsureCloudMediaFromTrakt, GetShowTmdbId);
             candidateSync.SyncCompleted += (_, _) => TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
             var projection = new TraktProjectionService();
             var json = JsonSerializer.Serialize(new TraktConfigDto(candidateConfig.ClientId, candidateConfig.RedirectUri));
@@ -1118,7 +1141,8 @@ internal static class AppServices
                 personalRepo,
                 watchHistoryRepo,
                 _showPersonalRepo,
-                EnsureCloudMediaFromTrakt);
+                EnsureCloudMediaFromTrakt,
+                GetShowTmdbId);
             syncService.SyncCompleted += (_, _) => TraktSyncCompleted?.Invoke(null, EventArgs.Empty);
 
             _traktAuthClient = authClient;

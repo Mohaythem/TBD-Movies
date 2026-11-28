@@ -36,7 +36,7 @@ public sealed class ShowPersonalLibraryService
     {
         ValidateSection(section);
         var ids = _repository.ListShowIds(section);
-        return _tv.ListShows().Where(show => ids.Contains(show.Id)).ToList();
+        return _tv.ListShowsIncludingCloud().Where(show => ids.Contains(show.Id)).ToList();
     }
 
     private static void ValidateSection(PersonalLibrarySection section)

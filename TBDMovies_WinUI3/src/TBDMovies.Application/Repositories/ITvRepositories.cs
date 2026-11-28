@@ -10,6 +10,7 @@ namespace TBDMovies.Application.Repositories;
 public interface ITvShowSummaryReader
 {
     IReadOnlyList<TvShowSummary> ListSummaries();
+    IReadOnlyList<TvShowSummary> ListAllSummaries() => ListSummaries();
 }
 
 public sealed record TvShowSummary(TvShow Show, int Seasons, int Episodes, int LocalEpisodes, int MissingEpisodes);
